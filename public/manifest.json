@@ -1,0 +1,39 @@
+{
+  "id": "/",
+  "name": "ZYNOX ANIME",
+  "short_name": "ZYNOX ANIME",
+  "description": "Stream anime in Hindi Dub, Multi Audio, and 1080p Ultra HD on ZYNOX ANIME.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#050A14",
+  "background_color": "#050A14",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["entertainment", "video", "multimedia"]
+}

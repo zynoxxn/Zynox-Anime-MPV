@@ -1,0 +1,6 @@
+{
+  "name": "ZYNOX ANIME",
+  "description": "High-performance anime streaming platform with continue watching, custom watchlists, episode management, and Abyss-compatible video playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

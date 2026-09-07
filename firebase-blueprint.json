@@ -1,0 +1,378 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered user account profile and preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "status": { "type": "string", "enum": ["active", "disabled"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Anime": {
+      "title": "Anime",
+      "description": "Anime title and series metadata",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 300 },
+        "slug": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "poster": { "type": "string", "maxLength": 1000 },
+        "banner": { "type": "string", "maxLength": 1000 },
+        "genres": { "type": "array" },
+        "status": { "type": "string", "enum": ["ongoing", "completed", "upcoming"] },
+        "year": { "type": "number" },
+        "type": { "type": "string", "enum": ["TV", "Movie", "OVA", "Special"] },
+        "rating": { "type": "number" },
+        "featured": { "type": "boolean" },
+        "viewsCount": { "type": "number" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "slug", "published"]
+    },
+    "Episode": {
+      "title": "Episode",
+      "description": "Anime episode with video sources",
+      "type": "object",
+      "properties": {
+        "animeId": { "type": "string", "maxLength": 128 },
+        "season": { "type": "number" },
+        "episodeNumber": { "type": "number" },
+        "title": { "type": "string", "maxLength": 300 },
+        "thumbnail": { "type": "string", "maxLength": 1000 },
+        "language": { "type": "string", "enum": ["SUB", "DUB", "RAW"] },
+        "quality": { "type": "string", "maxLength": 50 },
+        "introStart": { "type": "number" },
+        "introEnd": { "type": "number" },
+        "outroStart": { "type": "number" },
+        "outroEnd": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "sources": { "type": "array" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["animeId", "episodeNumber", "published"]
+    },
+    "WatchProgress": {
+      "title": "WatchProgress",
+      "description": "User progress for continue watching and auto-completion",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "animePoster": { "type": "string", "maxLength": 1000 },
+        "episodeId": { "type": "string", "maxLength": 128 },
+        "episodeNumber": { "type": "number" },
+        "episodeTitle": { "type": "string", "maxLength": 300 },
+        "progress": { "type": "number" },
+        "duration": { "type": "number" },
+        "percentage": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "animeId", "episodeNumber"]
+    },
+    "WatchHistory": {
+      "title": "WatchHistory",
+      "description": "Watched episodes history for users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "animePoster": { "type": "string", "maxLength": 1000 },
+        "episodeId": { "type": "string", "maxLength": 128 },
+        "episodeNumber": { "type": "number" },
+        "episodeTitle": { "type": "string", "maxLength": 300 },
+        "watchedAt": { "type": "string" }
+      },
+      "required": ["userId", "animeId", "episodeNumber"]
+    },
+    "Watchlist": {
+      "title": "Watchlist",
+      "description": "User categorized watchlist",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "animePoster": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["watching", "completed", "plan_to_watch", "on_hold", "dropped"] },
+        "genres": { "type": "array" },
+        "rating": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "animeId", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User favorite anime list",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "animePoster": { "type": "string", "maxLength": 1000 },
+        "genres": { "type": "array" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["userId", "animeId"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "User comments and discussions on anime and episodes",
+      "type": "object",
+      "properties": {
+        "targetType": { "type": "string", "enum": ["anime", "episode"] },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "episodeId": { "type": "string", "maxLength": 128 },
+        "episodeNumber": { "type": "number" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "userAvatar": { "type": "string", "maxLength": 500 },
+        "userRole": { "type": "string", "enum": ["user", "moderator", "admin"] },
+        "content": { "type": "string", "maxLength": 500 },
+        "isSpoiler": { "type": "boolean" },
+        "likesCount": { "type": "number" },
+        "repliesCount": { "type": "number" },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "replyToUser": { "type": "string", "maxLength": 100 },
+        "isEdited": { "type": "boolean" },
+        "isHidden": { "type": "boolean" },
+        "reportsCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["targetType", "animeId", "userId", "userName", "content"]
+    },
+    "CommentLike": {
+      "title": "CommentLike",
+      "description": "User like on a comment",
+      "type": "object",
+      "properties": {
+        "commentId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["commentId", "userId"]
+    },
+    "CommentReport": {
+      "title": "CommentReport",
+      "description": "Reports submitted against inappropriate or spoiler comments",
+      "type": "object",
+      "properties": {
+        "commentId": { "type": "string", "maxLength": 128 },
+        "commentContent": { "type": "string", "maxLength": 500 },
+        "commentAuthorId": { "type": "string", "maxLength": 128 },
+        "commentAuthorName": { "type": "string", "maxLength": 100 },
+        "targetType": { "type": "string", "enum": ["anime", "episode"] },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "episodeNumber": { "type": "number" },
+        "reporterUserId": { "type": "string", "maxLength": 128 },
+        "reporterName": { "type": "string", "maxLength": 100 },
+        "reason": { "type": "string", "enum": ["spam", "harassment", "spoiler", "inappropriate", "other"] },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved", "dismissed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["commentId", "reporterUserId", "reason", "status"]
+    },
+    "UserBlock": {
+      "title": "UserBlock",
+      "description": "User blocking relationships to hide content",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "blockedUserId": { "type": "string", "maxLength": 128 },
+        "blockedUserName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "blockedUserId"]
+    },
+    "AnimeFollow": {
+      "title": "AnimeFollow",
+      "description": "User follows on anime series for new episode alerts",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "animeSlug": { "type": "string", "maxLength": 150 },
+        "animePoster": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "animeId"]
+    },
+    "SystemAnnouncement": {
+      "title": "SystemAnnouncement",
+      "description": "Platform updates and broadcasts created by admins",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "type": { "type": "string", "enum": ["info", "update", "maintenance", "important"] },
+        "targetAudience": { "type": "string", "enum": ["all", "specific", "anime_followers"] },
+        "targetAnimeId": { "type": "string", "maxLength": 128 },
+        "link": { "type": "string", "maxLength": 500 },
+        "publishStatus": { "type": "string", "enum": ["draft", "published", "scheduled"] },
+        "publishDate": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "message", "type", "publishStatus"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notifications for new episodes and system events",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "link": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["new_episode", "system", "request_update"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "title", "message"]
+    },
+    "AnimeRequest": {
+      "title": "AnimeRequest",
+      "description": "Community user anime requests",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 100 },
+        "userEmail": { "type": "string", "maxLength": 200 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "completed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["animeTitle", "reason", "status"]
+    },
+    "EpisodeReport": {
+      "title": "EpisodeReport",
+      "description": "Episode problem reports submitted by viewers",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 200 },
+        "animeId": { "type": "string", "maxLength": 128 },
+        "animeTitle": { "type": "string", "maxLength": 300 },
+        "episodeId": { "type": "string", "maxLength": 128 },
+        "episodeNumber": { "type": "number" },
+        "reason": { "type": "string", "enum": ["video_not_loading", "wrong_episode", "wrong_language", "poor_quality", "other"] },
+        "details": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["open", "resolved", "dismissed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["animeId", "episodeNumber", "reason", "status"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Configurable site content, branding, social links and disclaimer",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "maxLength": 100 },
+        "logoText": { "type": "string", "maxLength": 100 },
+        "contactEmail": { "type": "string", "maxLength": 200 },
+        "telegramUrl": { "type": "string", "maxLength": 500 },
+        "discordUrl": { "type": "string", "maxLength": 500 },
+        "disclaimerText": { "type": "string", "maxLength": 3000 },
+        "enableRequests": { "type": "boolean" },
+        "heroAnimeSlug": { "type": "string", "maxLength": 150 },
+        "sectionsOrder": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/anime/{animeId}": {
+      "schema": "Anime",
+      "description": "Anime catalog items"
+    },
+    "/episodes/{episodeId}": {
+      "schema": "Episode",
+      "description": "Anime episodes"
+    },
+    "/watchProgress/{progressId}": {
+      "schema": "WatchProgress",
+      "description": "Continue watching and playback progress records"
+    },
+    "/watchHistory/{historyId}": {
+      "schema": "WatchHistory",
+      "description": "User watch history log"
+    },
+    "/watchlist/{watchlistId}": {
+      "schema": "Watchlist",
+      "description": "User categorized anime watchlist"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "Favorite",
+      "description": "User favorite anime entries"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Anime and episode community discussions"
+    },
+    "/commentLikes/{likeId}": {
+      "schema": "CommentLike",
+      "description": "User likes on comments"
+    },
+    "/commentReports/{reportId}": {
+      "schema": "CommentReport",
+      "description": "Reports against comments"
+    },
+    "/userBlocks/{blockId}": {
+      "schema": "UserBlock",
+      "description": "User block lists"
+    },
+    "/animeFollows/{followId}": {
+      "schema": "AnimeFollow",
+      "description": "User followed anime subscriptions"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "SystemAnnouncement",
+      "description": "Admin platform announcements"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User alert and episode release notifications"
+    },
+    "/animeRequests/{requestId}": {
+      "schema": "AnimeRequest",
+      "description": "Community anime requests"
+    },
+    "/episodeReports/{reportId}": {
+      "schema": "EpisodeReport",
+      "description": "Viewer problem reports for video streams"
+    },
+    "/siteSettings/{configDoc}": {
+      "schema": "SiteSettings",
+      "description": "Global editable site configuration and branding"
+    }
+  }
+}

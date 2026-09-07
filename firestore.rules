@@ -1,0 +1,374 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'zairoxmax2.0@gmail.com' ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isModeratorOrAdmin() {
+      return isAdmin() || (
+        isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator'
+      );
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Admins registry - completely protected from standard client writes
+    match /admins/{userId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // User profile documents
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == userId &&
+        (!('role' in request.resource.data) || request.resource.data.role == 'user') &&
+        (!('status' in request.resource.data) || request.resource.data.status == 'active');
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (request.auth.uid == userId &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'createdAt', 'status']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Anime catalog
+    match /anime/{animeId} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, delete: if isAdmin();
+      // Allow admin full update, or rate-controlled view counter increment (+1 to +5)
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
+
+    // Episodes collection
+    match /episodes/{episodeId} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
+
+    // Watch Progress (Continue Watching) - Strict User Isolation
+    match /watchProgress/{progressId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Watch History - Strict User Isolation
+    match /watchHistory/{historyId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Watchlist - Strict User Isolation
+    match /watchlist/{watchlistId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Favorites - Strict User Isolation
+    match /favorites/{favoriteId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Notifications - Strict Recipient Protection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Community Anime Requests - Size Capped and Controlled
+    match /animeRequests/{requestId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if request.resource.data.keys().hasAny(['title', 'animeTitle']) &&
+        (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
+        (!('status' in request.resource.data) || request.resource.data.status == 'pending');
+      allow update, delete: if isAdmin();
+    }
+
+    // Video Episode Problem Reports
+    match /episodeReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasAny(['issueType', 'reason']) &&
+        (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
+        (!('status' in request.resource.data) || request.resource.data.status == 'open');
+      allow update, delete: if isAdmin();
+    }
+
+    // Community Discussions & Comments
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.content is string &&
+        request.resource.data.content.size() <= 1000 &&
+        (!('likesCount' in request.resource.data) || request.resource.data.likesCount == 0);
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid &&
+         request.resource.data.userId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']) &&
+         request.resource.data.content is string &&
+         request.resource.data.content.size() <= 1000) ||
+        isModeratorOrAdmin() ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
+         request.resource.data.likesCount is int &&
+         (request.resource.data.likesCount == resource.data.likesCount + 1 ||
+          request.resource.data.likesCount == resource.data.likesCount - 1))
+      );
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
+    }
+
+    // Comment Likes - Binary Action (Create/Delete only, No update)
+    match /commentLikes/{likeId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
+    }
+
+    // Comment Reports
+    match /commentReports/{reportId} {
+      allow read: if isModeratorOrAdmin() || (isAuthenticated() && resource.data.reporterUserId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.reporterUserId == request.auth.uid;
+      allow update, delete: if isModeratorOrAdmin();
+    }
+
+    // User Blocking
+    match /userBlocks/{blockId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
+    }
+
+    // Anime Follows
+    match /animeFollows/{followId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
+    }
+
+    // System Announcements
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isModeratorOrAdmin();
+    }
+
+    // Global Editable Site Settings & Branding
+    match /siteSettings/{configDoc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // CMS Collections (Homepage, Hero Banners, Schedule, Seasons, Taxonomies, Nav, Footer, SEO, Legal)
+    match /cms_homepage_sections/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsHomepageSections/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_hero_banners/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsHeroBanners/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_schedule/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsSchedule/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_seasons/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsSeasons/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_genres/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsGenres/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_statuses/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsStatuses/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_years/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsYears/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_rating_ranges/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsRatingRanges/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_types/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsTypes/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_languages/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsLanguages/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_studios/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsStudios/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_navigation/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsNavigation/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_announcements/{docId} {
+      allow read: if true;
+      allow write: if isModeratorOrAdmin();
+    }
+    match /cmsAnnouncements/{docId} {
+      allow read: if true;
+      allow write: if isModeratorOrAdmin();
+    }
+    match /cms_seo_settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsSeoSettings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_legal_pages/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsLegalPages/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_footer_config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsFooterConfig/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cms_avatars/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /cmsAvatars/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Admin Audit / Activity Logs - IMMUTABLE (Create & Read only by Admin; updates/deletions strictly forbidden)
+    match /admin_activity_logs/{logId} {
+      allow read: if isAdmin() || isModeratorOrAdmin();
+      allow create: if isAdmin() || isModeratorOrAdmin();
+      allow update, delete: if false;
+    }
+    match /cmsAdminLogs/{logId} {
+      allow read: if isAdmin() || isModeratorOrAdmin();
+      allow create: if isAdmin() || isModeratorOrAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
