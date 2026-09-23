@@ -16,6 +16,8 @@ import {
   X,
   ExternalLink,
   Command,
+  Megaphone,
+  ListPlus,
 } from 'lucide-react';
 
 interface AdminQuickSearchModalProps {
@@ -33,24 +35,20 @@ interface QuickAction {
 }
 
 const ADMIN_QUICK_ACTIONS: QuickAction[] = [
-  { id: 'act-add-anime', title: 'Add New Anime', category: 'Anime Management', path: '/admin/anime/new', icon: PlusCircle },
-  { id: 'act-manage-anime', title: 'Manage All Anime', category: 'Anime Management', path: '/admin/anime', icon: Film },
-  { id: 'act-manage-episodes', title: 'Manage Episodes & Servers', category: 'Anime Management', path: '/admin/episodes', icon: Tv },
-  { id: 'act-schedule', title: 'Release Schedule CMS', category: 'Content CMS', path: '/admin/schedule', icon: Calendar },
-  { id: 'act-hero-banners', title: 'Hero Carousel Banners', category: 'Content CMS', path: '/admin/hero-banners', icon: Layers },
-  { id: 'act-homepage', title: 'Homepage Sections & Layout', category: 'Content CMS', path: '/admin/homepage', icon: Sliders },
-  { id: 'act-avatars', title: 'Avatars Manager & Bulk Upload', category: 'Content CMS', path: '/admin/avatars', icon: Layers },
-  { id: 'act-taxonomy', title: 'Taxonomy (Genres, Years, Studios, Statuses)', category: 'Metadata CMS', path: '/admin/taxonomy', icon: Layers },
-  { id: 'act-navigation', title: 'Navigation & Footer CMS', category: 'Layout CMS', path: '/admin/navigation-footer', icon: Sliders },
-  { id: 'act-announcements', title: 'Global Announcements', category: 'Content CMS', path: '/admin/announcements', icon: MessageSquare },
-  { id: 'act-comments', title: 'Comments Moderation', category: 'Community', path: '/admin/comments', icon: MessageSquare },
-  { id: 'act-requests', title: 'Anime Requests Queue', category: 'Community', path: '/admin/requests', icon: FileText },
-  { id: 'act-reports', title: 'Video Stream Issue Reports', category: 'Community', path: '/admin/reports', icon: FileText },
-  { id: 'act-users', title: 'User Accounts & Roles', category: 'System', path: '/admin/users', icon: Users },
-  { id: 'act-seo', title: 'Global SEO & Social Meta', category: 'System', path: '/admin/seo', icon: Settings },
-  { id: 'act-legal', title: 'Legal & Static Pages (DMCA, About)', category: 'Content CMS', path: '/admin/legal-pages', icon: FileText },
-  { id: 'act-settings', title: 'Website Global Settings', category: 'System', path: '/admin/settings', icon: Settings },
-  { id: 'act-logs', title: 'Admin Audit Activity Logs', category: 'System', path: '/admin/logs', icon: FileText },
+  { id: 'act-add-anime', title: 'Add New Anime', category: 'Anime & Content', path: '/admin/anime/new', icon: PlusCircle },
+  { id: 'act-manage-anime', title: 'Manage Anime Titles', category: 'Anime & Content', path: '/admin/anime', icon: Film },
+  { id: 'act-manage-episodes', title: 'Episodes & Streams', category: 'Anime & Content', path: '/admin/episodes', icon: Tv },
+  { id: 'act-bulk-episodes', title: 'Bulk Add Episodes (Fast Import)', category: 'Anime & Content', path: '/admin/episodes/bulk', icon: ListPlus },
+  { id: 'act-downloads', title: 'Add Downloads (Zip/Episodes)', category: 'Anime & Content', path: '/admin/downloads', icon: Film },
+  { id: 'act-schedule', title: 'Release Schedule', category: 'Anime & Content', path: '/admin/schedule', icon: Calendar },
+  { id: 'act-taxonomy', title: 'Genres & Studios', category: 'Anime & Content', path: '/admin/taxonomy', icon: Layers },
+  { id: 'act-notice', title: 'Site Pop-Up Notice (1:1 Pop-Up)', category: 'Website Appearance', path: '/admin/notice', icon: Megaphone },
+  { id: 'act-hero-banners', title: 'Hero Carousel Banners', category: 'Website Appearance', path: '/admin/hero-banners', icon: Layers },
+  { id: 'act-homepage', title: 'Homepage Sections', category: 'Website Appearance', path: '/admin/homepage', icon: Sliders },
+  { id: 'act-requests', title: 'User Anime Requests', category: 'Community & System', path: '/admin/requests', icon: FileText },
+  { id: 'act-users', title: 'User Accounts & Roles', category: 'Community & System', path: '/admin/users', icon: Users },
+  { id: 'act-settings', title: 'Site General Settings', category: 'Community & System', path: '/admin/settings', icon: Settings },
+  { id: 'act-seo', title: 'SEO & Meta Tags', category: 'Community & System', path: '/admin/seo', icon: Settings },
 ];
 
 export const AdminQuickSearchModal: React.FC<AdminQuickSearchModalProps> = ({
@@ -107,6 +105,11 @@ export const AdminQuickSearchModal: React.FC<AdminQuickSearchModalProps> = ({
           <input
             ref={inputRef}
             type="text"
+            name="admin_quick_search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             placeholder="Search anime, episodes, CMS sections, settings (or press ESC to close)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}

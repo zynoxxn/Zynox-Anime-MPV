@@ -6,7 +6,6 @@ import {
   getWatchlist,
   removeFromWatchlist,
   setWatchlistStatus,
-  updateWatchlistEpisodeProgress,
   getWatchHistory,
 } from '../lib/firestore/user-activity';
 import { getPublishedAnimes } from '../lib/firestore/anime';
@@ -15,14 +14,6 @@ import {
   Search,
   Trash2,
   Film,
-  Play,
-  Plus,
-  Minus,
-  CheckCircle2,
-  TrendingUp,
-  Tv,
-  Check,
-  BarChart3,
   SlidersHorizontal,
 } from 'lucide-react';
 
@@ -37,18 +28,9 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
   const [animeCatalog, setAnimeCatalog] = useState<Record<string, Anime>>({});
   const [historyMap, setHistoryMap] = useState<Record<string, number[]>>({});
   const [loading, setLoading] = useState(true);
-  const [selectedTab, setSelectedTab] = useState<WatchlistStatus | 'all'>('all');
+  const [selectedTab, setSelectedTab] = useState<'all' | 'watching' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'progress' | 'recent' | 'title'>('recent');
-
-  // Edit episode modal state
-  const [editingItem, setEditingItem] = useState<{
-    animeId: string;
-    animeTitle: string;
-    currentEp: number;
-    totalEp: number;
-  } | null>(null);
-  const [customEpValue, setCustomEpValue] = useState<number>(0);
+  const [sortBy, setSortBy] = useState<'recent' | 'title'>('recent');
 
   const fetchItems = async () => {
     try {
@@ -148,86 +130,15 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
     onShowMessage?.(`Updated status to ${newStatus.replace('_', ' ')}.`);
   };
 
-  const handleUpdateEpisodes = async (item: WatchlistItem, newCompleted: number) => {
-    const totalEp = getTotalEpisodes(item);
-    const clampedCompleted = Math.max(0, Math.min(totalEp, newCompleted));
-    const newStatus: WatchlistStatus =
-      clampedCompleted >= totalEp
-        ? 'completed'
-        : clampedCompleted > 0
-        ? 'watching'
-        : item.status === 'completed'
-        ? 'watching'
-        : item.status;
-
-    // Optimistic state update
-    setWatchlist((prev) =>
-      prev.map((w) =>
-        w.animeId === item.animeId
-          ? { ...w, completedEpisodes: clampedCompleted, totalEpisodes: totalEp, status: newStatus }
-          : w
-      )
-    );
-
-    await updateWatchlistEpisodeProgress(
-      user?.uid || null,
-      item.animeId,
-      clampedCompleted,
-      totalEp
-    );
-
-    if (clampedCompleted === totalEp && item.status !== 'completed') {
-      onShowMessage?.(`🎉 Completed all episodes of "${item.animeTitle}"!`);
-    } else {
-      onShowMessage?.(`Progress updated: ${clampedCompleted}/${totalEp} Episodes.`);
-    }
-  };
-
-  const handleSaveCustomEp = async () => {
-    if (!editingItem) return;
-    const targetItem = watchlist.find((w) => w.animeId === editingItem.animeId);
-    if (targetItem) {
-      await handleUpdateEpisodes(targetItem, customEpValue);
-    }
-    setEditingItem(null);
-  };
-
-  // Summary statistics across entire watchlist
-  const stats = useMemo(() => {
-    let totalWatchedEps = 0;
-    let totalPossibleEps = 0;
-    let completedCount = 0;
-    let watchingCount = 0;
-
-    watchlist.forEach((item) => {
-      const completed = getCompletedEpisodes(item);
-      const total = getTotalEpisodes(item);
-      totalWatchedEps += completed;
-      totalPossibleEps += total;
-      if (item.status === 'completed' || (total > 0 && completed >= total)) {
-        completedCount++;
-      } else if (item.status === 'watching' || completed > 0) {
-        watchingCount++;
-      }
-    });
-
-    const overallPercentage =
-      totalPossibleEps > 0 ? Math.round((totalWatchedEps / totalPossibleEps) * 100) : 0;
-
-    return {
-      totalTitles: watchlist.length,
-      totalWatchedEps,
-      totalPossibleEps,
-      completedCount,
-      watchingCount,
-      overallPercentage,
-    };
-  }, [watchlist, animeCatalog, historyMap]);
-
   const filteredItems = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
     const list = watchlist.filter((item) => {
-      const matchTab = selectedTab === 'all' || item.status === selectedTab;
+      const matchTab =
+        selectedTab === 'all'
+          ? true
+          : selectedTab === 'completed'
+          ? item.status === 'completed'
+          : item.status !== 'completed';
       const matchSearch =
         q === '' ||
         (item.animeTitle || '').toLowerCase().includes(q);
@@ -235,11 +146,6 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
     });
 
     return list.sort((a, b) => {
-      if (sortBy === 'progress') {
-        const progA = getCompletedEpisodes(a) / getTotalEpisodes(a);
-        const progB = getCompletedEpisodes(b) / getTotalEpisodes(b);
-        return progB - progA;
-      }
       if (sortBy === 'title') {
         return (a.animeTitle || '').localeCompare(b.animeTitle || '');
       }
@@ -248,15 +154,12 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
       const timeB = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : b.updatedAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
-  }, [watchlist, selectedTab, searchQuery, sortBy, animeCatalog, historyMap]);
+  }, [watchlist, selectedTab, searchQuery, sortBy]);
 
-  const TABS: { key: WatchlistStatus | 'all'; label: string }[] = [
+  const TABS: { key: 'all' | 'watching' | 'completed'; label: string }[] = [
     { key: 'all', label: 'All Series' },
     { key: 'watching', label: 'Watching' },
     { key: 'completed', label: 'Completed' },
-    { key: 'plan_to_watch', label: 'Plan to Watch' },
-    { key: 'on_hold', label: 'On Hold' },
-    { key: 'dropped', label: 'Dropped' },
   ];
 
   return (
@@ -271,7 +174,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
             <span>My Watchlist</span>
           </h1>
           <p className="text-xs sm:text-sm text-[#A9B8CC] mt-1.5">
-            Track your anime journey, log completed episodes, and resume where you left off.
+            Track your saved anime series, manage watchlist statuses, and watch anytime.
           </p>
         </div>
 
@@ -296,60 +199,11 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
               className="bg-transparent text-xs font-semibold text-zinc-300 focus:outline-none cursor-pointer"
             >
               <option value="recent" className="bg-[#081426] text-white">Recently Updated</option>
-              <option value="progress" className="bg-[#081426] text-white">Highest Progress</option>
               <option value="title" className="bg-[#081426] text-white">Alphabetical (A-Z)</option>
             </select>
           </div>
         </div>
       </div>
-
-      {/* Progress Overview Stats Banner */}
-      {watchlist.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 p-4 sm:p-5 bg-[#081426] border border-white/10 rounded-2xl sm:rounded-3xl shadow-xl">
-          <div className="flex items-center gap-3 border-r border-white/5 pr-2">
-            <div className="w-10 h-10 rounded-xl bg-[#1683FF]/15 border border-[#1683FF]/30 flex items-center justify-center text-[#1683FF] shrink-0">
-              <Tv className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Titles</div>
-              <div className="text-lg sm:text-xl font-black text-white">{stats.totalTitles}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 sm:border-r border-white/5 pr-2">
-            <div className="w-10 h-10 rounded-xl bg-[#00CFFF]/15 border border-[#00CFFF]/30 flex items-center justify-center text-[#00CFFF] shrink-0">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Episodes Done</div>
-              <div className="text-lg sm:text-xl font-black text-white">
-                {stats.totalWatchedEps}
-                <span className="text-xs text-zinc-500 font-normal ml-1">/ {stats.totalPossibleEps}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 border-r border-white/5 pr-2">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Completed</div>
-              <div className="text-lg sm:text-xl font-black text-white">{stats.completedCount}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Overall Rate</div>
-              <div className="text-lg sm:text-xl font-black text-white">{stats.overallPercentage}%</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -357,7 +211,9 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
           const count =
             tab.key === 'all'
               ? watchlist.length
-              : watchlist.filter((w) => w.status === tab.key).length;
+              : tab.key === 'completed'
+              ? watchlist.filter((w) => w.status === 'completed').length
+              : watchlist.filter((w) => w.status !== 'completed').length;
 
           return (
             <button
@@ -389,7 +245,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
       {loading ? (
         <div className="py-24 text-center text-xs text-zinc-400 flex flex-col items-center justify-center gap-3">
           <div className="w-8 h-8 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
-          <span>Loading your watchlist and progress tracker...</span>
+          <span>Loading your watchlist...</span>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="text-center py-20 bg-[#081426] border border-white/10 rounded-3xl p-8 max-w-md mx-auto space-y-4 shadow-xl">
@@ -398,240 +254,82 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
           <p className="text-xs text-zinc-400 leading-relaxed">
             {searchQuery
               ? 'No anime in your watchlist matched your search filter.'
-              : 'Add anime to your watchlist to track episode completion and progress.'}
+              : 'Add anime to your watchlist to keep track of what you want to watch.'}
           </p>
           <button
             type="button"
             onClick={() => navigate('/browse')}
             className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#0070ea] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#1683FF]/30"
           >
-            Explore Anime Catalog
+            Explore Anime
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
           {filteredItems.map((item) => {
-            const completed = getCompletedEpisodes(item);
-            const total = getTotalEpisodes(item);
-            const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
-            const isAllCompleted = completed >= total && total > 0;
-            const nextEpisode = isAllCompleted ? 1 : completed + 1;
-
             return (
               <div
                 key={item.animeId}
-                className="bg-[#081426] border border-white/10 hover:border-[#1683FF]/50 rounded-2xl p-4 flex flex-col justify-between gap-4 transition-all shadow-lg hover:shadow-[#1683FF]/10 group"
+                className="bg-[#081426] border border-white/10 hover:border-[#1683FF]/50 rounded-2xl p-4 flex gap-3.5 transition-all shadow-lg hover:shadow-[#1683FF]/10 group"
               >
-                {/* Upper Section: Poster + Title + Status */}
-                <div className="flex gap-3.5">
-                  {/* Poster Thumbnail */}
-                  <div
-                    onClick={() => navigate(`/anime/${item.animeSlug}`)}
-                    className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl bg-[#050A14] overflow-hidden shrink-0 cursor-pointer relative border border-white/10 shadow-md group/poster"
-                  >
-                    {item.animePoster ? (
-                      <img
-                        src={item.animePoster}
-                        alt={item.animeTitle}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <Film className="w-6 h-6 m-auto mt-10 text-zinc-600" />
-                    )}
-
-                    {/* Progress percentage pill over poster */}
-                    <div className="absolute bottom-1.5 left-1.5 right-1.5 bg-black/80 backdrop-blur-md rounded-md py-0.5 px-1.5 text-center text-[10px] font-bold text-white border border-white/10">
-                      {percent}%
-                    </div>
-                  </div>
-
-                  {/* Info Header */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-between">
-                    <div>
-                      <h4
-                        onClick={() => navigate(`/anime/${item.animeSlug}`)}
-                        className="text-sm sm:text-base font-bold text-white hover:text-[#00CFFF] cursor-pointer transition-colors line-clamp-2 leading-snug"
-                      >
-                        {item.animeTitle}
-                      </h4>
-
-                      {item.genres && item.genres.length > 0 && (
-                        <p className="text-[11px] text-zinc-400 mt-1 truncate">
-                          {item.genres.slice(0, 3).join(' • ')}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Status dropdown & Delete */}
-                    <div className="flex items-center justify-between gap-2 pt-2">
-                      <select
-                        value={item.status}
-                        onChange={(e) => handleStatusChange(item, e.target.value as WatchlistStatus)}
-                        className="bg-[#050A14] border border-white/10 text-[11px] font-bold text-zinc-300 rounded-lg px-2 py-1 focus:border-[#1683FF] outline-none capitalize cursor-pointer hover:border-white/20 transition-colors"
-                      >
-                        <option value="watching">Watching</option>
-                        <option value="completed">Completed</option>
-                        <option value="plan_to_watch">Plan to Watch</option>
-                        <option value="on_hold">On Hold</option>
-                        <option value="dropped">Dropped</option>
-                      </select>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(item.animeId, item.animeTitle)}
-                        className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                        title="Remove from watchlist"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                {/* Poster Thumbnail */}
+                <div
+                  onClick={() => navigate(`/anime/${item.animeSlug}`)}
+                  className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl bg-[#050A14] overflow-hidden shrink-0 cursor-pointer relative border border-white/10 shadow-md group/poster"
+                >
+                  {item.animePoster ? (
+                    <img
+                      src={item.animePoster}
+                      alt={item.animeTitle}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <Film className="w-6 h-6 m-auto mt-10 text-zinc-600" />
+                  )}
                 </div>
 
-                {/* Lower Section: Interactive Episode Progress Tracker */}
-                <div className="bg-[#050A14]/80 border border-white/5 rounded-xl p-3 space-y-2.5">
-                  {/* Progress Header & Counter */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-white">Progress:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingItem({
-                            animeId: item.animeId,
-                            animeTitle: item.animeTitle,
-                            currentEp: completed,
-                            totalEp: total,
-                          });
-                          setCustomEpValue(completed);
-                        }}
-                        className="text-xs font-mono font-black text-[#00CFFF] hover:underline bg-[#1683FF]/10 px-2 py-0.5 rounded border border-[#1683FF]/20"
-                        title="Click to set custom episode number"
-                      >
-                        {completed} / {total} Ep
-                      </button>
-                    </div>
+                {/* Info Header */}
+                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                  <div>
+                    <h4
+                      onClick={() => navigate(`/anime/${item.animeSlug}`)}
+                      className="text-sm sm:text-base font-bold text-white hover:text-[#00CFFF] cursor-pointer transition-colors line-clamp-2 leading-snug"
+                    >
+                      {item.animeTitle}
+                    </h4>
 
-                    {isAllCompleted ? (
-                      <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                        <Check className="w-3 h-3" />
-                        <span>Completed</span>
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-semibold text-zinc-400">
-                        {total - completed} eps left
-                      </span>
+                    {item.genres && item.genres.length > 0 && (
+                      <p className="text-[11px] text-zinc-400 mt-1 truncate">
+                        {item.genres.slice(0, 3).join(' • ')}
+                      </p>
                     )}
                   </div>
 
-                  {/* Progress Visual Bar */}
-                  <div className="w-full bg-[#081426] h-2 rounded-full overflow-hidden border border-white/5 relative">
-                    <div
-                      className={`h-full transition-all duration-300 rounded-full ${
-                        isAllCompleted
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
-                          : 'bg-gradient-to-r from-[#1683FF] to-[#00CFFF]'
-                      }`}
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
+                  {/* Status dropdown & Delete */}
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <select
+                      value={item.status === 'completed' ? 'completed' : 'watching'}
+                      onChange={(e) => handleStatusChange(item, e.target.value as WatchlistStatus)}
+                      className="bg-[#050A14] border border-white/10 text-[11px] font-bold text-zinc-300 rounded-lg px-2.5 py-1.5 focus:border-[#1683FF] outline-none capitalize cursor-pointer hover:border-white/20 transition-colors"
+                    >
+                      <option value="watching">Watching</option>
+                      <option value="completed">Completed</option>
+                    </select>
 
-                  {/* Episode Stepper Controls & Watch Button */}
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    {/* Stepper buttons */}
-                    <div className="flex items-center gap-1 bg-[#081426] border border-white/10 rounded-lg p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateEpisodes(item, completed - 1)}
-                        disabled={completed <= 0}
-                        className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                        title="Mark previous episode as unwatched"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[11px] font-mono font-bold text-zinc-300 px-1.5 min-w-[28px] text-center">
-                        {completed}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateEpisodes(item, completed + 1)}
-                        disabled={completed >= total}
-                        className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                        title="Mark next episode as watched"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Quick Watch Next Ep Button */}
                     <button
                       type="button"
-                      onClick={() => navigate(`/watch/${item.animeSlug}?ep=${nextEpisode}`)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all shadow-md ${
-                        isAllCompleted
-                          ? 'bg-[#081426] hover:bg-[#0D1B2E] text-zinc-300 border border-white/10'
-                          : 'bg-[#1683FF] hover:bg-[#0070ea] text-white shadow-[#1683FF]/30'
-                      }`}
+                      onClick={() => handleRemove(item.animeId, item.animeTitle)}
+                      className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                      title="Remove from watchlist"
                     >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>{isAllCompleted ? 'Replay Series' : `Watch Ep ${nextEpisode}`}</span>
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Quick Edit Episode Modal */}
-      {editingItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#081426] border border-[#1683FF]/40 rounded-2xl sm:rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in duration-150">
-            <h3 className="text-base font-bold text-white">Set Watched Progress</h3>
-            <p className="text-xs text-zinc-400 line-clamp-1">{editingItem.animeTitle}</p>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-zinc-300">
-                Completed Episodes (out of {editingItem.totalEp}):
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min={0}
-                  max={editingItem.totalEp}
-                  value={customEpValue}
-                  onChange={(e) => setCustomEpValue(parseInt(e.target.value, 10) || 0)}
-                  className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold text-white focus:border-[#1683FF] focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setCustomEpValue(editingItem.totalEp)}
-                  className="px-3 py-2.5 bg-[#1683FF]/15 hover:bg-[#1683FF]/25 border border-[#1683FF]/30 rounded-xl text-xs font-bold text-[#1683FF] transition-colors"
-                >
-                  All ({editingItem.totalEp})
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingItem(null)}
-                className="px-4 py-2 bg-[#050A14] hover:bg-white/5 border border-white/10 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCustomEp}
-                className="px-5 py-2 bg-[#1683FF] hover:bg-[#0070ea] rounded-xl text-xs font-bold text-white transition-all shadow-md shadow-[#1683FF]/30"
-              >
-                Save Progress
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ import communityRoutes from './server/routes/community';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Trust proxy for secure headers & accurate client IP behind nginx/Cloud Run
   app.set('trust proxy', 1);

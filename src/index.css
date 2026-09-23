@@ -95,3 +95,18 @@ body {
 .glow-blue-lg {
   box-shadow: 0 0 35px -5px rgba(22, 131, 255, 0.45);
 }
+
+/* Fluid Skeleton Shimmer Wave Animation */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+

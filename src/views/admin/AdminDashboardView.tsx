@@ -5,31 +5,21 @@ import { getAllAnimes } from '../../lib/firestore/anime';
 import { getAllEpisodes } from '../../lib/firestore/episodes';
 import { getAllUsers } from '../../lib/firestore/admin-users';
 import { getAllAnimeRequests, getAllEpisodeReports } from '../../lib/firestore/community';
-import { getAdminLogs } from '../../lib/firestore/cms';
+import { getCmsPopupNotice, saveCmsPopupNotice } from '../../lib/firestore/cms';
 import type { Anime } from '../../types/anime';
 import type { Episode } from '../../types/episode';
-import type { CmsAdminLog } from '../../types/cms';
+import type { SitePopupNotice } from '../../types/cms';
 import {
   Film,
   Tv,
   Download,
-  Users,
-  Calendar,
-  Layers,
-  Sliders,
   PlusCircle,
-  Clock,
-  Sparkles,
-  TrendingUp,
   AlertTriangle,
   ArrowRight,
-  Activity,
-  CheckCircle2,
   HelpCircle,
-  FileText,
-  Shield,
   Eye,
   RefreshCw,
+  Megaphone,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -55,19 +45,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   });
   const [recentAnimes, setRecentAnimes] = useState<Anime[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<Episode[]>([]);
-  const [recentLogs, setRecentLogs] = useState<CmsAdminLog[]>([]);
+  const [popupNotice, setPopupNotice] = useState<SitePopupNotice | null>(null);
   const [loadingData, setLoadingData] = useState(true);
 
   const loadAllData = async () => {
     try {
       setLoadingData(true);
-      const [animes, eps, users, requests, reports, logs] = await Promise.all([
+      const [animes, eps, users, requests, reports, notice] = await Promise.all([
         getAllAnimes().catch(() => []),
         getAllEpisodes().catch(() => []),
         getAllUsers().catch(() => []),
         getAllAnimeRequests().catch(() => []),
         getAllEpisodeReports().catch(() => []),
-        getAdminLogs(8).catch(() => []),
+        getCmsPopupNotice().catch(() => null),
       ]);
 
       const ongoing = animes.filter((a) => a.status === 'ongoing').length;
@@ -92,11 +82,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
       setRecentAnimes(animes.slice(0, 5));
       setRecentEpisodes(eps.slice(0, 5));
-      setRecentLogs(logs);
+      setPopupNotice(notice);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const handleToggleNotice = async () => {
+    if (!popupNotice) return;
+    const updated = {
+      ...popupNotice,
+      enabled: !popupNotice.enabled,
+      version: `${Date.now()}`,
+    };
+    try {
+      await saveCmsPopupNotice(updated);
+      setPopupNotice(updated);
+      onShowMessage(updated.enabled ? 'Site notice activated!' : 'Site notice disabled.');
+      window.dispatchEvent(new CustomEvent('zynox:notice-updated', { detail: updated }));
+    } catch {
+      onShowMessage('Failed to update notice status.');
     }
   };
 
@@ -149,7 +156,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={loadAllData}
@@ -161,7 +168,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => navigate('/admin/anime/new')}
-              className="px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white flex items-center gap-1.5 shadow-md shadow-[#1683FF]/20 transition-all"
+              className="px-3.5 sm:px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white flex items-center gap-1.5 shadow-md shadow-[#1683FF]/20 transition-all cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Add Anime</span>
@@ -169,7 +176,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => navigate('/admin/episodes')}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 transition-all"
+              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Tv className="w-3.5 h-3.5 text-cyan-400" />
               <span>Episodes</span>
@@ -177,10 +184,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => navigate('/admin/downloads')}
-              className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Add Downloads</span>
+              <span>Downloads</span>
             </button>
           </div>
         </div>
@@ -190,175 +197,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* Total Anime */}
           <div
             onClick={() => navigate('/admin/anime')}
-            className="bg-[#0B1322] border border-white/5 hover:border-[#1683FF]/40 rounded-2xl p-4 transition-all duration-300 cursor-pointer group"
+            className="bg-[#0B1322] border border-white/5 hover:border-[#1683FF]/40 rounded-2xl p-4 transition-all duration-200 cursor-pointer group shadow-sm"
           >
             <div className="flex items-center justify-between text-[#94A3B8]">
-              <span className="text-xs font-bold uppercase">Total Anime</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Total Anime</span>
               <Film className="w-4 h-4 text-[#1683FF] group-hover:scale-110 transition-transform" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-white mt-2">
               {stats.totalAnime}
-            </div>
-            <div className="text-[11px] text-[#94A3B8] mt-1">
-              {stats.ongoingAnime} Ongoing
             </div>
           </div>
 
           {/* Total Episodes */}
           <div
             onClick={() => navigate('/admin/episodes')}
-            className="bg-[#0B1322] border border-white/5 hover:border-cyan-500/40 rounded-2xl p-4 transition-all duration-300 cursor-pointer group"
+            className="bg-[#0B1322] border border-white/5 hover:border-cyan-500/40 rounded-2xl p-4 transition-all duration-200 cursor-pointer group shadow-sm"
           >
             <div className="flex items-center justify-between text-[#94A3B8]">
-              <span className="text-xs font-bold uppercase">Episodes</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Episodes</span>
               <Tv className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-white mt-2">
               {stats.totalEpisodes}
             </div>
-            <div className="text-[11px] text-[#94A3B8] mt-1">
-              All seasons
-            </div>
           </div>
 
-          {/* Total Users */}
+          {/* Site Notice Status */}
           <div
-            onClick={() => navigate('/admin/users')}
-            className="bg-[#0B1322] border border-white/5 hover:border-purple-500/40 rounded-2xl p-4 transition-all duration-300 cursor-pointer group"
+            onClick={() => navigate('/admin/notice')}
+            className="bg-[#0B1322] border border-white/5 hover:border-cyan-400/40 rounded-2xl p-4 transition-all duration-200 cursor-pointer group shadow-sm"
           >
             <div className="flex items-center justify-between text-[#94A3B8]">
-              <span className="text-xs font-bold uppercase">Users</span>
-              <Users className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-bold uppercase tracking-wider">Site Notice</span>
+              <Megaphone className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl sm:text-3xl font-black text-white mt-2">
-              {stats.totalUsers}
-            </div>
-            <div className="text-[11px] text-[#94A3B8] mt-1">
-              Registered users
+            <div className="flex items-center gap-2 mt-2">
+              <span
+                className={`px-2 py-0.5 rounded-md text-xs font-bold border uppercase tracking-wider ${
+                  popupNotice?.enabled
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}
+              >
+                {popupNotice?.enabled ? 'Active' : 'Disabled'}
+              </span>
             </div>
           </div>
 
-          {/* Pending Requests & Reports */}
+          {/* Pending Requests */}
           <div
             onClick={() => navigate('/admin/requests')}
-            className="bg-[#0B1322] border border-white/5 hover:border-amber-500/40 rounded-2xl p-4 transition-all duration-300 cursor-pointer group"
+            className="bg-[#0B1322] border border-white/5 hover:border-amber-500/40 rounded-2xl p-4 transition-all duration-200 cursor-pointer group shadow-sm"
           >
             <div className="flex items-center justify-between text-[#94A3B8]">
-              <span className="text-xs font-bold uppercase">Requests</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Requests</span>
               <HelpCircle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
             </div>
             <div className="text-2xl sm:text-3xl font-black text-white mt-2">
-              {stats.pendingRequests + stats.openReports}
-            </div>
-            <div className="text-[11px] text-amber-400 font-semibold mt-1">
-              {stats.pendingRequests} requests • {stats.openReports} reports
+              {stats.pendingRequests}
             </div>
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="space-y-3">
-          <div className="text-xs font-bold text-[#64748B] uppercase tracking-wider px-1">
-            Quick Actions
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-            <button
-              type="button"
-              onClick={() => navigate('/admin/downloads')}
-              className="bg-[#0B1322] border border-white/5 hover:border-amber-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Download className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-amber-400">
-                Downloads
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/admin/schedule')}
-              className="bg-[#0B1322] border border-white/5 hover:border-[#1683FF]/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Calendar className="w-4 h-4 text-[#1683FF] group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-[#1683FF]">
-                Schedule
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/hero-banners')}
-              className="bg-[#0B1322] border border-white/5 hover:border-cyan-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Layers className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-cyan-400">
-                Hero Banners
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/homepage')}
-              className="bg-[#0B1322] border border-white/5 hover:border-purple-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Sliders className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-purple-400">
-                Homepage
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/navigation-footer')}
-              className="bg-[#0B1322] border border-white/5 hover:border-blue-400/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Sliders className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-blue-400">
-                Nav & Footer
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/taxonomy')}
-              className="bg-[#0B1322] border border-white/5 hover:border-emerald-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Sparkles className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-emerald-400">
-                Genres
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/announcements')}
-              className="bg-[#0B1322] border border-white/5 hover:border-amber-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <Activity className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-amber-400">
-                Announce
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate('/admin/settings')}
-              className="bg-[#0B1322] border border-white/5 hover:border-rose-500/40 rounded-xl p-3 text-center transition-all group flex flex-col items-center justify-center gap-1.5"
-            >
-              <FileText className="w-4 h-4 text-rose-400 mb-0 group-hover:scale-110 transition-transform" />
-              <div className="text-xs font-bold text-white group-hover:text-rose-400">
-                Settings
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Two Columns: Recent Anime Catalog & Recent Audit Logs */}
+        {/* Two Columns: Recent Anime Catalog & Site Open Notice Status */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Anime (2 Cols) */}
           <div className="lg:col-span-2 bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Film className="w-4 h-4 text-[#1683FF]" />
-                <h3 className="text-sm font-bold text-white">Recent Anime Titles</h3>
+                <h3 className="text-sm font-bold text-white">Recent Anime</h3>
               </div>
               <button
                 type="button"
@@ -415,41 +323,60 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Recent Admin Audit Logs (1 Col) */}
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-white">Recent Audit Logs</h3>
+          {/* Site Notice Status Card (1 Col) */}
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-6 space-y-4 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-cyan-400" />
+                  <h3 className="text-sm font-bold text-white">Site Notice</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleNotice}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider transition-all cursor-pointer ${
+                    popupNotice?.enabled
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-rose-500/20 hover:text-rose-300'
+                      : 'bg-rose-500/15 text-rose-400 border-rose-500/30 hover:bg-emerald-500/20 hover:text-emerald-300'
+                  }`}
+                >
+                  {popupNotice?.enabled ? 'Active' : 'Disabled'}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => navigate('/admin/logs')}
-                className="text-xs text-[#1683FF] hover:underline font-semibold"
-              >
-                All Logs
-              </button>
+
+              <div className="bg-black/40 border border-white/10 rounded-2xl p-3.5 space-y-2 text-left">
+                <span
+                  className="text-xs font-bold block truncate"
+                  style={{ color: popupNotice?.header?.titleColor || '#FFFFFF' }}
+                >
+                  {popupNotice?.header?.title || 'Notice'}
+                </span>
+                <p className="text-xs text-[#94A3B8] line-clamp-3 leading-relaxed">
+                  {popupNotice?.notice?.text || 'No notice configured yet.'}
+                </p>
+              </div>
             </div>
 
-            {recentLogs.length === 0 ? (
-              <div className="py-8 text-center text-xs text-[#94A3B8]">
-                No recent activity recorded yet.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentLogs.map((log) => (
-                  <div key={log.id} className="text-xs bg-white/5 p-2.5 rounded-xl space-y-1">
-                    <div className="flex items-center justify-between text-[#94A3B8]">
-                      <span className="font-bold text-white">{log.action}</span>
-                      <span className="text-[10px] text-emerald-400">{log.targetType}</span>
-                    </div>
-                    {log.details && (
-                      <p className="text-[11px] text-[#A9B8CC] truncate">{log.details}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="pt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/admin/notice')}
+                className="py-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Megaphone className="w-3.5 h-3.5" />
+                <span>Edit Notice</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('zynox:open-notice'));
+                }}
+                className="py-2.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Preview</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

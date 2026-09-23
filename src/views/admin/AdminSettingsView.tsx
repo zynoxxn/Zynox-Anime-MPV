@@ -14,6 +14,8 @@ import {
   ShieldAlert,
   Globe,
   Sliders,
+  Megaphone,
+  ArrowRight,
 } from 'lucide-react';
 
 interface AdminSettingsViewProps {
@@ -229,6 +231,30 @@ export const AdminSettingsView: React.FC<AdminSettingsViewProps> = ({
                   Enable Community Comments on Anime &amp; Episode Pages
                 </label>
               </div>
+            </div>
+
+            {/* Quick Access to Website Open Popup Card Notice */}
+            <div className="bg-gradient-to-r from-cyan-950/40 via-[#0B1322] to-blue-950/30 border border-cyan-500/30 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                  <Megaphone className="w-4 h-4" />
+                  <span>Website Open Pop-Up Notice Card</span>
+                </div>
+                <h4 className="text-base font-bold text-white">
+                  Customize the Opening Pop-up Card
+                </h4>
+                <p className="text-xs text-[#94A3B8]">
+                  Edit the Header, Footer, and Notice message that appears whenever someone opens the website.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/announcements')}
+                className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-500/20 flex items-center gap-2 cursor-pointer shrink-0 transition-all"
+              >
+                <span>Edit Pop-Up Card</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </form>
         )}

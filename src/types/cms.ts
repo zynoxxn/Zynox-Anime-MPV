@@ -206,6 +206,36 @@ export interface CmsAnnouncement {
   dismissible?: boolean;
 }
 
+export type PopupNoticeTheme = 'blue' | 'purple' | 'amber' | 'emerald' | 'rose' | 'red';
+export type PopupNoticeIcon = 'megaphone' | 'bell' | 'sparkles' | 'alert' | 'info' | 'shield' | 'flame';
+
+export interface SitePopupNotice {
+  id?: string;
+  enabled: boolean;
+  version: string;
+  displayDelaySeconds?: number; // Delay in seconds before popup appears on website entrance (default: 6, i.e. 5-7s)
+  header: {
+    title: string;
+    titleColor?: string; // Custom hex color for notice heading
+    badgeText?: string;
+    icon: PopupNoticeIcon;
+    themeColor: PopupNoticeTheme;
+  };
+  notice: {
+    text: string;
+    highlightText?: string;
+    imageUrl?: string;
+  };
+  footer: {
+    noteText?: string;
+    primaryButtonText: string;
+    primaryButtonUrl: string;
+    secondaryButtonText: string;
+    showDontShowAgain: boolean;
+  };
+  updatedAt?: any;
+}
+
 export interface CmsSeoSettings {
   homepageTitle: string;
   homepageDescription: string;
@@ -260,6 +290,7 @@ export interface CmsSiteSettings {
   disclaimerText: string;
   enableRequests: boolean;
   enableCommunityComments: boolean;
+  enableComments?: boolean;
   defaultLanguage: string;
   defaultQuality: string;
   timezone: string;

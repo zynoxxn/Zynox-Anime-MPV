@@ -14,6 +14,7 @@ import {
   getWatchedEpisodes,
 } from '../lib/firestore/user-activity';
 import { ShareModal } from '../components/ShareModal';
+import { openSystemShare } from '../lib/share';
 import { DownloadModal } from '../components/DownloadModal';
 import { EpisodeSelector } from '../components/EpisodeSelector';
 import { AnimeCard } from '../components/AnimeCard';
@@ -26,7 +27,7 @@ import {
   getAllEpisodeDownloadMirrors,
   type DownloadMirror,
 } from '../lib/downloadRedirect';
-import { generateAnimeSeoMetadata, generateAnimeGoogleTags } from '../lib/seo';
+import { generateAnimeSeoMetadata } from '../lib/seo';
 import { usePageSeo } from '../hooks/usePageSeo';
 import {
   ArrowLeft,
@@ -100,6 +101,18 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
   const [downloadModalSubtitle, setDownloadModalSubtitle] = useState('');
 
+  const handleShare = () => {
+    const shareTitle = anime?.title || 'Anime';
+    const shareText = `Watch ${shareTitle} in Hindi Dub & English Sub on ZYNOX ANIME`;
+    openSystemShare({
+      title: shareTitle,
+      text: shareText,
+      url: typeof window !== 'undefined' ? window.location.href : '',
+      onShowMessage,
+      onFallback: () => setShareOpen(true),
+    });
+  };
+
   // Dynamic Google SEO & Schema.org Structured Data
   const seoMetadata = useMemo(() => {
     if (!anime) return null;
@@ -109,11 +122,6 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   }, [anime]);
 
   usePageSeo(seoMetadata);
-
-  const googleSearchTags = useMemo(() => {
-    if (!anime) return [];
-    return generateAnimeGoogleTags(anime, { isDownload: false });
-  }, [anime]);
 
   // Active season metadata if a specific season is chosen (Crunchyroll style) - Must be declared before any conditional returns
   const activeSeasonEntry = useMemo(() => {
@@ -219,7 +227,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
       await removeFromWatchlist(user?.uid || null, anime.id);
       onShowMessage?.(`Removed "${anime.title}" from Watchlist.`);
     } else {
-      const newStatus: WatchlistStatus = 'plan_to_watch';
+      const newStatus: WatchlistStatus = 'watching';
       setWatchStatus(newStatus);
       await setWatchlistStatus(
         user?.uid || null,
@@ -336,8 +344,8 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setShareOpen(true)}
-            className="p-2 bg-[#07111F] hover:bg-[#081426] text-[#94A3B8] hover:text-white rounded-xl border border-white/10 transition-colors cursor-pointer"
+            onClick={handleShare}
+            className="p-2 bg-[#07111F] hover:bg-[#081426] text-[#94A3B8] hover:text-[#00CFFF] rounded-xl border border-white/10 transition-colors cursor-pointer"
             title="Share anime"
           >
             <Share2 className="w-3.5 h-3.5" />
@@ -559,8 +567,8 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
               {/* Share */}
               <button
                 type="button"
-                onClick={() => setShareOpen(true)}
-                className="p-3 rounded-xl bg-[#081426] hover:bg-[#0B1B32] text-[#94A3B8] border border-white/10 hover:text-white transition-colors cursor-pointer"
+                onClick={handleShare}
+                className="p-3 rounded-xl bg-[#081426] hover:bg-[#0B1B32] text-[#94A3B8] border border-white/10 hover:text-[#00CFFF] transition-colors cursor-pointer"
                 title="Share"
               >
                 <Share2 className="w-4 h-4" />
@@ -614,43 +622,6 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
               />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* 6. GOOGLE SEARCH TAGS & METADATA (Crawlable SEO Block) */}
-      {anime && googleSearchTags.length > 0 && (
-        <div className="border-t border-white/5 pt-6 bg-[#070D19]/40 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#1683FF]" />
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                Popular Search Terms & Streaming Tags
-              </h4>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(googleSearchTags.join(', '));
-                if (onShowMessage) onShowMessage('Tags copied to clipboard!');
-              }}
-              className="text-[11px] text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
-            >
-              Copy Tags
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {googleSearchTags.map((tag, idx) => (
-              <span
-                key={idx}
-                className="text-[10px] text-[#94A3B8] bg-[#0B1322] border border-white/5 px-2.5 py-1 rounded-md"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-          <p className="text-[10px] text-[#94A3B8]/60 leading-relaxed">
-            Watch {anime.title} English Sub & Hindi Dub in 1080p full HD online for free. Instant episode streaming, fast multi-server playback, and episode downloads.
-          </p>
         </div>
       )}
 

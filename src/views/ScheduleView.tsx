@@ -3,7 +3,7 @@ import type { CmsScheduleItem } from '../types/cms';
 import { getCmsSchedule } from '../lib/firestore/cms';
 import { getAllAnimes } from '../lib/firestore/anime';
 import type { Anime } from '../types/anime';
-import { Calendar, Clock, Play, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Filter } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface ScheduleViewProps {
   navigate: (path: string) => void;
@@ -24,8 +24,6 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ navigate, onShowMess
   const [scheduleItems, setScheduleItems] = useState<CmsScheduleItem[]>([]);
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [now, setNow] = useState<Date>(new Date());
 
   // Current day in user timezone
@@ -97,19 +95,12 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ navigate, onShowMess
     }
   };
 
-  // Filter items
-  const filteredItems = scheduleItems.filter((item) => {
-    if (selectedDay !== 'all' && item.dayOfWeek !== selectedDay) return false;
-    if (selectedStatus !== 'all' && item.status !== selectedStatus) return false;
-    return true;
-  });
-
   // Group by day
   const groupedByDay: Record<string, CmsScheduleItem[]> = {};
   for (const day of DAYS_OF_WEEK) {
     groupedByDay[day] = [];
   }
-  for (const item of filteredItems) {
+  for (const item of scheduleItems) {
     if (groupedByDay[item.dayOfWeek]) {
       groupedByDay[item.dayOfWeek].push(item);
     } else {
@@ -173,78 +164,22 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ navigate, onShowMess
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0B1322] border border-white/5 p-3 sm:p-4 rounded-2xl">
-        {/* Day Selector Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={() => setSelectedDay('all')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-              selectedDay === 'all'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            All Days
-          </button>
-          {DAYS_OF_WEEK.map((day) => {
-            const isToday = day === todayDayName;
-            const isSelected = selectedDay === day;
-            return (
-              <button
-                key={day}
-                type="button"
-                onClick={() => setSelectedDay(day)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                    : isToday
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30'
-                    : 'bg-white/5 text-[#94A3B8] hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <span>{day.substring(0, 3)}</span>
-                {isToday && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Status Dropdown */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-[#94A3B8]" />
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-[#050A14] border border-white/10 text-white text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:border-[#1683FF]"
-          >
-            <option value="all">All Statuses</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="released">Released</option>
-            <option value="delayed">Delayed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-      </div>
-
       {/* Schedule Items Grid */}
       {loading ? (
         <div className="py-20 text-center text-xs text-[#94A3B8]">Loading broadcast matrix...</div>
-      ) : filteredItems.length === 0 ? (
+      ) : scheduleItems.length === 0 ? (
         <div className="bg-[#0B1322] border border-white/5 rounded-2xl p-12 text-center text-[#94A3B8] space-y-2">
           <Calendar className="w-8 h-8 text-[#1683FF] mx-auto opacity-60 mb-2" />
           <h3 className="text-base font-bold text-white">No scheduled releases found</h3>
           <p className="text-xs max-w-sm mx-auto">
-            There are no anime releases matching the selected day or status filter.
+            There are currently no scheduled anime broadcasts.
           </p>
         </div>
       ) : (
         <div className="space-y-8">
           {DAYS_OF_WEEK.map((day) => {
             const itemsForDay = groupedByDay[day] || [];
-            if (selectedDay !== 'all' && selectedDay !== day) return null;
-            if (itemsForDay.length === 0 && selectedDay === 'all') return null;
+            if (itemsForDay.length === 0) return null;
 
             const isToday = day === todayDayName;
 

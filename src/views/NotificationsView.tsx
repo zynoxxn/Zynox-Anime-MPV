@@ -74,7 +74,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     }
     if (notif.link) {
       if (notif.link.startsWith('http://') || notif.link.startsWith('https://')) {
-        window.open(notif.link, '_blank', 'noopener,noreferrer');
+        window.location.href = notif.link;
       } else {
         navigate(notif.link);
       }

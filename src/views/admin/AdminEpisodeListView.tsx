@@ -21,6 +21,7 @@ import {
   Server,
   Layers,
   Download,
+  ListPlus,
 } from 'lucide-react';
 
 interface AdminEpisodeListViewProps {
@@ -177,6 +178,25 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
             <button
               type="button"
               onClick={() => {
+                let url = '/admin/episodes/bulk';
+                if (selectedAnimeId !== 'all') {
+                  url += `?animeId=${selectedAnimeId}`;
+                  if (selectedSeason !== 'all') {
+                    url += `&season=${selectedSeason}`;
+                  }
+                }
+                navigate(url);
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-md shadow-cyan-500/20 flex items-center gap-2 transition-all self-start sm:self-auto cursor-pointer"
+              title="Bulk upload multiple episodes at once"
+            >
+              <ListPlus className="w-4 h-4" />
+              <span>Bulk Add</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 let url = '/admin/episodes/new';
                 if (selectedAnimeId !== 'all') {
                   url += `?animeId=${selectedAnimeId}`;
@@ -207,6 +227,11 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
             <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              name="admin_episode_search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               placeholder="Search episodes by title or episode number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -267,24 +292,32 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
         ) : (
           <div className="bg-[#0B1322] border border-white/5 rounded-3xl overflow-hidden">
             <div className="divide-y divide-white/5">
-              {filtered.map((ep) => (
+              {filtered.map((ep) => {
+                const animeObj = animes.find((a) => a.id === ep.animeId || a.slug === ep.animeId);
+                const thumbUrl =
+                  ep.thumbnail ||
+                  animeObj?.banner ||
+                  animeObj?.poster ||
+                  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80';
+
+                return (
                 <div
                   key={ep.id}
                   className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors group"
                 >
                   <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                     <div className="w-14 h-10 rounded-lg bg-[#050A14] border border-white/10 shrink-0 overflow-hidden relative">
-                      {ep.thumbnail ? (
-                        <img
-                          src={ep.thumbnail}
-                          alt={ep.title || 'Ep'}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-cyan-400 font-bold text-xs">
-                          #{ep.episodeNumber}
-                        </div>
-                      )}
+                      <img
+                        src={thumbUrl}
+                        alt={ep.title || 'Ep'}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (animeObj?.poster && target.src !== animeObj.poster) {
+                            target.src = animeObj.poster;
+                          }
+                        }}
+                      />
                     </div>
 
                     <div className="min-w-0 space-y-1">
@@ -312,11 +345,11 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 pt-3 md:pt-0 w-full md:w-auto justify-end border-t border-white/5 md:border-t-0">
                     <button
                       type="button"
                       onClick={() => handleTogglePublish(ep)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         ep.published
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                           : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
@@ -333,7 +366,7 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/downloads?animeId=${ep.animeId}&season=${ep.seasonNumber || 1}`)}
-                      className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black transition-colors"
+                      className="p-1.5 sm:p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black transition-colors cursor-pointer"
                       title="Manage Downloads (Zip, 360p-1080p)"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -342,7 +375,7 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/episodes/edit/${ep.id}`)}
-                      className="p-2 rounded-xl bg-white/5 hover:bg-cyan-500 text-white transition-colors"
+                      className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-cyan-500 text-white transition-colors cursor-pointer"
                       title="Edit Episode"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -351,14 +384,15 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setTargetDeleteEp(ep)}
-                      className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors"
+                      className="p-1.5 sm:p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors cursor-pointer"
                       title="Delete Episode"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

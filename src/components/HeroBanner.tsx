@@ -73,20 +73,21 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
   if (!activeItem) return null;
 
   const displayList = validSlides.slice(0, 6);
+  const rawItem = activeItem as any;
 
   // Normalize image and links for either Anime or CmsHeroBanner
   const bannerImage =
-    activeItem.backgroundImage ||
-    activeItem.banner ||
-    activeItem.posterImage ||
-    activeItem.poster ||
+    rawItem.backgroundImage ||
+    rawItem.banner ||
+    rawItem.posterImage ||
+    rawItem.poster ||
     'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=85';
 
   const title = activeItem.title || 'Featured Anime Spotlight';
   const subtitle =
-    activeItem.subtitle ||
-    (activeItem.rating
-      ? `★ ${activeItem.rating} • ${activeItem.status || 'HD'} • ${activeItem.type || 'Series'}`
+    rawItem.subtitle ||
+    (rawItem.rating
+      ? `★ ${rawItem.rating} • ${rawItem.status || 'HD'} • ${rawItem.type || 'Series'}`
       : 'Trending Spotlight');
 
   const description =
@@ -144,7 +145,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
       {/* Background Image with optimized vivid contrast & localized text gradient */}
       <div className="absolute inset-0">
         <img
-          key={activeItem.id || activeItem.slug || bannerImage}
+          key={rawItem.id || rawItem.slug || bannerImage}
           src={bannerImage}
           alt={title}
           referrerPolicy="no-referrer"
@@ -225,7 +226,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
               className="px-4 py-2 sm:px-5 sm:py-2.5 bg-[#1683FF] hover:bg-[#2196FF] text-white font-semibold text-xs sm:text-sm rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-[#1683FF]/25 hover:scale-105 active:scale-95 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
-              <span>{activeItem.buttonText || 'Watch Now'}</span>
+              <span>{rawItem.buttonText || 'Watch Now'}</span>
             </button>
 
             <button
@@ -238,7 +239,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
               className="px-3.5 py-2 sm:px-4 sm:py-2.5 bg-[#07111F]/80 hover:bg-[#07111F] text-white text-xs sm:text-sm font-semibold rounded-lg transition-all border border-white/10 backdrop-blur-md flex items-center gap-1.5 cursor-pointer hover:border-white/30"
             >
               <Info className="w-3.5 h-3.5" />
-              <span>{activeItem.secondaryButtonText || 'Details'}</span>
+              <span>{rawItem.secondaryButtonText || 'Details'}</span>
             </button>
           </div>
 

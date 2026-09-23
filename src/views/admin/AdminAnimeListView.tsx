@@ -15,11 +15,6 @@ import {
   XCircle,
   AlertCircle,
   Search,
-  SlidersHorizontal,
-  Flame,
-  Star,
-  Sparkles,
-  ExternalLink,
   Download,
 } from 'lucide-react';
 
@@ -72,45 +67,6 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
     } catch (err: any) {
       console.error('Failed to update published status:', err);
       setError('Failed to update published status.');
-    }
-  };
-
-  const handleToggleFlag = async (anime: Anime, flag: 'isTrending' | 'isPopular' | 'isFeatured') => {
-    if (!anime.id) return;
-    try {
-      let currentVal = false;
-      if (flag === 'isFeatured') currentVal = Boolean(anime.isFeatured || anime.featured);
-      else if (flag === 'isTrending') currentVal = Boolean(anime.isTrending || anime.trending);
-      else if (flag === 'isPopular') currentVal = Boolean(anime.isPopular || anime.popular);
-
-      const nextVal = !currentVal;
-      const updatePayload: Record<string, any> = { [flag]: nextVal };
-      if (flag === 'isFeatured') updatePayload.featured = nextVal;
-      if (flag === 'isTrending') updatePayload.trending = nextVal;
-      if (flag === 'isPopular') updatePayload.popular = nextVal;
-
-      // Preserve core identifiers & published status so the Firestore doc is valid and queryable
-      updatePayload.published = anime.published ?? true;
-      if (anime.title) updatePayload.title = anime.title;
-      if (anime.slug) updatePayload.slug = anime.slug;
-
-      await updateAnime(anime.id, updatePayload);
-      if (anime.slug && anime.slug !== anime.id) {
-        try {
-          await updateAnime(anime.slug, updatePayload);
-        } catch {}
-      }
-
-      setAnimes((prev) =>
-        prev.map((a) =>
-          a.id === anime.id || (anime.slug && a.slug === anime.slug)
-            ? { ...a, ...updatePayload }
-            : a
-        )
-      );
-      onShowMessage(`Updated ${flag === 'isFeatured' ? 'Spotlight' : flag} for ${anime.title}.`);
-    } catch (err: any) {
-      setError(`Failed to update ${flag}`);
     }
   };
 
@@ -194,6 +150,11 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
             <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              name="admin_anime_search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               placeholder="Search anime by title or slug..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -269,60 +230,15 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                         <span>•</span>
                         <span className="text-cyan-400">{anime.audioLanguage || 'Hindi Dub'}</span>
                       </div>
-
-                      {/* Flag badges */}
-                      <div className="flex items-center gap-1.5 pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFlag(anime, 'isTrending')}
-                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 font-bold transition-all ${
-                            Boolean(anime.isTrending || anime.trending)
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : 'bg-white/5 text-[#64748B] hover:text-white'
-                          }`}
-                          title="Toggle Trending"
-                        >
-                          <Flame className="w-2.5 h-2.5" />
-                          <span>Trending</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFlag(anime, 'isPopular')}
-                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 font-bold transition-all ${
-                            Boolean(anime.isPopular || anime.popular)
-                              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                              : 'bg-white/5 text-[#64748B] hover:text-white'
-                          }`}
-                          title="Toggle Popular"
-                        >
-                          <Star className="w-2.5 h-2.5" />
-                          <span>Popular</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFlag(anime, 'isFeatured')}
-                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 font-bold transition-all ${
-                            Boolean(anime.isFeatured || anime.featured)
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-white/5 text-[#64748B] hover:text-white'
-                          }`}
-                          title="Toggle Spotlight / Featured"
-                        >
-                          <Sparkles className="w-2.5 h-2.5" />
-                          <span>Spotlight</span>
-                        </button>
-                      </div>
                     </div>
                   </div>
 
                   {/* Right Actions */}
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 pt-3 md:pt-0 w-full md:w-auto justify-end border-t border-white/5 md:border-t-0">
                     <button
                       type="button"
                       onClick={() => handleTogglePublish(anime)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         anime.published
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
                           : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
@@ -339,7 +255,7 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/anime/${anime.id || anime.slug}/episodes`)}
-                      className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="px-2.5 sm:px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <Tv className="w-3.5 h-3.5" />
                       <span>Episodes</span>
@@ -348,7 +264,7 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/downloads?animeId=${anime.id || anime.slug}`)}
-                      className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="px-2.5 sm:px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                       title="Manage Downloads (Zip 1, Zip 2, 360p-1080p)"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -358,7 +274,7 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/anime/edit/${anime.id || anime.slug}`)}
-                      className="p-2 rounded-xl bg-white/5 hover:bg-[#1683FF] text-white transition-colors"
+                      className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-[#1683FF] text-white transition-colors cursor-pointer"
                       title="Edit Anime"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -367,7 +283,7 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setTargetDeleteAnime(anime)}
-                      className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors"
+                      className="p-1.5 sm:p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors cursor-pointer"
                       title="Delete Anime"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

@@ -40,8 +40,11 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const isEditMode = Boolean(animeId);
+  const isSuperAdmin = Boolean(
+    isAdmin || (user?.email && user.email.toLowerCase() === 'zairoxmax2.0@gmail.com')
+  );
 
   // Form States
   const [title, setTitle] = useState('');
@@ -141,7 +144,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
             setSelectedGenres(data.genres || []);
             setGenresInput(data.genres ? data.genres.join(', ') : '');
             setType(data.type || 'TV');
-            setStatus(data.status || 'ongoing');
+            setStatus((data.status as any) || 'ongoing');
             setYear(data.year || 2026);
             setSeason(data.season || 'Winter 2026');
             setAudioLanguage(data.audioLanguage || 'Hindi Dub');
@@ -398,31 +401,37 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
     setError(null);
 
     const trimmedTitle = title.trim();
-    const trimmedSlug = slug.trim().toLowerCase();
-    const trimmedDescription = description.trim();
-    const trimmedPoster = poster.trim();
-    const trimmedBanner = banner.trim();
-
     if (!trimmedTitle) {
-      setError('Title is required.');
+      setActiveSection('basic');
+      setError('Anime Title is required.');
       return;
+    }
+
+    // Auto-derive or clean slug
+    let trimmedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!trimmedSlug) {
+      trimmedSlug = trimmedTitle.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
     }
     if (!trimmedSlug) {
-      setError('Slug is required.');
+      setActiveSection('basic');
+      setError('A valid URL Slug is required.');
       return;
     }
-    if (!/^[a-z0-9-]+$/.test(trimmedSlug)) {
-      setError('Slug must contain only lowercase letters, numbers, and hyphens.');
-      return;
-    }
+    setSlug(trimmedSlug);
+
+    // Fallback poster so creation is never blocked
+    let trimmedPoster = poster.trim();
     if (!trimmedPoster) {
-      setError('Poster URL is required.');
-      return;
+      trimmedPoster = 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80';
+      setPoster(trimmedPoster);
     }
-    if (!trimmedDescription) {
-      setError('Description is required.');
-      return;
+
+    const trimmedDescription = description.trim() || `${trimmedTitle} is a popular anime streaming on ZYNOX ANIME in high definition with Hindi Dub and English Sub.`;
+    if (!description.trim()) {
+      setDescription(trimmedDescription);
     }
+
+    const trimmedBanner = banner.trim();
 
     const parsedGenres = genresInput
       .split(',')
@@ -445,12 +454,12 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
       downloadLinks: validDownloadLinks.length > 0 ? validDownloadLinks : undefined,
       zipDownloads: validZipDownloads.length > 0 ? validZipDownloads : undefined,
       seasonsList: seasonsList.length > 0 ? seasonsList : undefined,
-      genres: parsedGenres.length > 0 ? parsedGenres : ['Action'],
+      genres: parsedGenres.length > 0 ? parsedGenres : ['Action', 'Fantasy'],
       type,
       status,
       year: Number(year) || 2026,
       season: season.trim() || undefined,
-      audioLanguage: audioLanguage.trim() || 'Hindi Dub',
+      audioLanguage: audioLanguage.trim() || 'Hindi Dub & Japanese Sub',
       studio: studio.trim() || undefined,
       totalEpisodes: Number(totalEpisodes) || 12,
       duration: duration.trim() || '24m',
@@ -500,12 +509,23 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
           newId,
           trimmedTitle
         );
-        onShowMessage('Anime added successfully.');
+        onShowMessage('Anime added successfully to database!');
       }
       navigate('/admin/anime');
     } catch (err: any) {
       console.error('Failed to save anime:', err);
-      setError(err.message || 'An unexpected error occurred while saving.');
+      const msg = err?.message || String(err);
+      if (
+        err?.code === 'permission-denied' ||
+        msg.toLowerCase().includes('permission') ||
+        msg.toLowerCase().includes('missing')
+      ) {
+        setError(
+          'Permission Denied: To add anime into the live database, you must be logged in as the admin (zairoxmax2.0@gmail.com).'
+        );
+      } else {
+        setError(msg || 'An unexpected error occurred while saving.');
+      }
     } finally {
       setSaving(false);
     }
@@ -534,11 +554,11 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button
               type="button"
               onClick={() => navigate('/admin/anime')}
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl"
+              className="px-3.5 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -546,7 +566,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
               type="button"
               onClick={handleSubmit}
               disabled={saving}
-              className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 rounded-xl flex items-center gap-2 transition-all"
+              className="px-4 sm:px-5 py-2.5 bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 rounded-xl flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               <span>{isEditMode ? 'Save Anime' : 'Publish Anime'}</span>
@@ -554,25 +574,39 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
+        {/* Admin Authentication Status Banner */}
+        {!isSuperAdmin && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-300 text-xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                {!user
+                  ? 'You are currently not logged in. To publish anime into the live database, please log in with your admin account (zairoxmax2.0@gmail.com).'
+                  : `Logged in as ${user.email}. Only the site admin (zairoxmax2.0@gmail.com) has database write access.`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-all shrink-0 self-start sm:self-auto cursor-pointer"
+            >
+              Sign In as Admin
+            </button>
           </div>
         )}
 
         {/* Section Navigation Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none bg-[#0B1322] border border-white/5 p-2 rounded-2xl">
           {[
-            { id: 'basic', label: '1. Basic Info & Synopsis', icon: Film },
+            { id: 'basic', label: 'Basic Info', icon: Film },
             {
               id: 'seasons',
-              label: `2. Seasons & Franchise (S1, S2...)${seasonsList.length > 0 ? ` (${seasonsList.length})` : ''}`,
+              label: `Seasons${seasonsList.length > 0 ? ` (${seasonsList.length})` : ''}`,
               icon: Layers,
             },
-            { id: 'media', label: '3. Artwork & Downloads', icon: Download },
-            { id: 'schedule', label: '4. Release Schedule & Status', icon: Calendar },
-            { id: 'seo', label: '5. Highlights & SEO Meta', icon: Globe },
+            { id: 'media', label: 'Artwork & Media', icon: Download },
+            { id: 'schedule', label: 'Release Schedule', icon: Calendar },
+            { id: 'seo', label: 'SEO & Highlights', icon: Globe },
           ].map((sec) => {
             const Icon = sec.icon;
             const isCurrent = activeSection === sec.id;
@@ -657,6 +691,38 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                   className="w-full bg-[#050A14] border border-white/10 rounded-2xl p-3.5 text-xs text-white leading-relaxed outline-none focus:border-[#1683FF] resize-none"
                   required
                 />
+              </div>
+
+              {/* Poster Image URL directly in Tab 1 */}
+              <div className="space-y-2 pt-2 border-t border-white/5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#94A3B8]">Poster Image URL *</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!poster) {
+                        setPoster('https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80');
+                      }
+                    }}
+                    className="text-[10px] text-[#1683FF] hover:underline font-semibold"
+                  >
+                    Use Sample Poster URL
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="url"
+                    value={poster}
+                    onChange={(e) => setPoster(e.target.value)}
+                    placeholder="https://... (e.g. anime poster image link)"
+                    className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
+                  />
+                  {poster && (
+                    <div className="w-10 h-14 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-[#050A14]">
+                      <img src={poster} alt="Poster preview" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Genres Tag Picker */}
@@ -1441,6 +1507,26 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
             </div>
           )}
         </form>
+
+        {/* Bottom Save Action Bar */}
+        <div className="bg-[#0B1322] border border-white/5 p-4 rounded-2xl flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/admin/anime')}
+            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-5 sm:px-6 py-2.5 bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 rounded-xl flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{isEditMode ? 'Save Anime Series' : 'Publish Anime Series'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Season Add / Edit Modal */}

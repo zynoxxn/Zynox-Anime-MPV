@@ -10,6 +10,7 @@ import {
   getCmsLanguages,
 } from '../lib/firestore/cms';
 import { AnimeCard } from '../components/AnimeCard';
+import { AnimeGrid } from '../components/AnimeGrid';
 import { AnimeCardSkeleton } from '../components/SkeletonLoader';
 import { usePageSeo } from '../hooks/usePageSeo';
 import {
@@ -30,6 +31,11 @@ import {
   Flame,
   Trophy,
   Tv,
+  Zap,
+  Heart,
+  Clock,
+  CheckCircle2,
+  Check,
 } from 'lucide-react';
 
 interface BrowseViewProps {
@@ -65,7 +71,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   const [sortBy, setSortBy] = useState<any>(initialSort || 'latest');
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showDetailedFilters, setShowDetailedFilters] = useState<boolean>(true);
+  const [showDetailedFilters, setShowDetailedFilters] = useState<boolean>(false);
 
   // Dynamic CMS Taxonomy States
   const [cmsGenres, setCmsGenres] = useState<CmsGenre[]>([]);
@@ -248,18 +254,26 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     }
   };
 
+  const isTrendingMode = sortBy === 'trending' || sortBy === 'popular';
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       {/* Title & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
         <div>
           <h1 className="text-2xl sm:text-4xl font-black text-[#F5F9FF] flex items-center gap-3 tracking-tight">
-            <Compass className="w-7 h-7 text-[#00A8FF]" />
-            <span>Explore Anime Catalog</span>
+            {isTrendingMode ? (
+              <>
+                <Flame className="w-7 h-7 text-orange-500" />
+                <span>Trending Anime</span>
+              </>
+            ) : (
+              <>
+                <Compass className="w-7 h-7 text-[#00A8FF]" />
+                <span>Explore Anime</span>
+              </>
+            )}
           </h1>
-          <p className="text-xs sm:text-sm text-[#A9B8CC] mt-1">
-            Browse our entire library of anime series, movies, and Hindi dubbed releases
-          </p>
         </div>
 
         {/* Search Input */}
@@ -267,6 +281,11 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#6E7F95]" />
           <input
             type="text"
+            name="explore_search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             placeholder="Search by title, Japanese name..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -285,143 +304,181 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
         </div>
       </div>
 
-      {/* QUICK 1-TAP PRESET CHIPS BAR */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-[#A9B8CC] uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-[#00A8FF]" />
-            <span>Quick Filters (1-Tap)</span>
-          </span>
-          <span className="text-[11px] text-[#6E7F95] hidden sm:inline">Tap any pill to filter instantly</span>
+      {/* QUICK FILTERS BAR (Hidden in Trending Mode) */}
+      {!isTrendingMode && (
+        <div className="space-y-2.5 bg-[#081120]/60 border border-white/5 rounded-2xl p-3.5 sm:p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#00A8FF]/15 flex items-center justify-center text-[#00A8FF]">
+                <Sparkles className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-white tracking-wide">
+                Quick Filters
+              </span>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer py-0.5 px-2 rounded-lg hover:bg-rose-500/10"
+                  title="Reset all filters"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset ({activeFiltersCount})</span>
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowDetailedFilters((prev) => !prev)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#00A8FF] hover:text-white transition-colors cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{showDetailedFilters ? 'Hide Details' : 'More Filters'}</span>
+              {showDetailedFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          {/* 1-Tap Filter Chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1. All */}
+            <button
+              type="button"
+              onClick={() => applyPreset('all')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                !hasActiveFilters
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>All</span>
+            </button>
+
+            {/* 2. Hindi Dub */}
+            <button
+              type="button"
+              onClick={() => applyPreset('hindi')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                language === 'Hindi Dub' || language === 'Hindi'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-amber-500/30 hover:border-amber-500/50'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5 text-amber-400" />
+              <span>Hindi Dub</span>
+              {(language === 'Hindi Dub' || language === 'Hindi') && (
+                <Check className="w-3 h-3 text-white stroke-[3]" />
+              )}
+            </button>
+
+            {/* 3. Top Rated */}
+            <button
+              type="button"
+              onClick={() => applyPreset('top-rated')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                sortBy === 'rating'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-yellow-400" />
+              <span>Top Rated</span>
+              {sortBy === 'rating' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 4. TV Series */}
+            <button
+              type="button"
+              onClick={() => applyPreset('tv')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                type.toLowerCase() === 'tv'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Tv className="w-3.5 h-3.5 text-blue-400" />
+              <span>TV Series</span>
+              {type.toLowerCase() === 'tv' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 5. Movies */}
+            <button
+              type="button"
+              onClick={() => applyPreset('movie')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                type.toLowerCase() === 'movie'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Film className="w-3.5 h-3.5 text-purple-400" />
+              <span>Movies</span>
+              {type.toLowerCase() === 'movie' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 6. Action */}
+            <button
+              type="button"
+              onClick={() => applyPreset('action')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                genre.toLowerCase() === 'action'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-yellow-400" />
+              <span>Action</span>
+              {genre.toLowerCase() === 'action' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 7. Romance */}
+            <button
+              type="button"
+              onClick={() => applyPreset('romance')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                genre.toLowerCase() === 'romance'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Heart className="w-3.5 h-3.5 text-pink-400" />
+              <span>Romance</span>
+              {genre.toLowerCase() === 'romance' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 8. Ongoing */}
+            <button
+              type="button"
+              onClick={() => applyPreset('ongoing')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                status.toLowerCase() === 'ongoing'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Ongoing</span>
+              {status.toLowerCase() === 'ongoing' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+
+            {/* 9. Completed */}
+            <button
+              type="button"
+              onClick={() => applyPreset('completed')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                status.toLowerCase() === 'completed'
+                  ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25 border border-[#00A8FF]'
+                  : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/10 hover:border-white/20'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Completed</span>
+              {status.toLowerCase() === 'completed' && <Check className="w-3 h-3 text-white stroke-[3]" />}
+            </button>
+          </div>
         </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => applyPreset('all')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              !hasActiveFilters
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <span>✨ All</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('hindi')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              language === 'Hindi Dub' || language === 'Hindi'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <Mic className="w-3.5 h-3.5 text-amber-400" />
-            <span>Hindi Dub</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('trending')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              sortBy === 'trending'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5 text-orange-400" />
-            <span>Trending</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('top-rated')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              sortBy === 'rating'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <Trophy className="w-3.5 h-3.5 text-yellow-400" />
-            <span>Top Rated</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('tv')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              type.toLowerCase() === 'tv'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <Tv className="w-3.5 h-3.5 text-blue-400" />
-            <span>TV Series</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('movie')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              type.toLowerCase() === 'movie'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <Film className="w-3.5 h-3.5 text-purple-400" />
-            <span>Movies</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('action')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              genre.toLowerCase() === 'action'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <span>⚡ Action</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('romance')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              genre.toLowerCase() === 'romance'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <span>💖 Romance</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('ongoing')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              status.toLowerCase() === 'ongoing'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <span>⏳ Ongoing</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('completed')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-              status.toLowerCase() === 'completed'
-                ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/25'
-                : 'bg-[#0B1322] hover:bg-[#132038] text-[#A9B8CC] hover:text-white border border-white/5'
-            }`}
-          >
-            <span>✅ Completed</span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ACTIVE FILTERS REMOVABLE CHIPS BAR */}
       {hasActiveFilters && (
@@ -550,78 +607,47 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             className="text-xs font-semibold text-rose-400 hover:text-rose-300 ml-1 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-rose-500/10"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>Reset All ({activeFiltersCount})</span>
+            <span>Reset All</span>
           </button>
         </div>
       )}
 
-      {/* DYNAMIC FILTER CONTROLS (EXPANDABLE & HIGH-CONTRAST) */}
-      <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-6 space-y-4 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <SlidersHorizontal className="w-4 h-4 text-[#00A8FF]" />
-            <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
-              Dynamic Filter Controls
-            </span>
-            {activeFiltersCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-[#00A8FF]/20 text-[#00A8FF] text-[11px] font-bold border border-[#00A8FF]/30">
-                {activeFiltersCount} Active
+      {/* DYNAMIC FILTER CONTROLS (EXPANDABLE) */}
+      {showDetailedFilters && (
+        <div className="bg-[#0B1322] border border-white/5 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-[#00A8FF]" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Filter by Details
               </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
+            </div>
             <button
               type="button"
-              onClick={() => setShowDetailedFilters((prev) => !prev)}
-              className="flex items-center gap-1 text-xs font-semibold text-[#A9B8CC] hover:text-white py-1 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+              onClick={handleResetFilters}
+              className="text-xs text-[#F87171] hover:text-rose-300 font-semibold transition-colors flex items-center gap-1 cursor-pointer"
             >
-              <span>{showDetailedFilters ? 'Hide Details' : 'Show Details'}</span>
-              {showDetailedFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset All</span>
             </button>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="hidden sm:flex items-center gap-1.5 text-xs text-[#F87171] hover:text-rose-300 font-semibold transition-colors py-1 px-2.5 rounded-xl hover:bg-rose-500/10 cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset All</span>
-              </button>
-            )}
           </div>
-        </div>
 
-        {/* Filters Grid */}
-        {showDetailedFilters && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
+          {/* Filters Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {/* 1. Genre */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            <div className={`p-2.5 rounded-xl border transition-all ${
               genre !== 'all'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <Tag className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Genre</span>
-                </label>
-                {genre !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setGenre('all')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Clear genre"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <Tag className="w-3 h-3 text-[#00A8FF]" />
+                <span>Genre</span>
+              </label>
               <select
                 value={genre}
                 onChange={(e) => setGenre(e.target.value)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="all">All Genres</option>
                 {cmsGenres.map((g) => (
@@ -633,31 +659,19 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             </div>
 
             {/* 2. Status */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            <div className={`p-2.5 rounded-xl border transition-all ${
               status !== 'all'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <Activity className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Status</span>
-                </label>
-                {status !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setStatus('all')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Clear status"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <Activity className="w-3 h-3 text-[#00A8FF]" />
+                <span>Status</span>
+              </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="all">All Statuses</option>
                 {cmsStatuses.length > 0 ? (
@@ -677,31 +691,19 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             </div>
 
             {/* 3. Type */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            <div className={`p-2.5 rounded-xl border transition-all ${
               type !== 'all'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <Film className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Type</span>
-                </label>
-                {type !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setType('all')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Clear type"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <Film className="w-3 h-3 text-[#00A8FF]" />
+                <span>Type</span>
+              </label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="all">All Types</option>
                 {cmsTypes.length > 0 ? (
@@ -722,31 +724,19 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             </div>
 
             {/* 4. Year */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            <div className={`p-2.5 rounded-xl border transition-all ${
               year !== 'all'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Year</span>
-                </label>
-                {year !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setYear('all')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Clear year"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-[#00A8FF]" />
+                <span>Year</span>
+              </label>
               <select
                 value={year}
                 onChange={(e) => setYear(e.target.value)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="all">All Years</option>
                 {cmsYears.length > 0 ? (
@@ -766,31 +756,19 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             </div>
 
             {/* 5. Audio Language */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            <div className={`p-2.5 rounded-xl border transition-all ${
               language !== 'all'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <Mic className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Audio Language</span>
-                </label>
-                {language !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => setLanguage('all')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Clear audio language"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <Mic className="w-3 h-3 text-[#00A8FF]" />
+                <span>Audio Language</span>
+              </label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="all">All Audio</option>
                 {cmsLanguages.length > 0 ? (
@@ -809,32 +787,20 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
               </select>
             </div>
 
-            {/* 6. Order By */}
-            <div className={`p-2.5 rounded-2xl border transition-all ${
+            {/* 6. Sort By */}
+            <div className={`p-2.5 rounded-xl border transition-all ${
               sortBy !== 'latest'
                 ? 'bg-[#00A8FF]/10 border-[#00A8FF]/40'
-                : 'bg-[#050A14]/70 border-white/5 hover:border-white/10'
+                : 'bg-[#050A14]/70 border-white/5'
             }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A9B8CC] uppercase flex items-center gap-1">
-                  <ArrowUpDown className="w-3 h-3 text-[#00A8FF]" />
-                  <span>Sort By</span>
-                </label>
-                {sortBy !== 'latest' && (
-                  <button
-                    type="button"
-                    onClick={() => setSortBy('latest')}
-                    className="text-[#00A8FF] hover:text-white text-[10px] font-semibold"
-                    title="Reset sort"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
+              <label className="text-[11px] font-bold text-[#A9B8CC] uppercase mb-1.5 flex items-center gap-1">
+                <ArrowUpDown className="w-3 h-3 text-[#00A8FF]" />
+                <span>Sort By</span>
+              </label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="w-full bg-[#081120] text-white border border-white/10 rounded-xl px-2.5 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
+                className="w-full bg-[#081120] text-white border border-white/10 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#00A8FF] transition-all cursor-pointer"
               >
                 <option value="latest">Latest Added</option>
                 <option value="rating">Highest Rating</option>
@@ -844,31 +810,31 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
               </select>
             </div>
           </div>
-        )}
 
-        {/* A-Z Letter Filter Bar */}
-        <div className="pt-2 border-t border-white/5">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <span className="text-[11px] font-bold text-[#6E7F95] px-1 shrink-0 uppercase">
-              A-Z INDEX:
-            </span>
-            {ALPHABET.map((char) => (
-              <button
-                key={char}
-                type="button"
-                onClick={() => setSelectedLetter(char)}
-                className={`min-w-[30px] h-7 px-1.5 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer ${
-                  selectedLetter === char
-                    ? 'bg-[#00A8FF] text-white shadow-md shadow-[#00A8FF]/30'
-                    : 'text-[#A9B8CC] hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                {char.toUpperCase()}
-              </button>
-            ))}
+          {/* A-Z Letter Filter Bar */}
+          <div className="pt-2 border-t border-white/5">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-[11px] font-bold text-[#6E7F95] px-1 shrink-0 uppercase">
+                A-Z:
+              </span>
+              {ALPHABET.map((char) => (
+                <button
+                  key={char}
+                  type="button"
+                  onClick={() => setSelectedLetter(char)}
+                  className={`min-w-[28px] h-6 px-1.5 rounded text-[11px] font-bold shrink-0 transition-all cursor-pointer ${
+                    selectedLetter === char
+                      ? 'bg-[#00A8FF] text-white shadow-sm'
+                      : 'text-[#A9B8CC] hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  {char.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Active Results Counter */}
       <div className="flex items-center justify-between text-xs text-[#A9B8CC] px-1">
@@ -883,49 +849,46 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
         )}
       </div>
 
-      {/* Anime Grid */}
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <AnimeCardSkeleton key={i} />
-          ))}
-        </div>
-      ) : animes.length === 0 ? (
-        <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-10 sm:p-12 text-center text-[#A9B8CC] space-y-4">
-          <Film className="w-12 h-12 text-[#00A8FF] mx-auto opacity-50" />
-          <div className="space-y-1">
-            <h3 className="text-base sm:text-lg font-bold text-white">No anime found matching your criteria</h3>
-            <p className="text-xs sm:text-sm max-w-md mx-auto text-[#6E7F95]">
-              Try changing the search query, selecting different genres, or clearing the active filters.
-            </p>
+      {/* Anime Grid with Shimmer Skeleton Loading */}
+      <AnimeGrid
+        id="browse-anime-grid"
+        animes={animes}
+        loading={loading}
+        skeletonCount={12}
+        columns="browse"
+        navigate={navigate}
+        onShowMessage={onShowMessage}
+        emptyState={
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-10 sm:p-12 text-center text-[#A9B8CC] space-y-4">
+            <Film className="w-12 h-12 text-[#00A8FF] mx-auto opacity-50" />
+            <div className="space-y-1">
+              <h3 className="text-base sm:text-lg font-bold text-white">No anime found matching your criteria</h3>
+              <p className="text-xs sm:text-sm max-w-md mx-auto text-[#6E7F95]">
+                Try changing the search query, selecting different genres, or clearing the active filters.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="px-5 py-2.5 bg-[#00A8FF] hover:bg-[#0090dd] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#00A8FF]/20 cursor-pointer"
+              >
+                Reset All Filters
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleResetFilters();
+                  setLanguage('Hindi Dub');
+                }}
+                className="px-4 py-2.5 bg-[#07111F] hover:bg-[#132038] text-white text-xs font-semibold rounded-xl border border-white/10 transition-colors cursor-pointer"
+              >
+                Show Hindi Dubbed
+              </button>
+            </div>
           </div>
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="px-5 py-2.5 bg-[#00A8FF] hover:bg-[#0090dd] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#00A8FF]/20 cursor-pointer"
-            >
-              Reset All Filters
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                handleResetFilters();
-                setLanguage('Hindi Dub');
-              }}
-              className="px-4 py-2.5 bg-[#07111F] hover:bg-[#132038] text-white text-xs font-semibold rounded-xl border border-white/10 transition-colors cursor-pointer"
-            >
-              Show Hindi Dubbed
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-          {animes.map((anime) => (
-            <AnimeCard key={anime.id || anime.slug} anime={anime} navigate={navigate} onShowMessage={onShowMessage} />
-          ))}
-        </div>
-      )}
+        }
+      />
     </div>
   );
 };

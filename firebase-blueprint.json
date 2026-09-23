@@ -303,6 +303,19 @@
         "sectionsOrder": { "type": "array" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "SitePopupNotice": {
+      "title": "SitePopupNotice",
+      "description": "Website open welcome and announcement popup card with editable header, notice, and footer",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "version": { "type": "string" },
+        "header": { "type": "object" },
+        "notice": { "type": "object" },
+        "footer": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -373,6 +386,10 @@
     "/siteSettings/{configDoc}": {
       "schema": "SiteSettings",
       "description": "Global editable site configuration and branding"
+    },
+    "/cmsConfig/{docId}": {
+      "schema": "SitePopupNotice",
+      "description": "Global CMS configurations including popup notice, footer, and SEO"
     }
   }
 }

@@ -106,17 +106,13 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
     <AdminLayout currentTab="users" navigate={navigate} onShowMessage={onShowMessage}>
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-5 sm:p-6 rounded-2xl">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-purple-400 uppercase tracking-wider">
-              <Users className="w-4 h-4" />
-              <span>User & Account Management</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Registered Users Directory
+            <h1 className="text-xl sm:text-2xl font-black text-white">
+              Users
             </h1>
             <p className="text-xs text-[#94A3B8] mt-1">
-              Total registered users: {users.length} &bull; Manage roles (Admin/User), permissions, and account suspension.
+              {users.length} registered accounts
             </p>
           </div>
         </div>
@@ -152,7 +148,7 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
                     <img
-                      src={u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.uid}`}
+                      src={u.avatar || (u as any).photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.uid}`}
                       alt={u.displayName || 'Avatar'}
                       className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 object-cover shrink-0"
                     />
@@ -179,13 +175,13 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto justify-end border-t border-white/5 sm:border-t-0 pt-2 sm:pt-0">
                     <select
                       value={u.role || 'user'}
                       onChange={(e) =>
                         handleRoleChange(u.uid, u.email || '', e.target.value as UserRole)
                       }
-                      className="bg-[#050A14] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white outline-none focus:border-purple-500"
+                      className="bg-[#050A14] border border-white/10 rounded-xl px-2.5 py-1 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
                     >
                       <option value="user">User</option>
                       <option value="moderator">Moderator</option>
@@ -195,7 +191,7 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
                     <button
                       type="button"
                       onClick={() => handleStatusToggle(u.uid, u.email || '', u.status)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                         u.status === 'suspended'
                           ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30'
                           : 'bg-white/5 text-[#94A3B8] hover:text-white'
@@ -209,7 +205,7 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
                     <button
                       type="button"
                       onClick={() => handleDelete(u.uid, u.email || '')}
-                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors"
+                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer"
                       title="Delete User"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

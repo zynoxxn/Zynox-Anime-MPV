@@ -274,18 +274,14 @@ export function executeDownloadRedirect(
   }
 
   try {
-    // 1. Preferred method: window.open in new tab
-    const win = window.open(finalUrl, '_blank', 'noopener,noreferrer');
-    if (!win || win.closed || typeof win.closed === 'undefined') {
-      // 2. Reliable programmatic anchor click with target="_blank"
-      const link = document.createElement('a');
-      link.href = finalUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+    // Reliable programmatic anchor click with target="_blank"
+    const link = document.createElement('a');
+    link.href = finalUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   } catch (err) {
     console.warn('Download redirect error:', err);
     // Fallback anchor click

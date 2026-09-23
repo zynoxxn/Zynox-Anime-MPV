@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Check, Copy, Share2 } from 'lucide-react';
+import { X, Check, Copy, Share2, Sparkles } from 'lucide-react';
+import { openSystemShare } from '../lib/share';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -13,7 +14,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, title, 
 
   if (!isOpen) return null;
 
-  const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${url}` : url;
+  const fullUrl = typeof window !== 'undefined'
+    ? (url.startsWith('http') ? url : `${window.location.origin}${url}`)
+    : url;
 
   const handleCopy = async () => {
     try {
@@ -26,18 +29,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, title, 
   };
 
   const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title,
-          url: fullUrl,
-        });
-      } catch (e) {
-        // User cancelled or not supported
-      }
-    } else {
-      handleCopy();
-    }
+    await openSystemShare({
+      title,
+      text: `Watch ${title} in Hindi Dub & English Sub on ZYNOX ANIME`,
+      url: fullUrl,
+      onSuccess: () => {
+        onClose();
+      },
+    });
   };
 
   return (
@@ -91,16 +90,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, title, 
           </div>
         </div>
 
-        {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-          <button
-            type="button"
-            onClick={handleNativeShare}
-            className="w-full py-2.5 bg-[#1683FF] hover:bg-[#2196FF] text-white font-medium text-sm rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-[#1683FF]/25"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Open System Share Menu</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleNativeShare}
+          className="w-full py-2.5 bg-gradient-to-r from-[#1683FF] to-[#00CFFF] hover:opacity-95 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#1683FF]/25 cursor-pointer"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Open System Share Menu</span>
+        </button>
       </div>
     </div>
   );

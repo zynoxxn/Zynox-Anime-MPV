@@ -134,6 +134,7 @@ export interface CommentReportItem {
   details?: string;
   status: CommentReportStatus;
   createdAt: any;
+  comment?: any;
 }
 
 export interface UserBlockItem {
@@ -190,6 +191,9 @@ export interface AnimeRequest {
   animeTitle: string;
   reason: string;
   message?: string;
+  title?: string;
+  notes?: string;
+  year?: number | string;
   status: RequestStatus;
   createdAt: any;
 }
@@ -207,6 +211,9 @@ export interface EpisodeReport {
   episodeNumber: number;
   reason: ReportReason;
   details?: string;
+  issueType?: string;
+  description?: string;
+  serverName?: string;
   status: ReportStatus;
   createdAt: any;
 }

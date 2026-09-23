@@ -319,14 +319,14 @@ export const AdminNavigationFooterView: React.FC<AdminNavigationFooterViewProps>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">YouTube Channel URL</label>
+                  <label className="text-xs font-bold text-[#94A3B8]">YouTube Channel URL (Optional)</label>
                   <input
                     type="url"
                     value={(footerConfig as any).youtubeUrl || ''}
                     onChange={(e) =>
                       setFooterConfig({ ...footerConfig, youtubeUrl: e.target.value } as any)
                     }
-                    placeholder="https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0"
+                    placeholder="https://youtube.com/..."
                     className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
                   />
                 </div>

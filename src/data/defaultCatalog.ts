@@ -30,7 +30,7 @@ export const DEFAULT_ANIMES: Anime[] = [
     season: 'Winter 2023',
     studio: 'Project No.9',
     duration: '24 min',
-    trailerUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    trailerUrl: '',
     downloadUrl: 'https://mega.nz/folder/angel-next-door-hindi-dub',
     downloadBatchUrl: 'https://drive.google.com/drive/folders/angel-next-door-batch',
     voiceActors: [
@@ -94,7 +94,7 @@ export const DEFAULT_ANIMES: Anime[] = [
     season: 'Summer 2024',
     studio: 'Doga Kobo',
     duration: '24 min',
-    trailerUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    trailerUrl: '',
     downloadUrl: 'https://mega.nz/folder/alya-russian-hindi-dub',
     downloadBatchUrl: 'https://drive.google.com/drive/folders/alya-russian-batch',
     voiceActors: [
@@ -158,7 +158,7 @@ export const DEFAULT_ANIMES: Anime[] = [
     season: 'Fall 2004',
     studio: 'Studio Pierrot',
     duration: '24 min',
-    trailerUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    trailerUrl: '',
     downloadUrl: 'https://mega.nz/folder/bleach-hindi-dub-complete',
     downloadBatchUrl: 'https://drive.google.com/drive/folders/bleach-batch',
     seasonsList: [

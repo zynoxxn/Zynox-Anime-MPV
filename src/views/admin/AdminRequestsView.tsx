@@ -8,7 +8,7 @@ import {
 } from '../../lib/firestore/community';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { AdminLayout } from './AdminLayout';
-import { Film, Trash2, CheckCircle2, Clock, XCircle, Loader2, MessageSquare } from 'lucide-react';
+import { Film, Trash2, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react';
 
 interface AdminRequestsViewProps {
   navigate: (path: string) => void;
@@ -78,17 +78,13 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
     <AdminLayout currentTab="requests" navigate={navigate} onShowMessage={onShowMessage}>
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-5 sm:p-6 rounded-2xl">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
-              <MessageSquare className="w-4 h-4" />
-              <span>Community Inbox</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Anime Title Requests
+            <h1 className="text-xl sm:text-2xl font-black text-white">
+              Requests
             </h1>
             <p className="text-xs text-[#94A3B8] mt-1">
-              Total requests: {requests.length} &bull; Manage user-submitted anime requests and update fulfillment status.
+              {requests.length} requests submitted
             </p>
           </div>
 

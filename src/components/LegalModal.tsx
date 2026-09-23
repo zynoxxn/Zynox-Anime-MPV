@@ -168,7 +168,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                   <span>Join Our Community &amp; Follow Us</span>
                 </h4>
                 <p className="text-xs">
-                  Stay updated with latest anime releases by joining our Telegram, YouTube, and Instagram.
+                  Stay updated with latest anime releases by joining our Telegram and Instagram.
                 </p>
 
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -180,15 +180,6 @@ export const LegalModal: React.FC<LegalModalProps> = ({
                   >
                     <Send className="w-3.5 h-3.5 fill-black" />
                     <span>Telegram</span>
-                  </a>
-
-                  <a
-                    href="https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-2 bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-red-600/20"
-                  >
-                    <span>YouTube</span>
                   </a>
 
                   <a

@@ -203,10 +203,43 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     </div>
                   </div>
 
-                  {/* Duration Badge bottom right */}
-                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-[9px] font-bold text-[#94A3B8] rounded backdrop-blur-sm">
-                    {ep.duration ? `${Math.floor(ep.duration / 60)}m` : '24m'}
-                  </div>
+                  {/* Duration Badge bottom right (hidden if invalid or NaN) */}
+                  {(() => {
+                    if (!ep.duration) return null;
+                    let formatted = '';
+                    if (typeof ep.duration === 'number' && !isNaN(ep.duration) && ep.duration > 0) {
+                      formatted = ep.duration > 180 ? `${Math.round(ep.duration / 60)}m` : `${ep.duration}m`;
+                    } else {
+                      const str = String(ep.duration).trim();
+                      if (
+                        !str ||
+                        str.toLowerCase().includes('nan') ||
+                        str.toLowerCase().includes('null') ||
+                        str.toLowerCase().includes('undefined')
+                      ) {
+                        return null;
+                      }
+                      if (str.endsWith('m') || str.includes('min')) {
+                        formatted = str;
+                      } else if (str.includes(':')) {
+                        const parts = str.split(':').map(Number);
+                        if (!parts.some(isNaN) && parts.length >= 2) {
+                          formatted = `${parts[0]}m`;
+                        }
+                      } else {
+                        const num = Number(str);
+                        if (!isNaN(num) && num > 0) {
+                          formatted = num > 180 ? `${Math.round(num / 60)}m` : `${num}m`;
+                        }
+                      }
+                    }
+                    if (!formatted || formatted.includes('NaN')) return null;
+                    return (
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-[9px] font-bold text-[#94A3B8] rounded backdrop-blur-sm">
+                        {formatted}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Center: Title & Episode Details */}

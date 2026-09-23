@@ -11,7 +11,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   tagline: 'Your #1 Destination For Free Anime in Multi Audio',
   contactEmail: 'zairoxmax2.0@gmail.com',
   telegramUrl: 'https://t.me/ZynoxAnime',
-  youtubeUrl: 'https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0',
+  youtubeUrl: '',
   instagramUrl: 'https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl',
   installUrl: '',
   discordUrl: 'https://discord.gg/zynox',
@@ -38,10 +38,7 @@ export async function getSiteSettings(): Promise<SiteConfig> {
       if (logoText === 'zynox' || logoText === 'Zynox') {
         logoText = 'ZYNOX';
       }
-      let youtubeUrl = data.youtubeUrl;
-      if (!youtubeUrl || youtubeUrl.includes('@ZynoxAnime')) {
-        youtubeUrl = 'https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0';
-      }
+      const youtubeUrl = data.youtubeUrl || '';
       const instagramUrl = data.instagramUrl || 'https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl';
       const telegramUrl = data.telegramUrl || 'https://t.me/ZynoxAnime';
 

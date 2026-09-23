@@ -27,6 +27,9 @@ import {
   Bell,
   CheckCircle2,
   Sparkles,
+  Megaphone,
+  ListPlus,
+  Compass,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -71,6 +74,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Close mobile drawer on route change or ESC
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
   const navGroups: NavGroup[] = [
     {
       groupTitle: 'Overview',
@@ -79,42 +91,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       ],
     },
     {
-      groupTitle: 'Catalog',
+      groupTitle: 'Anime & Content',
       items: [
-        { id: 'anime', title: 'Anime', path: '/admin/anime', icon: Film },
+        { id: 'anime', title: 'Anime Library', path: '/admin/anime', icon: Film },
         { id: 'episodes', title: 'Episodes', path: '/admin/episodes', icon: Tv },
-        { id: 'downloads', title: 'Add Downloads', path: '/admin/downloads', icon: Download },
-        { id: 'schedule', title: 'Schedule', path: '/admin/schedule', icon: Calendar },
-        { id: 'seasons', title: 'Seasons', path: '/admin/seasons', icon: Calendar },
-        { id: 'taxonomy', title: 'Genres & Studios', path: '/admin/taxonomy', icon: Tag },
+        { id: 'bulk-episodes', title: 'Bulk Episodes', path: '/admin/episodes/bulk', icon: ListPlus },
+        { id: 'downloads', title: 'Downloads', path: '/admin/downloads', icon: Download },
       ],
     },
     {
-      groupTitle: 'Appearance & CMS',
+      groupTitle: 'Configuration',
       items: [
-        { id: 'homepage', title: 'Homepage Sections', path: '/admin/homepage', icon: Sliders },
-        { id: 'hero-banners', title: 'Hero Banners', path: '/admin/hero-banners', icon: Layers },
-        { id: 'navigation-footer', title: 'Nav & Footer', path: '/admin/navigation-footer', icon: Sliders },
-        { id: 'announcements', title: 'Announcements', path: '/admin/announcements', icon: Bell },
-        { id: 'avatars', title: 'Avatars', path: '/admin/avatars', icon: Sparkles },
-      ],
-    },
-    {
-      groupTitle: 'Community',
-      items: [
-        { id: 'comments', title: 'Comments', path: '/admin/comments', icon: MessageSquare },
+        { id: 'notice', title: 'Site Notice', path: '/admin/notice', icon: Megaphone },
         { id: 'requests', title: 'Requests', path: '/admin/requests', icon: FileText },
-        { id: 'reports', title: 'Reports', path: '/admin/reports', icon: HelpCircle },
-      ],
-    },
-    {
-      groupTitle: 'Settings & System',
-      items: [
-        { id: 'settings', title: 'Settings', path: '/admin/settings', icon: Settings },
         { id: 'users', title: 'Users', path: '/admin/users', icon: Users },
-        { id: 'seo', title: 'SEO', path: '/admin/seo', icon: Globe },
-        { id: 'legal-pages', title: 'Legal Pages', path: '/admin/legal-pages', icon: FileText },
-        { id: 'logs', title: 'Audit Logs', path: '/admin/logs', icon: Activity },
+        { id: 'settings', title: 'Settings', path: '/admin/settings', icon: Settings },
       ],
     },
   ];
@@ -126,31 +117,29 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#050A14] text-white flex flex-col">
+    <div className="min-h-screen bg-[#050A14] text-white flex flex-col antialiased selection:bg-[#1683FF] selection:text-white">
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 bg-[#0B1322]/90 backdrop-blur-md border-b border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-[#0B1322]/95 backdrop-blur-md border-b border-white/10 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white"
+            className="lg:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors"
+            title="Toggle Menu"
           >
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
           <div
             onClick={() => navigate('/admin')}
-            className="flex items-center gap-2.5 cursor-pointer group"
+            className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group"
           >
             <div className="w-8 h-8 rounded-xl bg-[#1683FF] flex items-center justify-center text-white shadow-lg shadow-[#1683FF]/30 font-black text-sm">
               Z
             </div>
             <div>
-              <div className="text-sm font-black text-white tracking-wider flex items-center gap-1.5">
-                <span>ZYNOX</span>
-                <span className="text-[10px] bg-[#1683FF]/20 text-[#1683FF] border border-[#1683FF]/30 px-1.5 py-0.2 rounded font-bold">
-                  CMS v2.0
-                </span>
+              <div className="text-xs sm:text-sm font-black text-white tracking-wider">
+                ZYNOX
               </div>
               <div className="text-[10px] text-[#94A3B8]">Admin Panel</div>
             </div>
@@ -161,37 +150,52 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         <button
           type="button"
           onClick={() => setIsSearchOpen(true)}
-          className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-xl bg-[#050A14] border border-white/10 text-[#94A3B8] hover:text-white hover:border-[#1683FF]/50 text-xs transition-all w-72 justify-between"
+          className="hidden sm:flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-xl bg-[#050A14] border border-white/10 text-[#94A3B8] hover:text-white hover:border-[#1683FF]/50 text-xs transition-all w-48 md:w-64 lg:w-72 justify-between"
         >
-          <div className="flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-[#1683FF]" />
-            <span>Search anything in CMS...</span>
+          <div className="flex items-center gap-2 truncate">
+            <Search className="w-3.5 h-3.5 text-[#1683FF] shrink-0" />
+            <span className="truncate">Search CMS...</span>
           </div>
-          <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">
+          <kbd className="hidden md:inline-block px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white shrink-0">
             Ctrl + K
           </kbd>
         </button>
 
         {/* Right Tools */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
+          {/* Mobile Search Button */}
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen(true)}
+            className="sm:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white"
+            title="Search"
+          >
+            <Search className="w-4 h-4 text-[#1683FF]" />
+          </button>
+
+          {/* Quick Add Anime Button */}
           <button
             type="button"
             onClick={() => navigate('/admin/anime/new')}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold shadow-md shadow-[#1683FF]/20 transition-all"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold shadow-md shadow-[#1683FF]/20 transition-all cursor-pointer"
+            title="Add Anime"
           >
             <PlusCircle className="w-3.5 h-3.5" />
-            <span>New Anime</span>
+            <span className="hidden sm:inline">New Anime</span>
           </button>
 
+          {/* Live Site */}
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white text-xs font-semibold border border-white/5 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white text-xs font-semibold border border-white/5 transition-colors"
+            title="Go to Live Site"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Live Site</span>
+            <span className="hidden md:inline">Live Site</span>
           </button>
 
+          {/* Logout */}
           <button
             type="button"
             onClick={handleLogout}
@@ -205,7 +209,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
       {/* Body container */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar (Desktop) */}
+        {/* Left Sidebar (Desktop & Tablet Landscape) */}
         <aside className="hidden lg:flex w-64 bg-[#080E1A] border-r border-white/10 flex-col justify-between overflow-y-auto p-4 shrink-0">
           <div className="space-y-6">
             {navGroups.map((group) => (
@@ -243,35 +247,43 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             ))}
           </div>
 
-          {/* Admin User Footer Badge */}
+          {/* Admin User Footer */}
           <div className="mt-8 pt-4 border-t border-white/5 flex items-center gap-2.5 px-2">
-            <div className="w-8 h-8 rounded-full bg-[#1683FF]/20 text-[#1683FF] border border-[#1683FF]/40 flex items-center justify-center font-bold text-xs">
+            <div className="w-8 h-8 rounded-full bg-[#1683FF]/20 text-[#1683FF] border border-[#1683FF]/40 flex items-center justify-center font-bold text-xs shrink-0">
               <Shield className="w-4 h-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-bold text-white truncate">{user?.email}</div>
-              <div className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Super Admin Active
-              </div>
+              <div className="text-xs font-bold text-white truncate">{user?.email || 'Admin'}</div>
+              <div className="text-[10px] text-[#94A3B8]">Administrator</div>
             </div>
           </div>
         </aside>
 
-        {/* Mobile Drawer */}
+        {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
           <div className="lg:hidden fixed inset-0 z-50 flex">
+            {/* Backdrop */}
             <div
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
               onClick={() => setIsMobileMenuOpen(false)}
             />
-            <div className="relative w-72 bg-[#080E1A] border-r border-white/10 p-4 flex flex-col justify-between overflow-y-auto z-10">
+            {/* Drawer Content */}
+            <div className="relative w-80 max-w-[85vw] bg-[#080E1A] border-r border-white/10 p-4 sm:p-5 flex flex-col justify-between overflow-y-auto z-10 shadow-2xl">
               <div className="space-y-6">
-                <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                  <div className="text-sm font-black text-white">ZYNOX CMS NAVIGATION</div>
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-[#1683FF] flex items-center justify-center text-white font-black text-xs">
+                      Z
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-white tracking-wider">ZYNOX CMS</div>
+                      <div className="text-[10px] text-[#94A3B8]">Admin Navigation</div>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="p-1 text-[#94A3B8] hover:text-white"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -279,7 +291,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
                 {navGroups.map((group) => (
                   <div key={group.groupTitle} className="space-y-1">
-                    <div className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider px-3 py-1">
+                    <div className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider px-2 py-1">
                       {group.groupTitle}
                     </div>
                     {group.items.map((item) => {
@@ -293,31 +305,135 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                             navigate(item.path);
                             setIsMobileMenuOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
                             isActive
                               ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
                               : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
                           }`}
                         >
                           <div className="flex items-center gap-2.5">
-                            <Icon className="w-4 h-4" />
+                            <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
                             <span>{item.title}</span>
                           </div>
+                          {item.badge && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                              {item.badge}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
                   </div>
                 ))}
               </div>
+
+              {/* Mobile Drawer Footer with User & Logout */}
+              <div className="mt-8 pt-4 border-t border-white/10 space-y-3">
+                <div className="flex items-center gap-2.5 px-1">
+                  <div className="w-8 h-8 rounded-full bg-[#1683FF]/20 text-[#1683FF] border border-[#1683FF]/40 flex items-center justify-center font-bold text-xs shrink-0">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-white truncate">{user?.email || 'Admin'}</div>
+                    <div className="text-[10px] text-[#94A3B8]">Administrator</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      navigate('/');
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#94A3B8] hover:text-white border border-white/5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Live Site</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 border border-rose-500/20"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#050A14]">
+        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 bg-[#050A14] pb-24 md:pb-8">
           {children}
         </main>
       </div>
+
+      {/* Mobile Quick Navigation Bottom Bar (Screens < 768px) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#080E1A]/95 backdrop-blur-lg border-t border-white/10 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <button
+          type="button"
+          onClick={() => navigate('/admin')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'dashboard'
+              ? 'text-[#1683FF]'
+              : 'text-[#94A3B8] hover:text-white'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Home</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/admin/anime')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'anime'
+              ? 'text-[#1683FF]'
+              : 'text-[#94A3B8] hover:text-white'
+          }`}
+        >
+          <Film className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Anime</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/admin/episodes')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'episodes'
+              ? 'text-[#1683FF]'
+              : 'text-[#94A3B8] hover:text-white'
+          }`}
+        >
+          <Tv className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Episodes</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate('/admin/downloads')}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'downloads'
+              ? 'text-[#1683FF]'
+              : 'text-[#94A3B8] hover:text-white'
+          }`}
+        >
+          <Download className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Downloads</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[#94A3B8] hover:text-white transition-all"
+        >
+          <Menu className="w-5 h-5" />
+          <span className="text-[10px] font-bold">More</span>
+        </button>
+      </nav>
 
       {/* Global Quick Search Modal */}
       <AdminQuickSearchModal
@@ -328,3 +444,4 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     </div>
   );
 };
+

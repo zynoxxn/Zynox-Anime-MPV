@@ -1,6 +1,6 @@
 import React from 'react';
 import type { SiteConfig } from '../types/library';
-import { Send, Film, Mail, MessageSquare, Monitor, ShieldAlert, Youtube, Instagram } from 'lucide-react';
+import { Send, Film, Mail, MessageSquare, Monitor, ShieldAlert, Instagram } from 'lucide-react';
 
 interface FooterProps {
   siteConfig: SiteConfig;
@@ -16,7 +16,6 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenLegal,
 }) => {
   const telegram = siteConfig.telegramUrl || 'https://t.me/ZynoxAnime';
-  const youtube = siteConfig.youtubeUrl || 'https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0';
   const instagram = siteConfig.instagramUrl || 'https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl';
   const email = siteConfig.contactEmail || 'zairoxmax2.0@gmail.com';
 
@@ -70,15 +69,6 @@ export const Footer: React.FC<FooterProps> = ({
             title="Telegram Channel"
           >
             <Send className="w-4 h-4" />
-          </a>
-          <a
-            href={youtube}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-9 h-9 rounded-xl bg-[#0A1628] border border-white/10 hover:border-red-500 flex items-center justify-center text-[#A9B8CC] hover:text-red-400 transition-colors"
-            title="YouTube Channel"
-          >
-            <Youtube className="w-4 h-4" />
           </a>
           <a
             href={instagram}

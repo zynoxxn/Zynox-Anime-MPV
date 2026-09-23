@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -32,6 +32,7 @@ import { AdminHeroBannersView } from './views/admin/AdminHeroBannersView';
 import { AdminSeasonsView } from './views/admin/AdminSeasonsView';
 import { AdminNavigationFooterView } from './views/admin/AdminNavigationFooterView';
 import { AdminAnnouncementsView } from './views/admin/AdminAnnouncementsView';
+import { AdminNoticeView } from './views/admin/AdminNoticeView';
 import { AdminSeoSettingsView } from './views/admin/AdminSeoSettingsView';
 import { AdminLegalPagesView } from './views/admin/AdminLegalPagesView';
 import { AdminActivityLogsView } from './views/admin/AdminActivityLogsView';
@@ -41,8 +42,12 @@ import { AdminReportsView } from './views/admin/AdminReportsView';
 import { AdminSettingsView } from './views/admin/AdminSettingsView';
 import { AdminAvatarsView } from './views/admin/AdminAvatarsView';
 import { AdminDownloadsView } from './views/admin/AdminDownloadsView';
+import { AdminBulkEpisodeView } from './views/admin/AdminBulkEpisodeView';
 import { AnimeDownloadView } from './views/AnimeDownloadView';
 import { getSiteSettings, DEFAULT_SITE_CONFIG } from './lib/firestore/site-settings';
+import { getCmsPopupNotice, subscribeToCmsPopupNotice, DEFAULT_POPUP_NOTICE } from './lib/firestore/cms';
+import { SiteNoticeModal } from './components/SiteNoticeModal';
+import type { SitePopupNotice } from './types/cms';
 import type { SiteConfig } from './types/library';
 import { CheckCircle2, X } from 'lucide-react';
 
@@ -62,6 +67,8 @@ const AppContent: React.FC = () => {
   const [requestModalOpen, setRequestModalOpen] = useState<boolean>(false);
   const [legalModalOpen, setLegalModalOpen] = useState<boolean>(false);
   const [legalModalTab, setLegalModalTab] = useState<LegalTab>('about');
+  const [popupNotice, setPopupNotice] = useState<SitePopupNotice>(DEFAULT_POPUP_NOTICE);
+  const [popupNoticeOpen, setPopupNoticeOpen] = useState<boolean>(false);
 
   // Sync route changes with browser history
   const navigate = useCallback((path: string) => {
@@ -77,6 +84,14 @@ const AppContent: React.FC = () => {
       setCurrentPath(`${window.location.pathname}${window.location.search}` || '/');
     };
 
+    // Remove any historical search items from storage
+    try {
+      localStorage.removeItem('search_history');
+      localStorage.removeItem('zynox_search_history');
+      localStorage.removeItem('recent_searches');
+      localStorage.removeItem('zynox_recent_searches');
+    } catch {}
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -85,6 +100,154 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     getSiteSettings().then((cfg) => setSiteConfig(cfg));
   }, []);
+
+  // Tracks whether the user dismissed the notice during this active tab browsing session
+  const hasDismissedThisVisitRef = useRef(false);
+  // Tracks whether the entrance popup has already been shown
+  const hasShownEntrancePopupRef = useRef(false);
+  // Records the exact timestamp when user entered the website
+  const siteEntryTimeRef = useRef<number>(Date.now());
+  // Tracks current route path in a ref so navigation doesn't disrupt the entrance timer
+  const currentPathRef = useRef(currentPath);
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
+
+  // Helper to check if a notice version was explicitly dismissed for 24h via "Don't show again today"
+  const isNoticeDismissedForToday = useCallback((noticeData: SitePopupNotice): boolean => {
+    try {
+      const dismissedVer = localStorage.getItem('zynox_popup_notice_ver');
+      const dismissedTimeStr = localStorage.getItem('zynox_popup_notice_time');
+      const currentVer = noticeData.version || '1.0';
+
+      if (dismissedVer === currentVer && dismissedTimeStr) {
+        const dismissedTime = parseInt(dismissedTimeStr, 10);
+        const now = Date.now();
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        if (now - dismissedTime < oneDayMs) {
+          return true;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }, []);
+
+  // Real-time synchronization and display of Website Entrance Pop-up Card Notice (5 to 7 seconds after entering)
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    const checkAndDisplayNotice = (noticeData: SitePopupNotice, isImmediate = false) => {
+      setPopupNotice(noticeData);
+
+      // If disabled by admin, don't show
+      if (!noticeData.enabled) {
+        setPopupNoticeOpen(false);
+        return;
+      }
+
+      // If user closed it in this active session, don't keep popping up on every internal link click
+      if (hasDismissedThisVisitRef.current) {
+        return;
+      }
+
+      // If user checked "Don't show again today", honor the 24h suppression
+      if (isNoticeDismissedForToday(noticeData)) {
+        return;
+      }
+
+      // If entrance popup was already displayed in this visit and this is not a manual/admin trigger, do not show again
+      if (hasShownEntrancePopupRef.current && !isImmediate) {
+        return;
+      }
+
+      // Calculate delay based on website entrance timestamp (defaults to 6s, i.e. 5-7 seconds after website entry)
+      const targetDelaySec = noticeData.displayDelaySeconds ?? 6;
+      const targetDelayMs = targetDelaySec * 1000;
+      const elapsed = Date.now() - siteEntryTimeRef.current;
+      const remainingDelay = isImmediate ? 0 : Math.max(0, targetDelayMs - elapsed);
+
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const [rawPath] = (currentPathRef.current || '').split('?');
+        // Do NOT pop up over the admin dashboard
+        if (rawPath.startsWith('/admin')) {
+          return;
+        }
+        if (hasDismissedThisVisitRef.current || isNoticeDismissedForToday(noticeData)) {
+          return;
+        }
+        hasShownEntrancePopupRef.current = true;
+        setPopupNoticeOpen(true);
+      }, remainingDelay);
+    };
+
+    // 1. Subscribe to real-time Firestore notice configuration
+    const unsubscribe = subscribeToCmsPopupNotice((liveNotice) => {
+      checkAndDisplayNotice(liveNotice, false);
+    });
+
+    // 2. Listen for broadcast events when Admin saves or updates in same window
+    const handleBroadcastUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<SitePopupNotice>;
+      if (customEvent.detail) {
+        hasDismissedThisVisitRef.current = false;
+        hasShownEntrancePopupRef.current = false;
+        checkAndDisplayNotice(customEvent.detail, true);
+      }
+    };
+
+    // 3. Listen for manual open trigger (e.g. from Admin Test button)
+    const handleManualOpen = () => {
+      hasDismissedThisVisitRef.current = false;
+      hasShownEntrancePopupRef.current = true;
+      setPopupNoticeOpen(true);
+    };
+
+    window.addEventListener('zynox:notice-updated', handleBroadcastUpdate);
+    window.addEventListener('zynox:open-notice', handleManualOpen);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener('zynox:notice-updated', handleBroadcastUpdate);
+      window.removeEventListener('zynox:open-notice', handleManualOpen);
+    };
+  }, [isNoticeDismissedForToday]);
+
+  // If user navigated away from /admin back to site and entrance popup hasn't been shown yet
+  useEffect(() => {
+    const [rawPath] = currentPath.split('?');
+    if (
+      !rawPath.startsWith('/admin') &&
+      !hasShownEntrancePopupRef.current &&
+      !hasDismissedThisVisitRef.current &&
+      popupNotice.enabled &&
+      !isNoticeDismissedForToday(popupNotice)
+    ) {
+      const targetDelayMs = (popupNotice.displayDelaySeconds ?? 6) * 1000;
+      const elapsed = Date.now() - siteEntryTimeRef.current;
+      if (elapsed >= targetDelayMs) {
+        hasShownEntrancePopupRef.current = true;
+        setPopupNoticeOpen(true);
+      }
+    }
+  }, [currentPath, popupNotice, isNoticeDismissedForToday]);
+
+  const handleClosePopupNotice = useCallback(
+    (dontShowAgainToday?: boolean) => {
+      setPopupNoticeOpen(false);
+      hasDismissedThisVisitRef.current = true;
+      try {
+        if (dontShowAgainToday) {
+          localStorage.setItem('zynox_popup_notice_ver', popupNotice.version || '1.0');
+          localStorage.setItem('zynox_popup_notice_time', Date.now().toString());
+        }
+      } catch {}
+    },
+    [popupNotice.version]
+  );
 
   const showToast = useCallback((msg: string) => {
     const id = Date.now().toString();
@@ -111,14 +274,18 @@ const AppContent: React.FC = () => {
     if (path === '/' || path === '') {
       return <HomeView navigate={navigate} onShowMessage={showToast} />;
     }
-    if (path === '/browse' || path === '/search') {
+    if (path === '/schedule' || (path === '/browse' && searchParams.get('sort') === 'schedule')) {
+      return <ScheduleView key="schedule-view" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/browse' || path === '/search' || path === '/genres' || path.startsWith('/genre/')) {
+      const genreFromPath = path.startsWith('/genre/') ? decodeURIComponent(path.replace('/genre/', '')) : '';
       return (
         <BrowseView
-          key={`browse-${searchParams.toString()}`}
+          key={`browse-${genreFromPath || searchParams.toString()}`}
           navigate={navigate}
           onShowMessage={showToast}
           initialQuery={searchParams.get('q') || ''}
-          initialGenre={searchParams.get('genre') || 'all'}
+          initialGenre={genreFromPath || searchParams.get('genre') || 'all'}
           initialType={searchParams.get('type') || 'all'}
           initialStatus={searchParams.get('status') || 'all'}
           initialYear={searchParams.get('year') || 'all'}
@@ -184,6 +351,9 @@ const AppContent: React.FC = () => {
     if (path === '/admin/episodes') {
       return <AdminEpisodeListView key="admin-episodes-list" navigate={navigate} onShowMessage={showToast} />;
     }
+    if (path === '/admin/episodes/bulk' || path === '/admin/episodes/bulk-add') {
+      return <AdminBulkEpisodeView key="admin-episodes-bulk" navigate={navigate} onShowMessage={showToast} />;
+    }
     if (path.startsWith('/admin/anime/') && path.endsWith('/episodes')) {
       const animeId = path.replace('/admin/anime/', '').replace('/episodes', '');
       return <AdminEpisodeListView key={`admin-anime-episodes-${animeId}`} animeId={animeId} navigate={navigate} onShowMessage={showToast} />;
@@ -218,6 +388,9 @@ const AppContent: React.FC = () => {
     }
     if (path === '/admin/announcements' || path === '/admin/announcement') {
       return <AdminAnnouncementsView key="admin-announcements" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/admin/notice' || path === '/admin/popup-notice') {
+      return <AdminNoticeView key="admin-notice" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/avatars' || path === '/admin/avatar') {
       return <AdminAvatarsView key="admin-avatars" navigate={navigate} onShowMessage={showToast} />;
@@ -385,27 +558,42 @@ const AppContent: React.FC = () => {
         </div>
       )}
 
-      {/* Persistent App Header */}
-      <Header
-        currentPath={currentPath}
-        navigate={navigate}
-        onShowMessage={showToast}
-      />
+      {/* Main Page Layout Wrapper (Applies smooth glass blur when popup notice is open) */}
+      <div
+        className={`flex flex-col flex-1 transition-[filter] duration-300 ${
+          popupNoticeOpen ? 'filter blur-[6px] pointer-events-none select-none' : ''
+        }`}
+      >
+        {/* Persistent App Header */}
+        <Header
+          currentPath={currentPath}
+          navigate={navigate}
+          onShowMessage={showToast}
+        />
 
-      {/* Main Viewport */}
-      <main className="flex-1 pt-16 md:pt-[72px]">
-        {renderRoute()}
-      </main>
+        {/* Main Viewport */}
+        <main className="flex-1 pt-16 md:pt-[72px]">
+          {renderRoute()}
+        </main>
 
-      {/* Upgraded Footer */}
-      <Footer
-        siteConfig={siteConfig}
-        navigate={navigate}
-        onRequestAnimeClick={() => setRequestModalOpen(true)}
-        onOpenLegal={(tab) => {
-          setLegalModalTab(tab);
-          setLegalModalOpen(true);
-        }}
+        {/* Upgraded Footer */}
+        <Footer
+          siteConfig={siteConfig}
+          navigate={navigate}
+          onRequestAnimeClick={() => setRequestModalOpen(true)}
+          onOpenLegal={(tab) => {
+            setLegalModalTab(tab);
+            setLegalModalOpen(true);
+          }}
+        />
+      </div>
+
+      {/* Website Open Notice Pop-up Card */}
+      <SiteNoticeModal
+        isOpen={popupNoticeOpen}
+        onClose={handleClosePopupNotice}
+        notice={popupNotice}
+        onNavigate={navigate}
       />
 
       {/* Legal & About Modal */}

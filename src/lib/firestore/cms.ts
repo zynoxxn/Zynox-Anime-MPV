@@ -9,6 +9,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type {
@@ -26,6 +27,7 @@ import type {
   CmsNavigationItem,
   CmsFooterConfig,
   CmsAnnouncement,
+  SitePopupNotice,
   CmsSeoSettings,
   CmsSiteSettings,
   CmsLegalPages,
@@ -73,20 +75,25 @@ function sanitize<T extends Record<string, any>>(obj: T): Record<string, any> {
 // ==========================================
 export const DEFAULT_GENRES: CmsGenre[] = [
   { id: 'action', name: 'Action', slug: 'action', description: 'High-octane fights, battles, and intense action.', displayOrder: 1, enabled: true },
-  { id: 'adventure', name: 'Adventure', slug: 'adventure', description: 'Journeys into unknown worlds and epic quests.', displayOrder: 2, enabled: true },
-  { id: 'comedy', name: 'Comedy', slug: 'comedy', description: 'Laughs, satire, gag humor, and fun.', displayOrder: 3, enabled: true },
-  { id: 'drama', name: 'Drama', slug: 'drama', description: 'Emotional stories with character depth.', displayOrder: 4, enabled: true },
-  { id: 'fantasy', name: 'Fantasy', slug: 'fantasy', description: 'Magical powers, mythical beasts, and wonder.', displayOrder: 5, enabled: true },
-  { id: 'isekai', name: 'Isekai', slug: 'isekai', description: 'Reincarnated or transported to another realm.', displayOrder: 6, enabled: true },
-  { id: 'mystery', name: 'Mystery', slug: 'mystery', description: 'Puzzles, detective work, and suspense.', displayOrder: 7, enabled: true },
-  { id: 'romance', name: 'Romance', slug: 'romance', description: 'Heartfelt relationships and romantic tension.', displayOrder: 8, enabled: true },
-  { id: 'sci-fi', name: 'Sci-Fi', slug: 'sci-fi', description: 'Futuristic technology, space, and mecha.', displayOrder: 9, enabled: true },
-  { id: 'shounen', name: 'Shounen', slug: 'shounen', description: 'Exciting battles, friendship, and determination.', displayOrder: 10, enabled: true },
-  { id: 'sports', name: 'Sports', slug: 'sports', description: 'Athletic competitions, teamwork, and rivalries.', displayOrder: 11, enabled: true },
+  { id: 'romance', name: 'Romance', slug: 'romance', description: 'Heartfelt relationships and romantic tension.', displayOrder: 2, enabled: true },
+  { id: 'fantasy', name: 'Fantasy', slug: 'fantasy', description: 'Magical powers, mythical beasts, and wonder.', displayOrder: 3, enabled: true },
+  { id: 'comedy', name: 'Comedy', slug: 'comedy', description: 'Laughs, satire, gag humor, and fun.', displayOrder: 4, enabled: true },
+  { id: 'drama', name: 'Drama', slug: 'drama', description: 'Emotional stories with character depth.', displayOrder: 5, enabled: true },
+  { id: 'sci-fi', name: 'Sci-Fi', slug: 'sci-fi', description: 'Futuristic technology, space, and mecha.', displayOrder: 6, enabled: true },
+  { id: 'isekai', name: 'Isekai', slug: 'isekai', description: 'Reincarnated or transported to another realm.', displayOrder: 7, enabled: true },
+  { id: 'shounen', name: 'Shounen', slug: 'shounen', description: 'Exciting battles, friendship, and determination.', displayOrder: 8, enabled: true },
+  { id: 'sports', name: 'Sports', slug: 'sports', description: 'Athletic competitions, teamwork, and rivalries.', displayOrder: 9, enabled: true },
+  { id: 'hentai', name: 'Hentai', slug: 'hentai', description: 'Adult anime series, 18+ uncensored content and animation.', displayOrder: 10, enabled: true },
+  { id: 'adventure', name: 'Adventure', slug: 'adventure', description: 'Journeys into unknown worlds and epic quests.', displayOrder: 11, enabled: true },
   { id: 'supernatural', name: 'Supernatural', slug: 'supernatural', description: 'Ghosts, spirits, deities, and occult forces.', displayOrder: 12, enabled: true },
-  { id: 'thriller', name: 'Thriller', slug: 'thriller', description: 'Psychological tension and edge-of-seat thrills.', displayOrder: 13, enabled: true },
+  { id: 'mystery', name: 'Mystery', slug: 'mystery', description: 'Puzzles, detective work, and suspense.', displayOrder: 13, enabled: true },
   { id: 'slice-of-life', name: 'Slice of Life', slug: 'slice-of-life', description: 'Everyday life, school days, and calming stories.', displayOrder: 14, enabled: true },
   { id: 'horror', name: 'Horror', slug: 'horror', description: 'Gore, fear, psychological terror, and eerie dark themes.', displayOrder: 15, enabled: true },
+  { id: 'thriller', name: 'Thriller', slug: 'thriller', description: 'Psychological tension and edge-of-seat thrills.', displayOrder: 16, enabled: true },
+  { id: 'ecchi', name: 'Ecchi', slug: 'ecchi', description: 'Mild adult themes, fan service, and comedy.', displayOrder: 17, enabled: true },
+  { id: 'mecha', name: 'Mecha', slug: 'mecha', description: 'Giant robots, mechanical suits, and tactical combat.', displayOrder: 18, enabled: true },
+  { id: 'psychological', name: 'Psychological', slug: 'psychological', description: 'Mind games, manipulation, and intense thought battles.', displayOrder: 19, enabled: true },
+  { id: 'martial-arts', name: 'Martial Arts', slug: 'martial-arts', description: 'Hand-to-hand combat, kung fu, karate, and dojo rivalries.', displayOrder: 20, enabled: true },
 ];
 
 export async function getCmsGenres(): Promise<CmsGenre[]> {
@@ -653,7 +660,6 @@ export const DEFAULT_FOOTER_CONFIG: CmsFooterConfig = {
   disclaimerText: 'ZYNOX ANIME does not host any media files on its servers. All videos are embedded from authorized third-party video storage providers.',
   socialLinks: [
     { platform: 'telegram', url: 'https://t.me/ZynoxAnime' },
-    { platform: 'youtube', url: 'https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0' },
     { platform: 'instagram', url: 'https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl' },
     { platform: 'discord', url: 'https://discord.gg/zynox' },
     { platform: 'email', url: 'mailto:zairoxmax2.0@gmail.com' },
@@ -769,6 +775,142 @@ export async function deleteCmsAnnouncement(id: string): Promise<void> {
 }
 
 // ==========================================
+// 14B. WEBSITE OPEN POPUP NOTICE CARD
+// ==========================================
+export const DEFAULT_POPUP_NOTICE: SitePopupNotice = {
+  id: 'popup-notice-config',
+  enabled: true,
+  version: '1.0',
+  displayDelaySeconds: 6, // 5 to 7 seconds after entering website
+  header: {
+    title: 'Notice',
+    titleColor: '#FFFFFF',
+    badgeText: '',
+    icon: 'megaphone',
+    themeColor: 'blue',
+  },
+  notice: {
+    text: 'Watch and download your favorite anime in Hindi Dub & Multi Audio in 1080p Ultra HD.\n\nJoin our Telegram channel for regular updates and new episode releases.',
+    highlightText: '',
+    imageUrl: '',
+  },
+  footer: {
+    noteText: '',
+    primaryButtonText: 'Join Telegram',
+    primaryButtonUrl: 'https://t.me/ZynoxAnime',
+    secondaryButtonText: 'Continue',
+    showDontShowAgain: true,
+  },
+};
+
+export async function getCmsPopupNotice(): Promise<SitePopupNotice> {
+  try {
+    const docRef = doc(db, CMS_CONFIG, 'popupNotice');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as Partial<SitePopupNotice>;
+      return {
+        ...DEFAULT_POPUP_NOTICE,
+        ...data,
+        header: {
+          ...DEFAULT_POPUP_NOTICE.header,
+          ...(data.header || {}),
+        },
+        notice: {
+          ...DEFAULT_POPUP_NOTICE.notice,
+          ...(data.notice || {}),
+        },
+        footer: {
+          ...DEFAULT_POPUP_NOTICE.footer,
+          ...(data.footer || {}),
+        },
+      };
+    }
+
+    // Fallback: also check siteSettings collection
+    const altDocRef = doc(db, 'siteSettings', 'popupNotice');
+    const altSnap = await getDoc(altDocRef);
+    if (altSnap.exists()) {
+      const data = altSnap.data() as Partial<SitePopupNotice>;
+      return {
+        ...DEFAULT_POPUP_NOTICE,
+        ...data,
+        header: { ...DEFAULT_POPUP_NOTICE.header, ...(data.header || {}) },
+        notice: { ...DEFAULT_POPUP_NOTICE.notice, ...(data.notice || {}) },
+        footer: { ...DEFAULT_POPUP_NOTICE.footer, ...(data.footer || {}) },
+      };
+    }
+  } catch (err) {
+    console.warn('Failed to get CMS popup notice, using defaults:', err);
+  }
+  return DEFAULT_POPUP_NOTICE;
+}
+
+export async function saveCmsPopupNotice(notice: SitePopupNotice): Promise<void> {
+  try {
+    const docRef = doc(db, CMS_CONFIG, 'popupNotice');
+    await setDoc(docRef, sanitize(notice), { merge: true });
+
+    // Also mirror to siteSettings for maximum resilience
+    try {
+      const altDocRef = doc(db, 'siteSettings', 'popupNotice');
+      await setDoc(altDocRef, sanitize(notice), { merge: true });
+    } catch {
+      // ignore mirror error
+    }
+  } catch (err) {
+    console.error('Failed to save popup notice config:', err);
+    throw err;
+  }
+}
+
+/**
+ * Real-time listener for site entrance popup notice.
+ * Automatically triggers whenever admin updates the notice in CMS.
+ */
+export function subscribeToCmsPopupNotice(
+  callback: (notice: SitePopupNotice) => void
+): () => void {
+  try {
+    const docRef = doc(db, CMS_CONFIG, 'popupNotice');
+    return onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<SitePopupNotice>;
+          callback({
+            ...DEFAULT_POPUP_NOTICE,
+            ...data,
+            header: {
+              ...DEFAULT_POPUP_NOTICE.header,
+              ...(data.header || {}),
+            },
+            notice: {
+              ...DEFAULT_POPUP_NOTICE.notice,
+              ...(data.notice || {}),
+            },
+            footer: {
+              ...DEFAULT_POPUP_NOTICE.footer,
+              ...(data.footer || {}),
+            },
+          });
+        } else {
+          callback(DEFAULT_POPUP_NOTICE);
+        }
+      },
+      (err) => {
+        console.warn('Popup notice snapshot listener error:', err);
+        callback(DEFAULT_POPUP_NOTICE);
+      }
+    );
+  } catch (err) {
+    console.warn('Failed to attach popup notice snapshot listener:', err);
+    callback(DEFAULT_POPUP_NOTICE);
+    return () => {};
+  }
+}
+
+// ==========================================
 // 15. SEO SETTINGS CMS
 // ==========================================
 export const DEFAULT_SEO_SETTINGS: CmsSeoSettings = {
@@ -871,7 +1013,6 @@ Have questions, suggestions, or need assistance? We are here to help!
 
 - **Email Support**: [zairoxmax2.0@gmail.com](mailto:zairoxmax2.0@gmail.com)
 - **Telegram Channel**: [https://t.me/ZynoxAnime](https://t.me/ZynoxAnime)
-- **YouTube Channel**: [https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0](https://youtube.com/@neox_xn?si=qUlnuIAFmgaCgtv0)
 - **Instagram**: [https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl](https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl)
 - **Discord Community**: [https://discord.gg/zynox](https://discord.gg/zynox)
 

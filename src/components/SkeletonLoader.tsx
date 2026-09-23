@@ -1,23 +1,67 @@
 import React from 'react';
 
 /**
- * Single Portrait Anime Card Skeleton (used in Trending, Popular, Explore, Related grids)
+ * Single Portrait Anime Card Skeleton with Shimmer Wave Animation
+ * (used in Trending, Popular, Explore, Browse, and Related grids)
  */
-export const AnimeCardSkeleton: React.FC = () => (
-  <div className="flex flex-col animate-pulse select-none">
-    {/* 2:3 Aspect Ratio Poster */}
-    <div className="relative aspect-[2/3] bg-[#081426] rounded-lg sm:rounded-xl border border-white/5 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-      {/* Top right type tag placeholder */}
-      <div className="absolute top-1.5 right-1.5 w-7 h-3.5 bg-white/10 rounded" />
+export const AnimeCardSkeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div className={`flex flex-col select-none group/skel ${className}`}>
+    {/* 2:3 Aspect Ratio Poster with shimmering gradient wave */}
+    <div className="relative aspect-[2/3] bg-[#081426] rounded-lg sm:rounded-xl border border-white/5 overflow-hidden shadow-sm">
+      {/* Subtle depth gradient backdrop */}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#050A14] via-transparent to-black/20" />
+
+      {/* Shimmer sweep effect */}
+      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none" />
+
+      {/* Top right type/season tag placeholder */}
+      <div className="absolute top-1.5 right-1.5 w-6 h-3.5 bg-white/10 rounded border border-white/5" />
+
+      {/* Bottom left rating badge placeholder matching AnimeCard */}
+      <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 border border-white/10">
+        <div className="w-2.5 h-2.5 rounded-full bg-amber-400/40" />
+        <div className="w-4 h-2 bg-white/20 rounded" />
+      </div>
     </div>
-    {/* Title & Metadata below poster */}
+
+    {/* Title & Metadata below poster with shimmer */}
     <div className="pt-2 space-y-1.5">
-      <div className="h-3 sm:h-3.5 bg-white/10 rounded w-4/5" />
-      <div className="h-2 sm:h-2.5 bg-white/5 rounded w-1/2" />
+      <div className="relative h-3 sm:h-3.5 bg-white/10 rounded w-4/5 overflow-hidden">
+        <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+      </div>
+      <div className="relative h-2 sm:h-2.5 bg-white/5 rounded w-1/3 overflow-hidden">
+        <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      </div>
     </div>
   </div>
 );
+
+/**
+ * Grid of Anime Card Skeletons
+ */
+export const AnimeGridSkeleton: React.FC<{
+  count?: number;
+  columns?: 'home' | 'browse' | 'default';
+  className?: string;
+}> = ({
+  count = 12,
+  columns = 'default',
+  className = '',
+}) => {
+  const gridColsClass =
+    className ||
+    (columns === 'home'
+      ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3'
+      : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4');
+
+  return (
+    <div className={gridColsClass}>
+      {Array.from({ length: count }).map((_, i) => (
+        <AnimeCardSkeleton key={`anime-card-skel-${i}`} />
+      ))}
+    </div>
+  );
+};
 
 /**
  * Landscape Episode Card Skeleton (Desktop 16:9 card used in Latest Episodes & Scheduled Anime)
@@ -181,11 +225,7 @@ export const HomeSectionsSkeleton: React.FC = () => (
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
-        {Array.from({ length: 7 }).map((_, i) => (
-          <AnimeCardSkeleton key={`explore-skel-${i}`} />
-        ))}
-      </div>
+      <AnimeGridSkeleton columns="home" count={14} />
     </section>
   </div>
 );

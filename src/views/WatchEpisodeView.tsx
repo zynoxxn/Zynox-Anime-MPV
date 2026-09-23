@@ -19,6 +19,7 @@ import { validateVideoUrl, extractIframeSrc, transformStreamUrl } from '../lib/v
 import { AutoNextModal } from '../components/AutoNextModal';
 import { ReportEpisodeModal } from '../components/ReportEpisodeModal';
 import { ShareModal } from '../components/ShareModal';
+import { openSystemShare } from '../lib/share';
 import { DownloadModal } from '../components/DownloadModal';
 import { EpisodeSelector } from '../components/EpisodeSelector';
 import { AnimeCard } from '../components/AnimeCard';
@@ -50,10 +51,10 @@ import {
   Download,
   Bookmark,
   Shield,
-  Sparkles,
   Info,
   Layers,
   ExternalLink,
+  Star,
 } from 'lucide-react';
 
 interface WatchEpisodeViewProps {
@@ -77,7 +78,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [allEpisodes, setAllEpisodes] = useState<Episode[]>([]);
   const [relatedAnimes, setRelatedAnimes] = useState<Anime[]>([]);
   const [watchedEpNumbers, setWatchedEpNumbers] = useState<number[]>([]);
-  const [selectedSourceIndex, setSelectedSourceIndex] = useState<number>(0);
+  const [selectedCategory, setSelectedCategory] = useState<'sub' | 'dub'>('sub');
+  const [selectedServerIndex, setSelectedServerIndex] = useState<number>(0);
   const [selectedSourceType, setSelectedSourceType] = useState<SourceType>('primary');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,12 +87,33 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [videoError, setVideoError] = useState<boolean>(false);
   const [, setIframeLoaded] = useState<boolean>(false);
 
+  const handleSelectStream = (category: 'sub' | 'dub', serverIndex: number) => {
+    setSelectedCategory(category);
+    setSelectedServerIndex(serverIndex);
+    setSelectedSourceType('primary');
+    setIframeError(false);
+    setVideoError(false);
+    setIframeLoaded(false);
+  };
+
   // Modals & AutoNext state
   const [autoNextOpen, setAutoNextOpen] = useState<boolean>(false);
   const [reportOpen, setReportOpen] = useState<boolean>(false);
   const [shareOpen, setShareOpen] = useState<boolean>(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState<boolean>(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
+
+  const handleShare = () => {
+    const shareTitle = `${anime?.title || 'Anime'} - Episode ${episode?.episodeNumber || episodeNumberOrId}`;
+    const shareText = `Watch ${anime?.title || 'Anime'} Episode ${episode?.episodeNumber || episodeNumberOrId} in Hindi Dub & English Sub on ZYNOX ANIME`;
+    openSystemShare({
+      title: shareTitle,
+      text: shareText,
+      url: typeof window !== 'undefined' ? window.location.href : '',
+      onShowMessage,
+      onFallback: () => setShareOpen(true),
+    });
+  };
 
   // Dynamic Google Search SEO & TVEpisode Schema.org
   const seoMetadata = React.useMemo(() => {
@@ -200,6 +223,225 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     };
   }, [animeSlug, episodeNumberOrId, user?.uid]);
 
+  // Fallback high-speed streaming links
+  const FALLBACK_DIRECT_STREAMS = [
+    'https://media.w3.org/2010/05/sintel/trailer.mp4',
+    'https://media.w3.org/2010/05/bunny/trailer.mp4',
+    'https://vjs.zencdn.net/v/oceans.mp4',
+  ];
+
+  // Helper to test if a source has a non-empty embed URL or frame code
+  const hasValidStreamUrl = (s: Partial<VideoSource> | null | undefined): boolean => {
+    if (!s) return false;
+    const url = (s.embedUrl || '').trim();
+    const frame = (s.frameCode || (s as any).frameEmbedUrl || '').trim();
+    return Boolean(url || frame);
+  };
+
+  // Build filtered servers list containing ONLY servers with a valid embed URL or frameCode
+  const { subServers, dubServers, defaultSelection } = React.useMemo(() => {
+    if (!episode) {
+      return {
+        subServers: [] as VideoSource[],
+        dubServers: [] as VideoSource[],
+        defaultSelection: { category: 'sub' as const, index: 0 },
+      };
+    }
+
+    const rawSourcesList: VideoSource[] = [];
+    const seenIds = new Set<string>();
+
+    const addSourceDeduplicated = (sourceCandidate: Partial<VideoSource> | null | undefined, fallbackPrefix: string) => {
+      if (!sourceCandidate) return;
+      // CRITICAL REQUIREMENT: Only keep servers that have a valid embed URL or frame code
+      if (!hasValidStreamUrl(sourceCandidate)) return;
+
+      const originalId = (sourceCandidate.id || '').trim();
+      let uniqueId = originalId;
+      if (!uniqueId || seenIds.has(uniqueId)) {
+        uniqueId = `${fallbackPrefix}-${seenIds.size + 1}-${Math.random().toString(36).substring(2, 6)}`;
+      }
+      seenIds.add(uniqueId);
+      rawSourcesList.push({
+        ...sourceCandidate,
+        id: uniqueId,
+      } as VideoSource);
+    };
+
+    // 1. Add valid videoSources
+    if (Array.isArray(episode.videoSources) && episode.videoSources.length > 0) {
+      episode.videoSources.forEach((s, idx) => {
+        addSourceDeduplicated(s, `vsrc-${idx + 1}`);
+      });
+    }
+
+    // 2. Add valid sources if not already covered
+    if (Array.isArray(episode.sources) && episode.sources.length > 0) {
+      episode.sources.forEach((s, idx) => {
+        if (!s) return;
+        const sEmbed = (s.embedUrl || '').trim().toLowerCase();
+        const isDuplicateUrl = sEmbed && rawSourcesList.some(
+          (existing) => (existing.embedUrl || '').trim().toLowerCase() === sEmbed
+        );
+        if (!isDuplicateUrl) {
+          addSourceDeduplicated(s, `src-${idx + 1}`);
+        }
+      });
+    }
+
+    // 3. If no sources found with URLs, but episode has videoUrl
+    if (rawSourcesList.length === 0 && episode.videoUrl && episode.videoUrl.trim()) {
+      addSourceDeduplicated({
+        id: 'default-source',
+        name: 'server 1',
+        provider: 'server 1',
+        sourceName: 'server 1',
+        embedUrl: episode.videoUrl.trim(),
+        active: true,
+        type: episode.videoUrl.endsWith('.m3u8') ? 'hls' : episode.videoUrl.endsWith('.mp4') ? 'mp4' : 'embed',
+        category: episode.defaultCategory || 'sub',
+        isDefault: true,
+      }, 'default');
+    }
+
+    // 4. Fallback streams ONLY if absolutely no valid source was found in the episode at all
+    if (rawSourcesList.length === 0) {
+      FALLBACK_DIRECT_STREAMS.forEach((url, idx) => {
+        addSourceDeduplicated({
+          id: `fallback-srv-${idx + 1}`,
+          name: `server ${idx + 1}`,
+          provider: `server ${idx + 1}`,
+          sourceName: `server ${idx + 1}`,
+          embedUrl: url,
+          active: true,
+          type: 'mp4',
+          category: idx === 0 ? 'sub' : 'dub',
+          isDefault: idx === 0,
+        }, `fallback-${idx + 1}`);
+      });
+    }
+
+    // Separate into Sub and Dub candidate lists
+    const subCandidates: VideoSource[] = [];
+    const dubCandidates: VideoSource[] = [];
+    const neutralCandidates: VideoSource[] = [];
+
+    for (const s of rawSourcesList) {
+      if (s.active === false) continue;
+      const cat = (s.category || '').toLowerCase();
+      const l = (s.language || '').toLowerCase();
+      const p = (s.provider || '').toLowerCase();
+      const n = (s.name || s.sourceName || '').toLowerCase();
+
+      if (cat === 'dub') {
+        dubCandidates.push(s);
+      } else if (cat === 'sub') {
+        subCandidates.push(s);
+      } else {
+        const isDub = l.includes('dub') || l === 'hi' || p.includes('dub') || p.includes('hindi') || n.includes('dub');
+        const isSub = l.includes('sub') || l === 'ja' || p.includes('sub') || p.includes('multi') || n.includes('sub');
+
+        if (isDub && !isSub) {
+          dubCandidates.push(s);
+        } else if (isSub && !isDub) {
+          subCandidates.push(s);
+        } else if (isDub && isSub) {
+          dubCandidates.push(s);
+          subCandidates.push(s);
+        } else {
+          neutralCandidates.push(s);
+        }
+      }
+    }
+
+    const finalSub = [...subCandidates];
+    const finalDub = [...dubCandidates];
+
+    if (neutralCandidates.length > 0) {
+      if (finalSub.length === 0 && finalDub.length > 0) {
+        finalDub.push(...neutralCandidates);
+      } else {
+        finalSub.push(...neutralCandidates);
+      }
+    }
+
+    // Determine default server selection configured by Admin
+    let selectedCat: 'sub' | 'dub' = 'sub';
+    let selectedIdx = 0;
+    let foundDefault = false;
+
+    const targetId = episode.defaultSourceId;
+    const prefCat = episode.defaultCategory;
+
+    // 1. Match by episode.defaultSourceId
+    if (targetId) {
+      const subMatch = finalSub.findIndex((s) => s.id === targetId);
+      if (subMatch !== -1) {
+        selectedCat = 'sub';
+        selectedIdx = subMatch;
+        foundDefault = true;
+      } else {
+        const dubMatch = finalDub.findIndex((s) => s.id === targetId);
+        if (dubMatch !== -1) {
+          selectedCat = 'dub';
+          selectedIdx = dubMatch;
+          foundDefault = true;
+        }
+      }
+    }
+
+    // 2. Match by isDefault property on sources
+    if (!foundDefault) {
+      const subDefIdx = finalSub.findIndex((s) => s.isDefault);
+      const dubDefIdx = finalDub.findIndex((s) => s.isDefault);
+
+      if (prefCat === 'dub' && dubDefIdx !== -1) {
+        selectedCat = 'dub';
+        selectedIdx = dubDefIdx;
+        foundDefault = true;
+      } else if (subDefIdx !== -1) {
+        selectedCat = 'sub';
+        selectedIdx = subDefIdx;
+        foundDefault = true;
+      } else if (dubDefIdx !== -1) {
+        selectedCat = 'dub';
+        selectedIdx = dubDefIdx;
+        foundDefault = true;
+      }
+    }
+
+    // 3. If still not matched, respect preferred category or fallback to available
+    if (!foundDefault) {
+      if (prefCat === 'dub' && finalDub.length > 0) {
+        selectedCat = 'dub';
+        selectedIdx = 0;
+      } else if (finalSub.length > 0) {
+        selectedCat = 'sub';
+        selectedIdx = 0;
+      } else if (finalDub.length > 0) {
+        selectedCat = 'dub';
+        selectedIdx = 0;
+      }
+    }
+
+    return {
+      subServers: finalSub,
+      dubServers: finalDub,
+      defaultSelection: { category: selectedCat, index: selectedIdx },
+    };
+  }, [episode]);
+
+  // Auto-select the admin-configured default server whenever episode is loaded/switched
+  React.useEffect(() => {
+    if (defaultSelection && episode) {
+      setSelectedCategory(defaultSelection.category);
+      setSelectedServerIndex(defaultSelection.index);
+      setSelectedSourceType('primary');
+      setIframeError(false);
+      setVideoError(false);
+    }
+  }, [episode?.id, defaultSelection]);
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-24 flex flex-col items-center justify-center text-[#A9B8CC] gap-4">
@@ -228,69 +470,9 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     );
   }
 
-  // Fallback high-speed streaming links
-  const FALLBACK_DIRECT_STREAMS = [
-    'https://media.w3.org/2010/05/sintel/trailer.mp4',
-    'https://media.w3.org/2010/05/bunny/trailer.mp4',
-    'https://vjs.zencdn.net/v/oceans.mp4',
-  ];
-
-  // Gather ALL possible streaming sources for this episode
-  const rawSourcesList: VideoSource[] = [
-    ...(episode.videoSources || []),
-    ...(episode.sources || []),
-  ];
-
-  // If no sources list is defined, but episode has videoUrl
-  if (rawSourcesList.length === 0 && episode.videoUrl) {
-    rawSourcesList.push({
-      id: 'default-source',
-      provider: 'Fast Stream 1 [Hindi Dub]',
-      sourceName: 'Server 1 (Direct HD)',
-      embedUrl: episode.videoUrl,
-      active: true,
-      type: episode.videoUrl.endsWith('.m3u8') ? 'hls' : episode.videoUrl.endsWith('.mp4') ? 'mp4' : 'embed',
-    });
-  }
-
-  // If still empty, supply guaranteed working fallback streams
-  if (rawSourcesList.length === 0) {
-    FALLBACK_DIRECT_STREAMS.forEach((url, idx) => {
-      rawSourcesList.push({
-        id: `fallback-srv-${idx + 1}`,
-        provider: idx === 0 ? 'Fast Stream 1 [Hindi Dub]' : idx === 1 ? 'High Speed Server 2 [Multi Sub]' : 'Cloud Backup Server [Auto]',
-        sourceName: `Server ${idx + 1} (Direct HD)`,
-        embedUrl: url,
-        active: true,
-        type: 'mp4',
-      });
-    });
-  } else if (rawSourcesList.length === 1) {
-    // If only 1 server exists, provide backup servers so users never get stuck
-    rawSourcesList.push({
-      id: 'backup-mirror-2',
-      provider: 'High Speed Server 2 [Multi Sub]',
-      sourceName: 'Server 2 (Mirror HD)',
-      embedUrl: FALLBACK_DIRECT_STREAMS[1],
-      active: true,
-      type: 'mp4',
-    });
-    rawSourcesList.push({
-      id: 'backup-mirror-3',
-      provider: 'Cloud Backup Server [Auto]',
-      sourceName: 'Server 3 (Backup)',
-      embedUrl: FALLBACK_DIRECT_STREAMS[2],
-      active: true,
-      type: 'mp4',
-    });
-  }
-
-  // Active sources: treat active !== false as active, require embedUrl or frameCode
-  const activeSources: VideoSource[] = rawSourcesList.filter(
-    (s) => s.active !== false && (s.embedUrl?.trim() || s.frameCode?.trim())
-  );
+  const activeServerList = selectedCategory === 'sub' ? subServers : dubServers;
   const currentSource: VideoSource | undefined =
-    activeSources[selectedSourceIndex] || activeSources[0] || rawSourcesList[0];
+    activeServerList[selectedServerIndex] || activeServerList[0] || (selectedCategory === 'sub' ? dubServers[0] : subServers[0]);
 
   const rawFrameCode = currentSource?.frameCode || (currentSource as any)?.frameEmbedUrl || '';
   const extractedFrameSrc = extractIframeSrc(rawFrameCode);
@@ -484,28 +666,25 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     This video stream encountered a playback error in your browser. Switch to an alternate server or open the stream in a new tab.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    {activeSources.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSourceIndex((prev) => (prev + 1) % activeSources.length);
-                          setVideoError(false);
-                          setIframeError(false);
-                        }}
-                        className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>Switch to Next Server</span>
-                      </button>
-                    )}
                     <button
                       type="button"
-                      onClick={() => window.open(currentUrl, '_blank', 'noopener,noreferrer')}
+                      onClick={() => {
+                        handleSelectStream(selectedCategory, selectedServerIndex === 0 ? 1 : 0);
+                      }}
+                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Switch to Alternate Server</span>
+                    </button>
+                    <a
+                      href={currentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>Open Stream in New Tab</span>
-                    </button>
+                    </a>
                   </div>
                 </div>
               )}
@@ -534,28 +713,25 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     This video host restricts direct embedding or requires opening in a dedicated stream tab.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    {activeSources.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSourceIndex((prev) => (prev + 1) % activeSources.length);
-                          setIframeError(false);
-                          setVideoError(false);
-                        }}
-                        className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>Switch to Next Server</span>
-                      </button>
-                    )}
                     <button
                       type="button"
-                      onClick={() => window.open(currentUrl, '_blank', 'noopener,noreferrer')}
+                      onClick={() => {
+                        handleSelectStream(selectedCategory, selectedServerIndex === 0 ? 1 : 0);
+                      }}
+                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Switch to Alternate Server</span>
+                    </button>
+                    <a
+                      href={currentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>Open Stream in New Tab</span>
-                    </button>
+                    </a>
                     {hasAlternate && selectedSourceType === 'primary' && (
                       <button
                         type="button"
@@ -594,7 +770,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
             {/* Episode Title & Metadata */}
             <div className="text-xs font-black text-[#00CFFF] tracking-wider uppercase mb-1">
               EPISODE {episode.episodeNumber} OF {allEpisodes.length > 0 ? allEpisodes.length : episode.episodeNumber}
-              {episode.duration ? ` • ${Math.floor(episode.duration / 60)}m` : ''}
             </div>
 
             {/* Episode Title */}
@@ -656,8 +831,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setShareOpen(true)}
-              className="p-2.5 bg-[#050A14] hover:bg-[#081426] text-[#94A3B8] hover:text-white rounded-xl border border-white/10 transition-colors"
+              onClick={handleShare}
+              className="p-2.5 bg-[#050A14] hover:bg-[#081426] text-[#94A3B8] hover:text-white rounded-xl border border-white/10 transition-colors cursor-pointer"
               title="Share"
             >
               <Share2 className="w-4 h-4" />
@@ -676,80 +851,87 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
       </div>
 
       {/* 4. AUTHORIZED STREAMING NODES */}
-      <div className="bg-[#07111F] border border-white/[0.06] hover:border-[#1683FF]/20 rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-3 shadow-xl transition-all">
-        <div className="flex items-center gap-2 text-xs font-bold text-[#F8FAFC]">
-          <Shield className="w-4 h-4 text-[#1683FF]" />
-          <span>Authorized Streams</span>
+      <div className="bg-[#07111F] border border-white/[0.06] hover:border-[#1683FF]/20 rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-3.5 shadow-xl transition-all">
+        <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-bold text-[#F8FAFC]">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-[#1683FF]" />
+            <span>Authorized Streams</span>
+          </div>
+          {currentSource?.isDefault && (
+            <span className="flex items-center gap-1 text-[11px] text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+              <Star className="w-3 h-3 fill-amber-400" /> Default Server (Auto-Selected)
+            </span>
+          )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {activeSources.length > 0 ? (
-            activeSources.map((s, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setSelectedSourceIndex(idx);
-                  setSelectedSourceType('primary');
-                  setIframeError(false);
-                  setVideoError(false);
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                  selectedSourceIndex === idx && selectedSourceType === 'primary'
-                    ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/25 ring-1 ring-[#1683FF]'
-                    : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-[#081426] border border-white/10'
-                }`}
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>
-                  {s.provider || `Server ${idx + 1}`} ({s.quality || 'FAST HD'})
-                </span>
-              </button>
-            ))
-          ) : (
-            <button
-              type="button"
-              className="px-4 py-2 bg-[#1683FF] text-white rounded-xl text-xs font-black flex items-center gap-1.5"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Server 1 (FAST HD)</span>
-            </button>
+        <div className="space-y-3 pt-1">
+          {/* Sub Row */}
+          {subServers.length > 0 && (
+            <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
+              <span className="text-xs font-bold text-[#A9B8CC] w-12 shrink-0">
+                Sub :
+              </span>
+              <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+                {subServers.map((srv, idx) => (
+                  <button
+                    key={`watch-sub-srv-${srv.id || 'idx'}-${idx}`}
+                    type="button"
+                    onClick={() => handleSelectStream('sub', idx)}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      selectedCategory === 'sub' && selectedServerIndex === idx
+                        ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/25 ring-1 ring-[#1683FF]'
+                        : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-[#081426] border border-white/10'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{srv.name || srv.sourceName || `server ${idx + 1}`}</span>
+                    {srv.isDefault && (
+                      <span className="text-amber-400 text-[10px] ml-0.5 font-bold" title="Default Server">★</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
-          {hasAlternate && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedSourceType('alternate');
-                setIframeError(false);
-                setIframeLoaded(false);
-              }}
-              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                selectedSourceType === 'alternate'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/25'
-                  : 'bg-[#050A14] text-amber-400 hover:bg-[#081426] border border-amber-500/30'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>Server 2 (Abyss Code)</span>
-            </button>
+          {/* Dub Row */}
+          {dubServers.length > 0 && (
+            <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
+              <span className="text-xs font-bold text-[#A9B8CC] w-12 shrink-0">
+                Dub :
+              </span>
+              <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+                {dubServers.map((srv, idx) => (
+                  <button
+                    key={`watch-dub-srv-${srv.id || 'idx'}-${idx}`}
+                    type="button"
+                    onClick={() => handleSelectStream('dub', idx)}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      selectedCategory === 'dub' && selectedServerIndex === idx
+                        ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/25 ring-1 ring-[#1683FF]'
+                        : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-[#081426] border border-white/10'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{srv.name || srv.sourceName || `server ${idx + 1}`}</span>
+                    {srv.isDefault && (
+                      <span className="text-amber-400 text-[10px] ml-0.5 font-bold" title="Default Server">★</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {subServers.length === 0 && dubServers.length === 0 && (
+            <div className="text-xs text-[#94A3B8] italic py-1">
+              No active streaming servers configured with embed URLs for this episode.
+            </div>
           )}
         </div>
       </div>
 
-      {/* 5. EPISODE OVERVIEW CARD */}
-      <div className="bg-[#07111F] border border-white/[0.06] hover:border-[#1683FF]/20 rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-2 shadow-xl transition-all">
-        <div className="flex items-center gap-2 text-xs font-bold text-[#1683FF]">
-          <Sparkles className="w-4 h-4" />
-          <span className="text-[#F8FAFC] font-bold">Episode Overview</span>
-        </div>
-        <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
-          {episode.description ||
-            `In episode ${episode.episodeNumber}, intense revelations and tactical skirmishes escalate as key heroes unleash new power thresholds and face unforeseen adversaries.`}
-        </p>
-      </div>
-
-      {/* 6. EPISODES LIST */}
+      {/* 5. EPISODES LIST */}
       <EpisodeSelector
         episodes={allEpisodes}
         animeTitle={anime.title}
@@ -820,10 +1002,9 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
           onClose={() => setReportOpen(false)}
           animeId={anime.id!}
           animeTitle={anime.title}
-          animeSlug={anime.slug}
           episodeId={episode.id!}
           episodeNumber={episode.episodeNumber}
-          onShowMessage={onShowMessage}
+          onSuccessToast={(msg) => onShowMessage?.(msg)}
         />
       )}
 

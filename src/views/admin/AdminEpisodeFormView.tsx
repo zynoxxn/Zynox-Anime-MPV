@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   Download,
   Link as LinkIcon,
+  Star,
 } from 'lucide-react';
 
 interface AdminEpisodeFormViewProps {
@@ -67,17 +68,59 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
   const [outroStart, setOutroStart] = useState<number | undefined>();
   const [outroEnd, setOutroEnd] = useState<number | undefined>();
 
-  // Multi-server video sources
+  // Multi-server video sources (Sub & Dub with custom server names, embed URLs, and default selector)
   const [videoSources, setVideoSources] = useState<VideoSource[]>([
     {
-      id: 'srv-1',
-      name: 'Server 1 (Abyss HD)',
-      type: 'abyss',
+      id: 'srv-sub-1',
+      name: 'server 1',
+      category: 'sub',
+      type: 'embed',
       embedUrl: '',
+      frameCode: '',
       quality: '1080p',
-      language: 'Hindi Dub',
+      language: 'SUB',
       priority: 1,
       active: true,
+      isDefault: true,
+    },
+    {
+      id: 'srv-sub-2',
+      name: 'server 2',
+      category: 'sub',
+      type: 'embed',
+      embedUrl: '',
+      frameCode: '',
+      quality: '1080p',
+      language: 'SUB',
+      priority: 2,
+      active: true,
+      isDefault: false,
+    },
+    {
+      id: 'srv-dub-1',
+      name: 'server 1',
+      category: 'dub',
+      type: 'embed',
+      embedUrl: '',
+      frameCode: '',
+      quality: '1080p',
+      language: 'DUB',
+      priority: 3,
+      active: true,
+      isDefault: false,
+    },
+    {
+      id: 'srv-dub-2',
+      name: 'server 2',
+      category: 'dub',
+      type: 'embed',
+      embedUrl: '',
+      frameCode: '',
+      quality: '1080p',
+      language: 'DUB',
+      priority: 4,
+      active: true,
+      isDefault: false,
     },
   ]);
 
@@ -104,7 +147,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setTitle(epData.title || '');
             setDescription(epData.description || '');
             setThumbnail(epData.thumbnail || '');
-            setDuration(epData.duration || '24:00');
+            setDuration(epData.duration ? String(epData.duration) : '24:00');
             setIntroStart(epData.introStart);
             setIntroEnd(epData.introEnd);
             setOutroStart(epData.outroStart);
@@ -112,32 +155,163 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setPublished(epData.published ?? true);
 
             if (epData.videoSources && epData.videoSources.length > 0) {
-              setVideoSources(epData.videoSources);
-            } else if (epData.sources && epData.sources.length > 0) {
-              setVideoSources(
-                epData.sources.map((s, idx) => ({
-                  id: `srv-${idx + 1}`,
-                  name: s.provider || `Server ${idx + 1}`,
-                  type: 'abyss',
+              const seenLoadedIds = new Set<string>();
+              const mapped = epData.videoSources.map((s, idx) => {
+                const isDub =
+                  s.category === 'dub' ||
+                  (s.language || '').toLowerCase().includes('dub') ||
+                  (s.name || '').toLowerCase().includes('dub') ||
+                  (s.provider || '').toLowerCase().includes('dub');
+                const rawId = (s.id || '').trim();
+                const uniqueId = rawId && !seenLoadedIds.has(rawId)
+                  ? rawId
+                  : `srv-vsrc-${idx + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+                seenLoadedIds.add(uniqueId);
+                return {
+                  ...s,
+                  id: uniqueId,
+                  name: s.name || s.sourceName || s.provider || `server ${idx + 1}`,
+                  category: (s.category as any) || (isDub ? 'dub' : 'sub'),
+                  type: s.type || s.sourceType || 'embed',
                   embedUrl: s.embedUrl || '',
-                  frameCode: s.frameCode,
+                  frameCode: s.frameCode || '',
                   quality: s.quality || '1080p',
-                  language: s.language || 'Hindi Dub',
-                  priority: idx + 1,
+                  language: s.language || (isDub ? 'DUB' : 'SUB'),
+                  priority: s.priority || idx + 1,
                   active: s.active ?? true,
-                }))
-              );
+                  isDefault: Boolean(s.isDefault),
+                };
+              });
+
+              // Ensure at least 1 sub and 1 dub server template exists if empty
+              if (!mapped.some((s) => s.category === 'sub')) {
+                mapped.unshift({
+                  id: `srv-sub-1-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                  name: 'server 1',
+                  category: 'sub',
+                  type: 'embed',
+                  embedUrl: '',
+                  frameCode: '',
+                  quality: '1080p',
+                  language: 'SUB',
+                  priority: 1,
+                  active: true,
+                  isDefault: false,
+                });
+              }
+              if (!mapped.some((s) => s.category === 'dub')) {
+                mapped.push({
+                  id: `srv-dub-1-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                  name: 'server 1',
+                  category: 'dub',
+                  type: 'embed',
+                  embedUrl: '',
+                  frameCode: '',
+                  quality: '1080p',
+                  language: 'DUB',
+                  priority: 2,
+                  active: true,
+                  isDefault: false,
+                });
+              }
+
+              // Ensure exactly one server is flagged as default
+              const hasDefault = mapped.some((s) => s.isDefault);
+              if (!hasDefault) {
+                if (epData.defaultSourceId) {
+                  const target = mapped.find((s) => s.id === epData.defaultSourceId);
+                  if (target) target.isDefault = true;
+                  else if (mapped.length > 0) mapped[0].isDefault = true;
+                } else if (mapped.length > 0) {
+                  mapped[0].isDefault = true;
+                }
+              }
+              setVideoSources(mapped);
+            } else if (epData.sources && epData.sources.length > 0) {
+              const seenLoadedIds = new Set<string>();
+              const mapped = epData.sources.map((s, idx) => {
+                const isDub =
+                  s.category === 'dub' ||
+                  (s.language || '').toLowerCase().includes('dub') ||
+                  (s.name || '').toLowerCase().includes('dub') ||
+                  (s.provider || '').toLowerCase().includes('dub');
+                const rawId = (s.id || '').trim();
+                const uniqueId = rawId && !seenLoadedIds.has(rawId)
+                  ? rawId
+                  : `srv-src-${idx + 1}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+                seenLoadedIds.add(uniqueId);
+                return {
+                  id: uniqueId,
+                  name: s.name || s.sourceName || s.provider || `server ${idx + 1}`,
+                  category: (s.category as any) || (isDub ? 'dub' : 'sub'),
+                  type: s.sourceType || s.type || 'embed',
+                  embedUrl: s.embedUrl || '',
+                  frameCode: s.frameCode || '',
+                  quality: s.quality || '1080p',
+                  language: s.language || (isDub ? 'DUB' : 'SUB'),
+                  priority: s.priority || idx + 1,
+                  active: s.active ?? true,
+                  isDefault: Boolean(s.isDefault),
+                };
+              });
+              const hasDefault = mapped.some((s) => s.isDefault);
+              if (!hasDefault && mapped.length > 0) {
+                mapped[0].isDefault = true;
+              }
+              setVideoSources(mapped);
             } else if (epData.videoUrl) {
               setVideoSources([
                 {
-                  id: 'srv-1',
-                  name: 'Primary Stream',
-                  type: epData.videoUrl.endsWith('.m3u8') ? 'hls' : 'mp4',
+                  id: `srv-sub-1-${Date.now()}`,
+                  name: 'server 1',
+                  category: 'sub',
+                  type: epData.videoUrl.endsWith('.m3u8') ? 'hls' : 'embed',
                   embedUrl: epData.videoUrl,
+                  frameCode: '',
                   quality: '1080p',
-                  language: 'Hindi Dub',
+                  language: 'SUB',
                   priority: 1,
                   active: true,
+                  isDefault: true,
+                },
+                {
+                  id: `srv-sub-2-${Date.now()}`,
+                  name: 'server 2',
+                  category: 'sub',
+                  type: 'embed',
+                  embedUrl: '',
+                  frameCode: '',
+                  quality: '1080p',
+                  language: 'SUB',
+                  priority: 2,
+                  active: true,
+                  isDefault: false,
+                },
+                {
+                  id: `srv-dub-1-${Date.now()}`,
+                  name: 'server 1',
+                  category: 'dub',
+                  type: 'embed',
+                  embedUrl: epData.videoUrl,
+                  frameCode: '',
+                  quality: '1080p',
+                  language: 'DUB',
+                  priority: 3,
+                  active: true,
+                  isDefault: false,
+                },
+                {
+                  id: `srv-dub-2-${Date.now()}`,
+                  name: 'server 2',
+                  category: 'dub',
+                  type: 'embed',
+                  embedUrl: '',
+                  frameCode: '',
+                  quality: '1080p',
+                  language: 'DUB',
+                  priority: 4,
+                  active: true,
+                  isDefault: false,
                 },
               ]);
             }
@@ -173,6 +347,12 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setSeasonNumber(parseInt(querySeason, 10) || 1);
           }
 
+          // Auto-set thumbnail from anime banner or poster
+          const foundAnime = animeList.find((a) => a.id === defaultAnimeId || a.slug === defaultAnimeId);
+          if (foundAnime) {
+            setThumbnail(foundAnime.banner || foundAnime.poster || '');
+          }
+
           if (defaultAnimeId) {
             try {
               const existingEps = await getAllEpisodesByAnimeId(defaultAnimeId);
@@ -194,6 +374,10 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
 
   const handleAnimeChange = async (newAnimeId: string) => {
     setSelectedAnimeId(newAnimeId);
+    const foundAnime = animes.find((a) => a.id === newAnimeId || a.slug === newAnimeId);
+    if (!isEditMode && foundAnime) {
+      setThumbnail(foundAnime.banner || foundAnime.poster || '');
+    }
     if (!isEditMode && newAnimeId) {
       try {
         const existingEps = await getAllEpisodesByAnimeId(newAnimeId);
@@ -204,36 +388,70 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     }
   };
 
-  const handleAddServer = () => {
-    setVideoSources((prev) => [
-      ...prev,
-      {
-        id: `srv-${Date.now()}`,
-        name: `Server ${prev.length + 1} (Streamwish / Abyss)`,
-        type: 'embed',
-        embedUrl: '',
-        quality: '1080p',
-        language: 'Hindi Dub',
-        priority: prev.length + 1,
-        active: true,
-      },
-    ]);
-  };
-
-  const handleUpdateServer = (index: number, field: keyof VideoSource, value: any) => {
+  const handleAddServer = (category: 'sub' | 'dub' = 'sub') => {
     setVideoSources((prev) => {
-      const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
-      return copy;
+      const categorySources = prev.filter((s) => (s.category || 'sub') === category);
+      const nextNum = categorySources.length + 1;
+      const isFirstEver = prev.length === 0;
+      return [
+        ...prev,
+        {
+          id: `srv-${category}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: `server ${nextNum}`,
+          category,
+          type: 'embed',
+          embedUrl: '',
+          frameCode: '',
+          quality: '1080p',
+          language: category === 'dub' ? 'DUB' : 'SUB',
+          priority: prev.length + 1,
+          active: true,
+          isDefault: isFirstEver,
+        },
+      ];
     });
   };
 
-  const handleRemoveServer = (index: number) => {
-    if (videoSources.length === 1) {
-      onShowMessage('At least one video server is required.');
-      return;
-    }
-    setVideoSources((prev) => prev.filter((_, i) => i !== index));
+  const handleSetDefaultServer = (idOrIndex: string | number) => {
+    setVideoSources((prev) =>
+      prev.map((s, idx) => {
+        const isMatch = typeof idOrIndex === 'number' ? idx === idOrIndex : s.id === idOrIndex;
+        return {
+          ...s,
+          isDefault: isMatch,
+        };
+      })
+    );
+  };
+
+  const handleUpdateServer = (idOrIndex: string | number, field: keyof VideoSource, value: any) => {
+    setVideoSources((prev) =>
+      prev.map((s, idx) => {
+        if (typeof idOrIndex === 'number' ? idx === idOrIndex : s.id === idOrIndex) {
+          return { ...s, [field]: value };
+        }
+        return s;
+      })
+    );
+  };
+
+  const handleRemoveServer = (idOrIndex: string | number) => {
+    setVideoSources((prev) => {
+      if (prev.length <= 1) {
+        onShowMessage('At least one video server is required.');
+        return prev;
+      }
+      const isRemovingDefault = prev.some(
+        (s, idx) => (typeof idOrIndex === 'number' ? idx === idOrIndex : s.id === idOrIndex) && s.isDefault
+      );
+      const remaining = prev.filter((s, idx) =>
+        typeof idOrIndex === 'number' ? idx !== idOrIndex : s.id !== idOrIndex
+      );
+      if (isRemovingDefault && remaining.length > 0) {
+        remaining[0].isDefault = true;
+      }
+      return remaining;
+    });
   };
 
   const handleAddSubtitle = () => {
@@ -296,13 +514,20 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
       return;
     }
 
+    // Determine the active default server among valid sources
+    let defaultSource = validSources.find((s) => s.isDefault === true);
+    if (!defaultSource) {
+      defaultSource = validSources[0];
+    }
+
     const validDownloadLinks = downloadLinks.filter((d) => d.url.trim());
 
     const effectiveAnime = animes.find((a) => a.id === selectedAnimeId || a.slug === selectedAnimeId);
     const targetAnimeId = effectiveAnime?.id || selectedAnimeId;
     const targetAnimeSlug = effectiveAnime?.slug || selectedAnimeId;
     const targetAnimeTitle = effectiveAnime?.title || '';
-    const finalThumbnail = thumbnail.trim() || effectiveAnime?.poster || effectiveAnime?.banner || undefined;
+    const fallbackThumb = effectiveAnime?.banner || effectiveAnime?.poster || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80';
+    const finalThumbnail = thumbnail.trim() || fallbackThumb;
 
     const payload: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'> = {
       animeId: targetAnimeId,
@@ -319,20 +544,41 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
       downloadQuality: downloadQuality.trim() || undefined,
       downloadSize: downloadSize.trim() || undefined,
       downloadLinks: validDownloadLinks.length > 0 ? validDownloadLinks : undefined,
-      videoUrl: validSources[0].embedUrl || '',
+      videoUrl: defaultSource.embedUrl || validSources[0].embedUrl || '',
+      defaultSourceId: defaultSource.id,
+      defaultCategory: (defaultSource.category as any) || 'sub',
       sources: validSources.map((s, idx) => ({
         id: s.id || `src-${idx + 1}`,
-        provider: s.name || s.provider || `Server ${idx + 1}`,
-        sourceName: s.name || s.sourceName || `Server ${idx + 1}`,
+        name: s.name?.trim() || `server ${idx + 1}`,
+        provider: s.name?.trim() || s.provider || `server ${idx + 1}`,
+        sourceName: s.name?.trim() || s.sourceName || `server ${idx + 1}`,
+        category: s.category || 'sub',
         sourceType: s.type || s.sourceType || 'embed',
+        type: s.type || s.sourceType || 'embed',
         quality: s.quality || '1080p',
-        language: s.language || 'Hindi Dub',
-        embedUrl: s.embedUrl || '',
-        frameCode: s.frameCode || '',
+        language: s.language || (s.category === 'dub' ? 'DUB' : 'SUB'),
+        embedUrl: s.embedUrl?.trim() || '',
+        frameCode: s.frameCode?.trim() || '',
         priority: s.priority || idx + 1,
         active: s.active ?? true,
+        isDefault: s.id === defaultSource!.id,
       })),
-      videoSources: validSources,
+      videoSources: validSources.map((s, idx) => ({
+        id: s.id || `src-${idx + 1}`,
+        name: s.name?.trim() || `server ${idx + 1}`,
+        provider: s.name?.trim() || s.provider || `server ${idx + 1}`,
+        sourceName: s.name?.trim() || s.sourceName || `server ${idx + 1}`,
+        category: s.category || 'sub',
+        sourceType: s.type || s.sourceType || 'embed',
+        type: s.type || s.sourceType || 'embed',
+        quality: s.quality || '1080p',
+        language: s.language || (s.category === 'dub' ? 'DUB' : 'SUB'),
+        embedUrl: s.embedUrl?.trim() || '',
+        frameCode: s.frameCode?.trim() || '',
+        priority: s.priority || idx + 1,
+        active: s.active ?? true,
+        isDefault: s.id === defaultSource!.id,
+      })),
       subtitles: subtitles.filter((s) => s.url.trim()),
       introStart: introStart ? Number(introStart) : undefined,
       introEnd: introEnd ? Number(introEnd) : undefined,
@@ -400,11 +646,11 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
             <button
               type="button"
               onClick={() => navigate('/admin/episodes')}
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl"
+              className="px-3.5 sm:px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -412,7 +658,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
               type="button"
               onClick={handleSubmit}
               disabled={saving}
-              className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-xs font-bold text-white shadow-lg shadow-cyan-500/30 rounded-xl flex items-center gap-2 transition-all"
+              className="px-4 sm:px-5 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-xs font-bold text-white shadow-lg shadow-cyan-500/30 rounded-xl flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               <span>{isEditMode ? 'Save Changes' : 'Publish Episode'}</span>
@@ -500,286 +746,475 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#94A3B8]">Episode Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. I'm Used to It"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#94A3B8]">Episode Title</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. I'm Used to It"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#94A3B8]">Episode Duration</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 24:00"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              {/* Episode Thumbnail with Live Preview & Quick Actions */}
+              <div className="p-4 rounded-2xl bg-[#050A14] border border-white/10 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>Episode Thumbnail Image URL</span>
+                    <span className="text-[10px] text-cyan-400 font-normal">
+                      ({thumbnail ? 'Custom URL' : 'Auto from Anime'})
+                    </span>
+                  </label>
+
+                  {/* 1-Click Fill Buttons from Anime */}
+                  {selectedAnime && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {selectedAnime.banner && (
+                        <button
+                          type="button"
+                          onClick={() => setThumbnail(selectedAnime.banner || '')}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-cyan-400 font-semibold border border-white/10 cursor-pointer transition-colors"
+                        >
+                          Use Anime Banner
+                        </button>
+                      )}
+                      {selectedAnime.poster && (
+                        <button
+                          type="button"
+                          onClick={() => setThumbnail(selectedAnime.poster || '')}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-emerald-400 font-semibold border border-white/10 cursor-pointer transition-colors"
+                        >
+                          Use Anime Poster
+                        </button>
+                      )}
+                      {thumbnail && (
+                        <button
+                          type="button"
+                          onClick={() => setThumbnail('')}
+                          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-[#94A3B8] hover:text-white border border-white/10 cursor-pointer transition-colors"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  {/* Thumbnail Image Live Preview Box */}
+                  <div className="w-36 h-20 rounded-xl overflow-hidden bg-[#0B1322] border border-white/10 shrink-0 relative flex items-center justify-center">
+                    {thumbnail || selectedAnime?.banner || selectedAnime?.poster ? (
+                      <img
+                        src={thumbnail || selectedAnime?.banner || selectedAnime?.poster}
+                        alt="Episode Thumbnail Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (selectedAnime?.poster && target.src !== selectedAnime.poster) {
+                            target.src = selectedAnime.poster;
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="text-[10px] text-[#64748B] text-center p-2">
+                        No Preview
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 w-full space-y-1">
+                    <input
+                      type="url"
+                      placeholder={selectedAnime?.banner || selectedAnime?.poster || 'https://... (image url)'}
+                      value={thumbnail}
+                      onChange={(e) => setThumbnail(e.target.value)}
+                      className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-cyan-500 font-mono"
+                    />
+                    <p className="text-[10px] text-[#94A3B8]">
+                      If left blank, the anime banner will automatically be used as the episode thumbnail.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#94A3B8]">Episode Thumbnail Image URL</label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={thumbnail}
-                  onChange={(e) => setThumbnail(e.target.value)}
-                  className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
+                <label className="text-xs font-bold text-[#94A3B8]">Episode Description (Optional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Brief recap or summary of this episode..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full bg-[#050A14] border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 resize-none"
                 />
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[#94A3B8]">Episode Description (Optional)</label>
-              <textarea
-                rows={2}
-                placeholder="Brief recap or summary of this episode..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-[#050A14] border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 resize-none"
-              />
             </div>
           </div>
 
-          {/* Video Streaming Servers */}
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 sm:p-8 space-y-4">
-            <div className="flex items-center justify-between">
+          {/* Video Streaming Servers (Sub & Dub) - Clean & Simple */}
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-7 space-y-5">
+            <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Server className="w-4 h-4 text-cyan-400" />
-                  <span>Video Streaming Servers ({videoSources.length})</span>
+                  <span>Streaming Servers</span>
                 </h3>
-                <p className="text-[11px] text-[#94A3B8] mt-0.5">
-                  Add multiple backup servers (Abyss, Streamwish, Vidcloud, HLS m3u8, direct MP4).
+                <p className="text-[11px] text-[#94A3B8]">
+                  Add video embed or stream URLs for Sub and Dub players.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleAddServer}
-                className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-400 hover:text-white border border-cyan-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Server</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAddServer('sub')}
+                  className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Sub Server</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddServer('dub')}
+                  className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Dub Server</span>
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              {videoSources.map((srv, index) => (
-                <div
-                  key={srv.id || index}
-                  className="bg-[#050A14] border border-white/10 rounded-2xl p-4 space-y-3 relative group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-cyan-400">Server #{index + 1}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveServer(index)}
-                      className="p-1 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors"
-                      title="Remove Server"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-[#94A3B8]">Server Display Name</label>
-                      <input
-                        type="text"
-                        value={srv.name}
-                        onChange={(e) => handleUpdateServer(index, 'name', e.target.value)}
-                        placeholder="e.g. Server 1 (Abyss HD)"
-                        className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-[#94A3B8]">Server Protocol / Type</label>
-                      <select
-                        value={srv.type}
-                        onChange={(e) => handleUpdateServer(index, 'type', e.target.value as any)}
-                        className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                      >
-                        <option value="abyss">Abyss Stream (Recommended)</option>
-                        <option value="embed">Generic Iframe Embed</option>
-                        <option value="hls">HLS / M3U8 Stream</option>
-                        <option value="mp4">Direct MP4 Video</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-[#94A3B8]">Audio Language / Dub</label>
-                      <input
-                        type="text"
-                        value={srv.language || 'Hindi Dub'}
-                        onChange={(e) => handleUpdateServer(index, 'language', e.target.value)}
-                        placeholder="Hindi Dub / Japanese Sub"
-                        className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-[#94A3B8]">Stream / Embed URL</label>
-                    <input
-                      type="text"
-                      value={srv.embedUrl}
-                      onChange={(e) => handleUpdateServer(index, 'embedUrl', e.target.value)}
-                      placeholder="https://..."
-                      className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-cyan-500"
-                      required
-                    />
-                  </div>
+            {/* Sub Servers Group */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 text-[11px] font-black uppercase tracking-wider">
+                    SUB
+                  </span>
+                  <span className="text-xs font-bold text-white">
+                    Sub Servers ({videoSources.filter((s) => (s.category || 'sub') === 'sub').length})
+                  </span>
                 </div>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => handleAddServer('sub')}
+                  className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Server</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {videoSources
+                  .filter((s) => (s.category || 'sub') === 'sub')
+                  .map((srv, index) => (
+                    <div
+                      key={srv.id || `sub-${index}`}
+                      className={`bg-[#050A14] border ${
+                        srv.isDefault ? 'border-amber-500/40 bg-amber-500/[0.02]' : 'border-white/10'
+                      } rounded-xl p-3 space-y-2 transition-all`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={srv.name || `server ${index + 1}`}
+                            onChange={(e) => handleUpdateServer(srv.id || index, 'name', e.target.value)}
+                            placeholder={`server ${index + 1}`}
+                            className="w-full sm:w-40 bg-[#0B1322] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold outline-none focus:border-blue-500"
+                          />
+                          <div className="flex sm:hidden items-center gap-1.5 ml-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleSetDefaultServer(srv.id || index)}
+                              className={`p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
+                                srv.isDefault
+                                  ? 'bg-amber-400 text-black font-extrabold shadow-sm'
+                                  : 'bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white border border-white/10'
+                              }`}
+                              title="Set as default auto-play server"
+                            >
+                              <Star className={`w-3.5 h-3.5 ${srv.isDefault ? 'fill-black text-black' : ''}`} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveServer(srv.id || index)}
+                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                              title="Delete Server"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={srv.embedUrl || ''}
+                          onChange={(e) => handleUpdateServer(srv.id || index, 'embedUrl', e.target.value)}
+                          placeholder="Stream URL (or paste iframe embed)"
+                          className="flex-1 min-w-0 bg-[#0B1322] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white font-mono outline-none focus:border-blue-500"
+                        />
+
+                        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefaultServer(srv.id || index)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                              srv.isDefault
+                                ? 'bg-amber-400 text-black font-extrabold shadow-sm'
+                                : 'bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white border border-white/10'
+                            }`}
+                            title="Set as default auto-play server"
+                          >
+                            <Star className={`w-3 h-3 ${srv.isDefault ? 'fill-black text-black' : ''}`} />
+                            <span>{srv.isDefault ? 'Default' : 'Set Default'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveServer(srv.id || index)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer"
+                            title="Delete Server"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {/* Dub Servers Group */}
+            <div className="space-y-2.5 pt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 text-[11px] font-black uppercase tracking-wider">
+                    DUB
+                  </span>
+                  <span className="text-xs font-bold text-white">
+                    Dub Servers ({videoSources.filter((s) => s.category === 'dub').length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAddServer('dub')}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Server</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {videoSources
+                  .filter((s) => s.category === 'dub')
+                  .map((srv, index) => (
+                    <div
+                      key={srv.id || `dub-${index}`}
+                      className={`bg-[#050A14] border ${
+                        srv.isDefault ? 'border-amber-500/40 bg-amber-500/[0.02]' : 'border-white/10'
+                      } rounded-xl p-3 space-y-2 transition-all`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={srv.name || `server ${index + 1}`}
+                            onChange={(e) => handleUpdateServer(srv.id || index, 'name', e.target.value)}
+                            placeholder={`server ${index + 1}`}
+                            className="w-full sm:w-40 bg-[#0B1322] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-semibold outline-none focus:border-amber-500"
+                          />
+                          <div className="flex sm:hidden items-center gap-1.5 ml-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleSetDefaultServer(srv.id || index)}
+                              className={`p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0 ${
+                                srv.isDefault
+                                  ? 'bg-amber-400 text-black font-extrabold shadow-sm'
+                                  : 'bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white border border-white/10'
+                              }`}
+                              title="Set as default auto-play server"
+                            >
+                              <Star className={`w-3.5 h-3.5 ${srv.isDefault ? 'fill-black text-black' : ''}`} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveServer(srv.id || index)}
+                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                              title="Delete Server"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={srv.embedUrl || ''}
+                          onChange={(e) => handleUpdateServer(srv.id || index, 'embedUrl', e.target.value)}
+                          placeholder="Stream URL (or paste iframe embed)"
+                          className="flex-1 min-w-0 bg-[#0B1322] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white font-mono outline-none focus:border-amber-500"
+                        />
+
+                        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefaultServer(srv.id || index)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                              srv.isDefault
+                                ? 'bg-amber-400 text-black font-extrabold shadow-sm'
+                                : 'bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white border border-white/10'
+                            }`}
+                            title="Set as default auto-play server"
+                          >
+                            <Star className={`w-3 h-3 ${srv.isDefault ? 'fill-black text-black' : ''}`} />
+                            <span>{srv.isDefault ? 'Default' : 'Set Default'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveServer(srv.id || index)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer"
+                            title="Delete Server"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
 
-          {/* Episode Download Links & Direct URLs */}
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 sm:p-8 space-y-4">
+          {/* Episode Download Links - Clean & Simple */}
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-7 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Download className="w-4 h-4 text-emerald-400" />
-                  <span>Episode Download Links & Direct URLs</span>
+                  <span>Download Links</span>
                 </h3>
-                <p className="text-[11px] text-[#94A3B8] mt-0.5">
-                  Provide direct high-speed download links (Mega, Google Drive, Telegram, Direct MP4/MKV server).
+                <p className="text-[11px] text-[#94A3B8]">
+                  Direct download links for this episode (Mega, Google Drive, etc.).
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={handleAddDownloadLink}
-                className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Quality Mirror</span>
+                <span>Add Mirror</span>
               </button>
             </div>
 
-            {/* Primary Episode Download Link */}
-            <div className="p-4 bg-[#050A14] border border-white/10 rounded-2xl space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <span className="text-xs font-bold text-emerald-400">Primary Download URL</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[11px] font-bold text-[#94A3B8]">Download URL (Mega / Drive / MediaFire / Any Website)</label>
-                  <div className="relative">
-                    <LinkIcon className="w-3.5 h-3.5 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="url"
-                      value={downloadUrl}
-                      onChange={(e) => setDownloadUrl(e.target.value)}
-                      placeholder="https://mega.nz/... or https://mediafire.com/... or any website"
-                      className="w-full bg-[#0B1322] border border-white/10 rounded-xl pl-8 pr-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
-                    />
-                  </div>
+            {/* Primary Download */}
+            <div className="p-3.5 bg-[#050A14] border border-white/10 rounded-2xl space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-[11px] font-bold text-[#94A3B8]">Primary Download URL</label>
+                  <input
+                    type="url"
+                    value={downloadUrl}
+                    onChange={(e) => setDownloadUrl(e.target.value)}
+                    placeholder="https://mega.nz/... or drive.google.com/..."
+                    className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-[#94A3B8]">Quality</label>
-                    <input
-                      type="text"
-                      value={downloadQuality}
-                      onChange={(e) => setDownloadQuality(e.target.value)}
-                      placeholder="1080p Ultra HD"
-                      className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#94A3B8]">Quality</label>
+                  <input
+                    type="text"
+                    value={downloadQuality}
+                    onChange={(e) => setDownloadQuality(e.target.value)}
+                    placeholder="1080p Ultra HD"
+                    className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                  />
+                </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-[#94A3B8]">File Size</label>
-                    <input
-                      type="text"
-                      value={downloadSize}
-                      onChange={(e) => setDownloadSize(e.target.value)}
-                      placeholder="e.g. 350 MB"
-                      className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#94A3B8]">File Size</label>
+                  <input
+                    type="text"
+                    value={downloadSize}
+                    onChange={(e) => setDownloadSize(e.target.value)}
+                    placeholder="e.g. 350 MB"
+                    className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
             </div>
 
-            {/* Additional Multi-Quality Download Mirrors */}
+            {/* Additional Mirrors */}
             {downloadLinks.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <div className="text-xs font-bold text-[#94A3B8]">Additional Mirrors & Resolution Options:</div>
+              <div className="space-y-2 pt-1">
                 {downloadLinks.map((dl, index) => (
                   <div
                     key={index}
-                    className="p-3.5 bg-[#050A14] border border-white/5 rounded-2xl space-y-3 relative group"
+                    className="p-3 bg-[#050A14] border border-white/5 rounded-xl flex items-center gap-2.5"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-[#94A3B8]">Mirror #{index + 1}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveDownloadLink(index)}
-                        className="p-1 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors"
-                        title="Remove Mirror"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={dl.quality}
+                      onChange={(e) => handleUpdateDownloadLink(index, 'quality', e.target.value)}
+                      placeholder="Quality (e.g. 720p)"
+                      className="w-28 bg-[#0B1322] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                    />
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#94A3B8]">Quality / Resolution</label>
-                        <input
-                          type="text"
-                          value={dl.quality}
-                          onChange={(e) => handleUpdateDownloadLink(index, 'quality', e.target.value)}
-                          placeholder="e.g. 720p HD / 480p"
-                          className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
-                        />
-                      </div>
+                    <input
+                      type="text"
+                      value={dl.size || ''}
+                      onChange={(e) => handleUpdateDownloadLink(index, 'size', e.target.value)}
+                      placeholder="Size (e.g. 180 MB)"
+                      className="w-24 bg-[#0B1322] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                    />
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#94A3B8]">Hosting Provider</label>
-                        <input
-                          type="text"
-                          value={dl.host || ''}
-                          onChange={(e) => handleUpdateDownloadLink(index, 'host', e.target.value)}
-                          placeholder="Mega / Drive / Telegram"
-                          className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
-                        />
-                      </div>
+                    <input
+                      type="url"
+                      value={dl.url}
+                      onChange={(e) => handleUpdateDownloadLink(index, 'url', e.target.value)}
+                      placeholder="Mirror Download URL (https://...)"
+                      className="flex-1 min-w-0 bg-[#0B1322] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                    />
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#94A3B8]">File Size</label>
-                        <input
-                          type="text"
-                          value={dl.size || ''}
-                          onChange={(e) => handleUpdateDownloadLink(index, 'size', e.target.value)}
-                          placeholder="e.g. 180 MB"
-                          className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#94A3B8]">Download URL</label>
-                        <input
-                          type="url"
-                          value={dl.url}
-                          onChange={(e) => handleUpdateDownloadLink(index, 'url', e.target.value)}
-                          placeholder="https://..."
-                          className="w-full bg-[#0B1322] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white font-mono outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDownloadLink(index)}
+                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                      title="Remove Mirror"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Intro / Outro Skip Timestamps */}
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
+          {/* Intro / Outro Timestamps - Simple */}
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-7 space-y-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-purple-400" />
-              <span>Intro & Outro Auto-Skip Timestamps (Seconds)</span>
+              <span>Intro & Outro Auto-Skip (Seconds)</span>
             </h3>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -833,6 +1268,26 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             </div>
           </div>
         </form>
+
+        {/* Bottom Save Action Bar */}
+        <div className="bg-[#0B1322] border border-white/5 p-4 rounded-2xl flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => navigate('/admin/episodes')}
+            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-5 sm:px-6 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-xs font-bold text-white shadow-lg shadow-cyan-500/30 rounded-xl flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{isEditMode ? 'Save Episode Changes' : 'Publish Episode'}</span>
+          </button>
+        </div>
       </div>
     </AdminLayout>
   );

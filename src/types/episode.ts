@@ -11,8 +11,9 @@ export interface SubtitleTrack {
 export interface VideoSource {
   id?: string;
   name?: string;
-  provider?: string; // e.g. "External Host / Abyss", "Server 2", "StreamTape", "DoodStream"
-  sourceName?: string; // Display name e.g. "Abyss HD 1080p", "Backup Server"
+  provider?: string; // e.g. "server 1", "server 2", "External Host", "StreamTape"
+  sourceName?: string; // Display name e.g. "server 1", "server 2"
+  category?: 'sub' | 'dub' | string; // 'sub' or 'dub'
   type?: 'abyss' | 'embed' | 'iframe' | 'direct' | 'hls' | 'mp4' | string;
   sourceType?: 'embed' | 'iframe' | 'direct' | 'hls' | string;
   quality?: string; // e.g. "1080p", "720p", "480p", "Auto"
@@ -21,6 +22,7 @@ export interface VideoSource {
   frameCode?: string; // Raw iframe or HTML player tag code
   priority?: number; // Priority order e.g. 1, 2, 3
   active?: boolean;
+  isDefault?: boolean;
 }
 
 export interface Episode {
@@ -43,6 +45,8 @@ export interface Episode {
   outroEnd?: number; // seconds (e.g. 1410)
   viewsCount?: number;
   videoUrl?: string;
+  defaultSourceId?: string;
+  defaultCategory?: 'sub' | 'dub';
   downloadUrl?: string;
   downloadQuality?: string;
   downloadSize?: string;

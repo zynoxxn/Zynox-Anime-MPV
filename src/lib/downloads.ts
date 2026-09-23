@@ -179,31 +179,31 @@ export function resolveAnimeZipPackages(
     });
   }
 
-  // 2. Legacy downloadBatchUrl or downloadUrl as Zip 1 / Zip 2 if not already in zipDownloads
+  // 2. Legacy downloadBatchUrl or downloadUrl as Zip if not already in zipDownloads
   if (packages.length === 0) {
     if (anime.downloadBatchUrl) {
       packages.push({
         id: 'zip-batch-primary',
-        title: `Zip 1: Complete Season ${selectedSeason} Batch Archive`,
+        title: `Season ${selectedSeason} Batch`,
         seasonNumber: selectedSeason,
         url: formatDownloadUrl(anime.downloadBatchUrl),
-        size: '2.8 GB',
-        quality: '1080p Full HD',
-        host: detectHostName(anime.downloadBatchUrl, 'Google Drive'),
+        size: 'Batch',
+        quality: '1080p',
+        host: detectHostName(anime.downloadBatchUrl),
         episodesRange: 'All Episodes Included',
-        language: anime.audioLanguage || 'Hindi Dub + Multi Sub',
+        language: anime.audioLanguage || 'Multi Audio',
       });
     }
 
     if (anime.downloadUrl && anime.downloadUrl !== anime.downloadBatchUrl) {
       packages.push({
         id: 'zip-batch-secondary',
-        title: `Zip 2: High-Speed Fast Mirror Batch`,
+        title: `Season ${selectedSeason} Batch Mirror`,
         seasonNumber: selectedSeason,
         url: formatDownloadUrl(anime.downloadUrl),
-        size: '1.9 GB',
-        quality: '720p HD Compact',
-        host: detectHostName(anime.downloadUrl, 'MegaCloud'),
+        size: 'Batch',
+        quality: '720p',
+        host: detectHostName(anime.downloadUrl),
         episodesRange: 'All Episodes Included',
         language: anime.audioLanguage || 'Dual Audio',
       });
@@ -214,11 +214,11 @@ export function resolveAnimeZipPackages(
         if (dl.url && !packages.some((p) => p.url === formatDownloadUrl(dl.url))) {
           packages.push({
             id: `zip-custom-${idx + 1}`,
-            title: `Zip ${packages.length + 1}: ${dl.quality || 'Full Batch'}`,
+            title: dl.quality || `Batch ${packages.length + 1}`,
             seasonNumber: selectedSeason,
             url: formatDownloadUrl(dl.url),
-            size: dl.size || '2.4 GB',
-            quality: dl.quality || '1080p Ultra HD',
+            size: dl.size,
+            quality: dl.quality || '1080p',
             host: dl.host || detectHostName(dl.url),
             episodesRange: 'Complete Package',
             language: anime.audioLanguage || 'Multi Audio',
@@ -226,33 +226,6 @@ export function resolveAnimeZipPackages(
         }
       });
     }
-  }
-
-  // 3. If still empty, provide high-speed cloud mirrors (MegaCloud Zip 1 & Google Drive Zip 2)
-  if (packages.length === 0) {
-    const slug = anime.slug || anime.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    packages.push({
-      id: 'zip-auto-1',
-      title: `Zip 1: Season ${selectedSeason} Episodes Batch (Part 1)`,
-      seasonNumber: selectedSeason,
-      url: `https://mega.nz/folder/${slug}-s${selectedSeason}-zip-part1-fullhd`,
-      size: '2.6 GB',
-      quality: '1080p Ultra HD',
-      host: 'MegaCloud Direct',
-      episodesRange: 'Batch Episodes',
-      language: anime.audioLanguage || 'Hindi Dub + Multi Sub',
-    });
-    packages.push({
-      id: 'zip-auto-2',
-      title: `Zip 2: Season ${selectedSeason} High-Speed Mirror (Part 2)`,
-      seasonNumber: selectedSeason,
-      url: `https://drive.google.com/drive/folders/${slug}-s${selectedSeason}-zip-part2`,
-      size: '2.4 GB',
-      quality: '720p HD Fast Download',
-      host: 'Google Drive High-Speed',
-      episodesRange: 'Full Season Archive',
-      language: anime.audioLanguage || 'Dual Audio',
-    });
   }
 
   return packages;

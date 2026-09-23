@@ -78,7 +78,7 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
       }
     } else {
       // Add directly to watchlist
-      const newStatus: WatchlistStatus = 'plan_to_watch';
+      const newStatus: WatchlistStatus = 'watching';
       setWatchlistStatusState(newStatus);
       try {
         await updateWatchlistStatus(
@@ -112,6 +112,8 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             : `/anime/${anime.slug}`
         )
       }
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
       className="group relative cursor-pointer flex flex-col transition-transform duration-200 hover:-translate-y-1 will-change-transform select-none"
     >
       {/* Poster Image Container - 2:3 Aspect Ratio with compact rounded corners */}
@@ -123,7 +125,9 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out select-none pointer-events-none"
             onError={(e) => {
               (e.target as HTMLElement).style.display = 'none';
             }}

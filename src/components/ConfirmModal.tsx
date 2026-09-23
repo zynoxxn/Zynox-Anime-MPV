@@ -8,7 +8,8 @@ interface ConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   isDangerous?: boolean;
-  onConfirm: () => void;
+  isDestructive?: boolean;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -19,10 +20,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   isDangerous = true,
+  isDestructive,
   onConfirm,
   onCancel,
 }) => {
   if (!isOpen) return null;
+  const isDanger = isDestructive !== undefined ? isDestructive : isDangerous;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
@@ -54,7 +57,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             type="button"
             onClick={onConfirm}
             className={`px-4 py-2 text-sm font-medium rounded-xl text-white transition-colors ${
-              isDangerous
+              isDanger
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-[#1683FF] hover:bg-[#2196FF]'
             }`}

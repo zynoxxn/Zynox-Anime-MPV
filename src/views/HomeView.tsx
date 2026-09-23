@@ -10,6 +10,7 @@ import {
   getPopularAnimes,
   getFeaturedAnimes,
   isAnimeDeleted,
+  getAnimeUploadTimestamp,
 } from '../lib/firestore/anime';
 import { getCmsHeroBanners, getCmsSchedule } from '../lib/firestore/cms';
 import { getLatestReleasedEpisodes } from '../lib/firestore/episodes';
@@ -20,10 +21,11 @@ import { RightSidebar } from '../components/RightSidebar';
 import { HeroBanner } from '../components/HeroBanner';
 import { AnimeSliderSection } from '../components/AnimeSliderSection';
 import { AnimeCard } from '../components/AnimeCard';
+import { AnimeGrid } from '../components/AnimeGrid';
 import { EpisodeCard } from '../components/EpisodeCard';
 import { ScheduledCard } from '../components/ScheduledCard';
 import { usePageSeo } from '../hooks/usePageSeo';
-import { ChevronLeft, ChevronRight, Play, Calendar, Clock, Compass } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Calendar, Clock, Compass, Sparkles } from 'lucide-react';
 
 interface HomeViewProps {
   navigate: (path: string) => void;
@@ -71,12 +73,30 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
   const [featuredAnimes, setFeaturedAnimes] = useState<Anime[]>([]);
   const [trending, setTrending] = useState<Anime[]>([]);
   const [popular, setPopular] = useState<Anime[]>([]);
-  const [latestAnime, setLatestAnime] = useState<Anime[]>([]);
+  const [recentlyAdded, setRecentlyAdded] = useState<Anime[]>([]);
   const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>([]);
   const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
   const [scheduledAnime, setScheduledAnime] = useState<CmsScheduleItem[]>([]);
   const [allAnimes, setAllAnimes] = useState<Anime[]>([]);
   const [exploreFilter, setExploreFilter] = useState<string>('All');
+  const [isFilterTransitioning, setIsFilterTransitioning] = useState<boolean>(false);
+  const filterTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleExploreFilterChange = (filter: string) => {
+    if (filter === exploreFilter) return;
+    if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
+    setIsFilterTransitioning(true);
+    setExploreFilter(filter);
+    filterTimerRef.current = setTimeout(() => {
+      setIsFilterTransitioning(false);
+    }, 220);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (filterTimerRef.current) clearTimeout(filterTimerRef.current);
+    };
+  }, []);
 
   // Dynamic Homepage SEO
   usePageSeo({
@@ -94,27 +114,44 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
   const [hasDraggedCW, setHasDraggedCW] = useState(false);
 
   const scrollContinueWatching = (direction: 'left' | 'right') => {
-    if (continueWatchingRef.current) {
-      const scrollAmount = direction === 'left' ? -300 : 300;
-      continueWatchingRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    const el = continueWatchingRef.current;
+    if (!el) return;
+    const scrollStep = Math.max(260, Math.floor(el.clientWidth * 0.7));
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    if (maxScroll <= 0) return;
+
+    let target = direction === 'right' ? el.scrollLeft + scrollStep : el.scrollLeft - scrollStep;
+    if (direction === 'right' && el.scrollLeft >= maxScroll - 10) {
+      target = 0;
+    } else if (direction === 'left' && el.scrollLeft <= 10) {
+      target = maxScroll;
+    } else {
+      target = Math.max(0, Math.min(maxScroll, target));
+    }
+
+    try {
+      el.scrollTo({ left: target, behavior: 'smooth' });
+    } catch {
+      el.scrollLeft = target;
     }
   };
 
   const handleMouseDownCW = (e: React.MouseEvent) => {
-    if (!continueWatchingRef.current) return;
+    const el = continueWatchingRef.current;
+    if (!el) return;
     setIsDraggingCW(true);
     setHasDraggedCW(false);
-    setStartXCW(e.pageX - continueWatchingRef.current.offsetLeft);
-    setScrollLeftCW(continueWatchingRef.current.scrollLeft);
+    setStartXCW(e.clientX);
+    setScrollLeftCW(el.scrollLeft);
   };
 
   const handleMouseMoveCW = (e: React.MouseEvent) => {
     if (!isDraggingCW || !continueWatchingRef.current) return;
-    const x = e.pageX - continueWatchingRef.current.offsetLeft;
-    const walk = (x - startXCW) * 1.5;
-    if (Math.abs(walk) > 5) {
+    const el = continueWatchingRef.current;
+    const delta = e.clientX - startXCW;
+    if (Math.abs(delta) > 3) {
       setHasDraggedCW(true);
-      continueWatchingRef.current.scrollLeft = scrollLeftCW - walk;
+      el.scrollLeft = scrollLeftCW - delta;
     }
   };
 
@@ -228,13 +265,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           setPopular(popularList.length > 0 ? popularList : all.slice(0, 24));
           setAllAnimes(all.length > 0 ? all : (popularList.length > 0 ? popularList : trendingList));
 
-          // Sort animes by latest release / creation date
-          const sortedLatest = [...all].sort((a, b) => {
-            const dateA = new Date(a.createdAt || a.startDate || 0).getTime();
-            const dateB = new Date(b.createdAt || b.startDate || 0).getTime();
-            return dateB - dateA;
+          // Sort animes by latest upload / creation date for 'Recently Added'
+          const sortedRecentlyAdded = [...all].sort((a, b) => {
+            return getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a);
           });
-          setLatestAnime(sortedLatest.slice(0, 24));
+          setRecentlyAdded(sortedRecentlyAdded.slice(0, 24));
 
           setLatestEpisodes(latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES);
           
@@ -356,9 +391,10 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                   onMouseMove={handleMouseMoveCW}
                   onMouseUp={handleMouseUpOrLeaveCW}
                   onMouseLeave={handleMouseUpOrLeaveCW}
-                  style={{ touchAction: 'pan-y' }}
-                  className={`flex items-center gap-3 overflow-x-auto no-scrollbar scroll-smooth pb-2 cursor-grab active:cursor-grabbing select-none ${
-                    isDraggingCW ? 'cursor-grabbing' : ''
+                  onDragStart={(e) => e.preventDefault()}
+                  style={{ touchAction: 'pan-x pan-y', WebkitOverflowScrolling: 'touch' }}
+                  className={`flex items-center gap-3 overflow-x-auto no-scrollbar pb-2 cursor-grab active:cursor-grabbing select-none ${
+                    isDraggingCW ? 'cursor-grabbing !scroll-auto' : 'scroll-smooth'
                   }`}
                 >
                   {continueWatching.map((item) => (
@@ -480,12 +516,14 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             </div>
           </section>
 
-          {/* E. LATEST ANIME SLIDER */}
-          {latestAnime.length > 0 && (
+          {/* E. RECENTLY ADDED ANIME SLIDER */}
+          {recentlyAdded.length > 0 && (
             <AnimeSliderSection
-              id="section-latest-anime"
-              title="Latest Anime"
-              animes={latestAnime}
+              id="section-recently-added"
+              title="Recently Added"
+              icon={<Sparkles className="w-4 h-4 text-[#00CFFF]" />}
+              badge="NEW"
+              animes={recentlyAdded}
               viewAllPath="/browse?sort=latest"
               navigate={navigate}
               onShowMessage={onShowMessage}
@@ -572,7 +610,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                       <button
                         key={filter}
                         type="button"
-                        onClick={() => setExploreFilter(filter)}
+                        onClick={() => handleExploreFilterChange(filter)}
                         className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                           exploreFilter === filter
                             ? 'bg-[#1683FF] text-white shadow-sm shadow-[#1683FF]/30'
@@ -603,7 +641,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                 </div>
               </div>
 
-              {/* Anime Cards Grid */}
+              {/* Anime Cards Grid with Shimmer Skeleton Loading */}
               {(() => {
                 const filteredExplore = (() => {
                   if (exploreFilter === 'All') {
@@ -620,32 +658,28 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                   return matches.length > 0 ? matches.slice(0, 14) : [];
                 })();
 
-                if (filteredExplore.length === 0) {
-                  return (
-                    <div className="py-8 text-center bg-[#07111F]/50 rounded-2xl border border-white/5">
-                      <p className="text-sm text-[#94A3B8]">No anime found in &ldquo;{exploreFilter}&rdquo;</p>
-                      <button
-                        type="button"
-                        onClick={() => setExploreFilter('All')}
-                        className="mt-2 text-xs font-semibold text-[#1683FF] hover:text-[#00CFFF]"
-                      >
-                        Show All
-                      </button>
-                    </div>
-                  );
-                }
-
                 return (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
-                    {filteredExplore.map((anime, idx) => (
-                      <AnimeCard
-                        key={`explore-${anime.id || anime.slug}-${idx}`}
-                        anime={anime}
-                        navigate={navigate}
-                        onShowMessage={onShowMessage}
-                      />
-                    ))}
-                  </div>
+                  <AnimeGrid
+                    id="home-explore-anime-grid"
+                    animes={filteredExplore}
+                    loading={isFilterTransitioning}
+                    skeletonCount={14}
+                    columns="home"
+                    navigate={navigate}
+                    onShowMessage={onShowMessage}
+                    emptyState={
+                      <div className="py-8 text-center bg-[#07111F]/50 rounded-2xl border border-white/5">
+                        <p className="text-sm text-[#94A3B8]">No anime found in &ldquo;{exploreFilter}&rdquo;</p>
+                        <button
+                          type="button"
+                          onClick={() => handleExploreFilterChange('All')}
+                          className="mt-2 text-xs font-semibold text-[#1683FF] hover:text-[#00CFFF]"
+                        >
+                          Show All
+                        </button>
+                      </div>
+                    }
+                  />
                 );
               })()}
             </section>

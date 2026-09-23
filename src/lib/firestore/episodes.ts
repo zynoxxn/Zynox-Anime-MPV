@@ -11,6 +11,7 @@ import {
   where,
   increment,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Episode } from '../../types/episode';
@@ -595,3 +596,174 @@ export async function deleteEpisode(id: string): Promise<void> {
     throw err;
   }
 }
+
+export interface BulkEpisodeItemInput {
+  episodeNumber: number;
+  title?: string;
+  seasonNumber?: number;
+  season?: number;
+  language?: string;
+  quality?: string;
+  duration?: string;
+  published?: boolean;
+  videoUrl?: string;
+  defaultCategory?: 'sub' | 'dub';
+  sources?: any[];
+  videoSources?: any[];
+  downloadUrl?: string;
+  downloadQuality?: string;
+  downloadSize?: string;
+  downloadLinks?: {
+    quality: string;
+    url: string;
+    size?: string;
+    host?: string;
+  }[];
+}
+
+export async function bulkCreateEpisodes(
+  animeId: string,
+  episodes: BulkEpisodeItemInput[],
+  options?: {
+    overwriteExisting?: boolean;
+    updateAnimeStats?: boolean;
+    animeTitle?: string;
+    animeSlug?: string;
+  }
+): Promise<{ added: number; updated: number; failed: number }> {
+  if (!animeId || !episodes || episodes.length === 0) {
+    return { added: 0, updated: 0, failed: 0 };
+  }
+
+  try {
+    // 1. Fetch existing episodes for this anime to see which ones already exist
+    const existingSnap = await getDocs(
+      query(collection(db, EPISODES_COLLECTION), where('animeId', '==', animeId))
+    );
+    const existingMap = new Map<string, string>(); // composite key (season_episode) -> docId
+    existingSnap.forEach((d) => {
+      const data = d.data() as Episode;
+      if (typeof data.episodeNumber === 'number') {
+        const sNum = data.seasonNumber || data.season || 1;
+        existingMap.set(`${sNum}_${data.episodeNumber}`, d.id);
+        existingMap.set(`single_${data.episodeNumber}`, d.id);
+      }
+    });
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    let failedCount = 0;
+
+    // Chunk in batches of 400 (Firestore max operations per batch is 500)
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < episodes.length; i += BATCH_SIZE) {
+      const chunk = episodes.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+
+      for (const item of chunk) {
+        try {
+          const sNum = item.seasonNumber || item.season || 1;
+          const key = `${sNum}_${item.episodeNumber}`;
+          const singleKey = `single_${item.episodeNumber}`;
+          const existingDocId = existingMap.get(key) || existingMap.get(singleKey);
+
+          const episodePayload: Record<string, any> = {
+            animeId,
+            animeTitle: options?.animeTitle || '',
+            animeSlug: options?.animeSlug || '',
+            season: sNum,
+            seasonNumber: sNum,
+            episodeNumber: item.episodeNumber,
+            title: item.title || `Episode ${item.episodeNumber}`,
+            language: item.language || 'DUB',
+            quality: item.quality || '1080p',
+            duration: item.duration || '24m',
+            published: item.published !== false,
+            updatedAt: serverTimestamp(),
+          };
+
+          if (item.videoUrl) {
+            episodePayload.videoUrl = item.videoUrl;
+          }
+          if (item.sources && item.sources.length > 0) {
+            episodePayload.sources = item.sources;
+            episodePayload.videoSources = item.sources;
+          } else if (item.videoUrl) {
+            const defaultSrc = {
+              id: 'srv-1',
+              name: 'Server 1',
+              provider: 'Server 1',
+              sourceName: 'Server 1',
+              type: 'embed',
+              embedUrl: item.videoUrl,
+              category: item.defaultCategory || 'dub',
+              quality: item.quality || '1080p',
+              priority: 1,
+              active: true,
+              isDefault: true,
+            };
+            episodePayload.sources = [defaultSrc];
+            episodePayload.videoSources = [defaultSrc];
+          }
+
+          if (item.downloadUrl) {
+            episodePayload.downloadUrl = item.downloadUrl;
+          }
+          if (item.downloadLinks && item.downloadLinks.length > 0) {
+            episodePayload.downloadLinks = item.downloadLinks;
+          }
+
+          const cleanedPayload = sanitizeData(episodePayload);
+
+          if (existingDocId) {
+            if (options?.overwriteExisting !== false) {
+              const docRef = doc(db, EPISODES_COLLECTION, existingDocId);
+              batch.set(docRef, cleanedPayload, { merge: true });
+              updatedCount++;
+            }
+          } else {
+            const newDocRef = doc(collection(db, EPISODES_COLLECTION));
+            batch.set(newDocRef, {
+              ...cleanedPayload,
+              viewsCount: 0,
+              createdAt: serverTimestamp(),
+            });
+            addedCount++;
+          }
+        } catch (itemErr) {
+          console.error('Error preparing bulk episode item:', itemErr);
+          failedCount++;
+        }
+      }
+
+      await batch.commit();
+    }
+
+    // Optionally update Anime's total/released episodes count
+    if (options?.updateAnimeStats !== false && episodes.length > 0) {
+      try {
+        const animeDocRef = doc(db, 'anime', animeId);
+        const animeSnap = await getDoc(animeDocRef);
+        if (animeSnap.exists()) {
+          const currentData = animeSnap.data();
+          const maxEpInBatch = Math.max(...episodes.map((e) => e.episodeNumber));
+          const currentReleased = currentData.releasedEpisodes || 0;
+          if (maxEpInBatch > currentReleased) {
+            await updateDoc(animeDocRef, {
+              releasedEpisodes: maxEpInBatch,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (animeErr) {
+        console.warn('Failed to update anime releasedEpisodes count during bulk add:', animeErr);
+      }
+    }
+
+    return { added: addedCount, updated: updatedCount, failed: failedCount };
+  } catch (err) {
+    console.error('bulkCreateEpisodes failed:', err);
+    throw err;
+  }
+}
+

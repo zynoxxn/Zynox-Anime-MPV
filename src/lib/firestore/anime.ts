@@ -117,6 +117,25 @@ try {
   }
 } catch {}
 
+export function undeleteAnime(idOrSlug: string): void {
+  if (!idOrSlug) return;
+  OLD_REMOVED_ANIME_IDS.delete(idOrSlug);
+  const set = getLocalDeletedAnimeIds();
+  set.delete(idOrSlug);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((x: string) => x !== idOrSlug);
+          localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(filtered));
+        }
+      }
+    }
+  } catch {}
+}
+
 export function getLocalDeletedAnimeIds(): Set<string> {
   if (!cachedDeletedIds) {
     cachedDeletedIds = new Set<string>(OLD_REMOVED_ANIME_IDS);
@@ -182,10 +201,11 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
     const slug = fsItem.slug || fsItem.id;
     if (!id) continue;
 
-    // Filter out deleted animes
-    if (deletedSet.has(id) || (slug && deletedSet.has(slug))) {
-      continue;
-    }
+    // Real Firestore documents created by the admin take full precedence.
+    // If a Firestore document exists and is not explicitly marked isDeleted,
+    // ensure it is un-deleted from any old mock cleanup set.
+    if (slug) undeleteAnime(slug);
+    undeleteAnime(id);
 
     if (seenIds.has(id) || (slug && seenSlugs.has(slug))) {
       continue;
@@ -673,17 +693,13 @@ export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): P
       filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     } else if (options.sortBy === 'updated') {
       filtered.sort((a, b) => {
-        const timeA = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
-        const timeB = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+        const timeA = getAnimeUploadTimestamp(a);
+        const timeB = getAnimeUploadTimestamp(b);
         return timeB - timeA;
       });
     } else {
       // default: latest
-      filtered.sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || 0;
-        return timeB - timeA;
-      });
+      filtered.sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a));
     }
 
     return filtered;
@@ -693,15 +709,71 @@ export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): P
   }
 }
 
+export function getAnimeUploadTimestamp(anime: Anime): number {
+  if (anime.createdAt) {
+    if (typeof anime.createdAt === 'object' && typeof anime.createdAt.toMillis === 'function') {
+      return anime.createdAt.toMillis();
+    }
+    if (typeof anime.createdAt === 'object' && typeof anime.createdAt.seconds === 'number') {
+      return anime.createdAt.seconds * 1000;
+    }
+    if (anime.createdAt instanceof Date) {
+      return anime.createdAt.getTime();
+    }
+    const parsed = new Date(anime.createdAt).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (anime.updatedAt) {
+    if (typeof anime.updatedAt === 'object' && typeof anime.updatedAt.toMillis === 'function') {
+      return anime.updatedAt.toMillis();
+    }
+    if (typeof anime.updatedAt === 'object' && typeof anime.updatedAt.seconds === 'number') {
+      return anime.updatedAt.seconds * 1000;
+    }
+    if (anime.updatedAt instanceof Date) {
+      return anime.updatedAt.getTime();
+    }
+    const parsed = new Date(anime.updatedAt).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (anime.startDate) {
+    const parsed = new Date(anime.startDate).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (anime.year) {
+    return new Date(`${anime.year}-01-01`).getTime();
+  }
+  return 0;
+}
+
+export async function getRecentlyAddedAnimes(limitCount: number = 24): Promise<Anime[]> {
+  try {
+    const all = await getPublishedAnimes();
+    return [...all]
+      .sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a))
+      .slice(0, limitCount);
+  } catch (err) {
+    console.error('Failed to get recently added animes:', err);
+    return [];
+  }
+}
+
 export async function createAnime(data: Omit<Anime, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
   try {
     const cleaned = sanitizeData(data);
     const docRef = await addDoc(collection(db, ANIME_COLLECTION), {
       ...cleaned,
+      isDeleted: false,
       viewsCount: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    if (data.slug) {
+      undeleteAnime(data.slug);
+    }
+    undeleteAnime(docRef.id);
+
     return docRef.id;
   } catch (err) {
     console.error('Failed to create anime:', err);

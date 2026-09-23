@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from './AdminLayout';
 import { useAuth } from '../../lib/auth';
-import type { CmsAnnouncement, AnnouncementType, AnnouncementDisplay } from '../../types/cms';
+import type {
+  CmsAnnouncement,
+  AnnouncementType,
+  AnnouncementDisplay,
+  SitePopupNotice,
+} from '../../types/cms';
 import {
   getCmsAnnouncements,
   saveCmsAnnouncement,
@@ -9,6 +14,8 @@ import {
   logAdminActivity,
 } from '../../lib/firestore/cms';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { AdminPopupNoticeEditor } from '../../components/admin/AdminPopupNoticeEditor';
+import { SiteNoticeModal } from '../../components/SiteNoticeModal';
 import {
   Bell,
   Plus,
@@ -20,6 +27,7 @@ import {
   CheckCircle2,
   Info,
   AlertTriangle,
+  Megaphone,
 } from 'lucide-react';
 
 interface AdminAnnouncementsViewProps {
@@ -32,6 +40,8 @@ export const AdminAnnouncementsView: React.FC<AdminAnnouncementsViewProps> = ({
   onShowMessage,
 }) => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'popup' | 'banners'>('popup');
+  const [previewNotice, setPreviewNotice] = useState<SitePopupNotice | null>(null);
   const [announcements, setAnnouncements] = useState<CmsAnnouncement[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingItem, setEditingItem] = useState<Partial<CmsAnnouncement> | null>(null);
@@ -136,24 +146,66 @@ export const AdminAnnouncementsView: React.FC<AdminAnnouncementsViewProps> = ({
               <span>Global Alerts & Notices CMS</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Site Announcements Manager
+              Site Announcements & Popup Manager
             </h1>
             <p className="text-xs text-[#94A3B8] mt-1">
-              Publish top sticky banner notifications, broadcast alerts, telegram links, and maintenance notices.
+              Customize the website open pop-up card, top sticky banners, broadcast alerts, and telegram links.
             </p>
           </div>
 
+          {activeTab === 'banners' && (
+            <button
+              type="button"
+              onClick={handleOpenNew}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-xs font-bold text-black shadow-lg shadow-amber-500/30 rounded-xl transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Announcement</span>
+            </button>
+          )}
+        </div>
+
+        {/* Top Feature Switcher Tabs */}
+        <div className="flex border-b border-white/10 gap-2 bg-[#0B1322] p-1.5 rounded-2xl">
           <button
             type="button"
-            onClick={handleOpenNew}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-xs font-bold text-black shadow-lg shadow-amber-500/30 rounded-xl transition-all flex items-center gap-1.5 self-start sm:self-auto"
+            onClick={() => setActiveTab('popup')}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeTab === 'popup'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20'
+                : 'text-[#94A3B8] hover:text-white hover:bg-white/5'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            <span>Create Announcement</span>
+            <Megaphone className="w-4 h-4" />
+            <span>Website Open Popup Card (Editable Header, Notice & Footer)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('banners')}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              activeTab === 'banners'
+                ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                : 'text-[#94A3B8] hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Top Banners & Sticky Alerts ({announcements.length})</span>
           </button>
         </div>
 
-        {/* List */}
+        {/* TAB 1: WEBSITE OPEN POPUP NOTICE CARD */}
+        {activeTab === 'popup' && (
+          <AdminPopupNoticeEditor
+            onShowMessage={onShowMessage}
+            onPreviewModal={(n) => setPreviewNotice(n)}
+          />
+        )}
+
+        {/* TAB 2: SYSTEM ANNOUNCEMENT BANNERS */}
+        {activeTab === 'banners' && (
+          <>
+            {/* List */}
         {loading ? (
           <div className="py-20 text-center text-xs text-[#94A3B8]">Loading announcements...</div>
         ) : (
@@ -215,6 +267,17 @@ export const AdminAnnouncementsView: React.FC<AdminAnnouncementsViewProps> = ({
               </div>
             ))}
           </div>
+        )}
+          </>
+        )}
+
+        {/* Real-time On-Screen Live Preview Modal for Admin */}
+        {previewNotice && (
+          <SiteNoticeModal
+            isOpen={!!previewNotice}
+            onClose={() => setPreviewNotice(null)}
+            notice={previewNotice}
+          />
         )}
 
         {/* Modal */}

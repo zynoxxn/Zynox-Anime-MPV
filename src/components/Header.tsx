@@ -26,7 +26,11 @@ import {
   Flame,
   Calendar,
   Settings,
+  ChevronDown,
+  Tag,
 } from 'lucide-react';
+import { getCmsGenres, DEFAULT_GENRES } from '../lib/firestore/cms';
+import type { CmsGenre } from '../types/cms';
 
 interface HeaderProps {
   currentPath: string;
@@ -49,6 +53,27 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Genre dropdown states
+  const [genresDropdownOpen, setGenresDropdownOpen] = useState(false);
+  const [mobileGenresOpen, setMobileGenresOpen] = useState(false);
+  const genresDropdownRef = useRef<HTMLDivElement>(null);
+  const [genresList, setGenresList] = useState<CmsGenre[]>(DEFAULT_GENRES);
+
+  // Load genres from CMS
+  useEffect(() => {
+    let isMounted = true;
+    getCmsGenres()
+      .then((data) => {
+        if (isMounted && data && data.length > 0) {
+          setGenresList(data.filter((g) => g.enabled !== false));
+        }
+      })
+      .catch((err) => console.warn('Failed to load genres in header:', err));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Notifications state
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -119,6 +144,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false);
       }
+      if (genresDropdownRef.current && !genresDropdownRef.current.contains(e.target as Node)) {
+        setGenresDropdownOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -182,7 +210,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
     setNotifOpen(false);
     if (notif.link) {
       if (notif.link.startsWith('http://') || notif.link.startsWith('https://')) {
-        window.open(notif.link, '_blank', 'noopener,noreferrer');
+        window.location.href = notif.link;
       } else {
         navigate(notif.link);
       }
@@ -210,8 +238,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
     { label: 'Anime', path: '/browse', isActive: currentPath === '/browse' && !window.location.search },
     { label: 'Movies', path: '/browse?type=Movie', isActive: currentPath.includes('type=Movie') },
     { label: 'TV Series', path: '/browse?type=TV', isActive: currentPath.includes('type=TV') },
-    { label: 'Genres', path: '/browse', isActive: currentPath.includes('genre') },
-    { label: 'Schedule', path: '/browse?sort=schedule', isActive: currentPath.includes('schedule') },
+    { label: 'Schedule', path: '/schedule', isActive: currentPath === '/schedule' },
   ];
 
   return (
@@ -251,9 +278,113 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
             </button>
           </div>
 
-          {/* 2. CENTER: Desktop Clean Navigation Links (Section 08) */}
+          {/* 2. CENTER: Desktop Clean Navigation Links with Genre Dropdown */}
           <nav className="hidden lg:flex items-center gap-6 text-[14px] font-semibold">
-            {centerNavLinks.map((link) => {
+            {centerNavLinks.slice(0, 4).map((link) => {
+              const active = link.isActive;
+              return (
+                <button
+                  key={link.label}
+                  type="button"
+                  onClick={() => navigate(link.path)}
+                  className={`relative py-1 transition-colors cursor-pointer ${
+                    active
+                      ? 'text-[#1683FF] font-bold'
+                      : 'text-[#CBD5E1] hover:text-white'
+                  }`}
+                >
+                  <span>{link.label}</span>
+                  {active && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1683FF] rounded-full shadow-sm shadow-[#1683FF]" />
+                  )}
+                </button>
+              );
+            })}
+
+            {/* GENRE DROPDOWN MENU */}
+            <div ref={genresDropdownRef} className="relative">
+              <button
+                id="btn-nav-genres"
+                type="button"
+                onClick={() => setGenresDropdownOpen((prev) => !prev)}
+                className={`relative py-1 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  genresDropdownOpen || currentPath.toLowerCase().includes('genre')
+                    ? 'text-[#1683FF] font-bold'
+                    : 'text-[#CBD5E1] hover:text-white'
+                }`}
+              >
+                <span>Genre</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    genresDropdownOpen ? 'rotate-180 text-[#1683FF]' : 'text-[#94A3B8]'
+                  }`}
+                />
+                {(genresDropdownOpen || currentPath.toLowerCase().includes('genre')) && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1683FF] rounded-full shadow-sm shadow-[#1683FF]" />
+                )}
+              </button>
+
+              {/* Popover Dropdown with all requested Genres */}
+              {genresDropdownOpen && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-[500px] bg-[#050A14]/98 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-[#1683FF]" />
+                      <span className="text-xs font-bold text-white tracking-wide uppercase">
+                        All Genres
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1683FF]/15 text-[#1683FF] border border-[#1683FF]/30">
+                        {genresList.length} Total
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGenresDropdownOpen(false);
+                        navigate('/browse');
+                      }}
+                      className="text-[11px] font-semibold text-[#1683FF] hover:underline"
+                    >
+                      Browse Catalog &rarr;
+                    </button>
+                  </div>
+
+                  {/* 3-Column Genre Grid */}
+                  <div className="grid grid-cols-3 gap-1.5 max-h-[320px] overflow-y-auto no-scrollbar pr-0.5">
+                    {genresList.map((g) => {
+                      const isSelected =
+                        currentPath.toLowerCase().includes(encodeURIComponent(g.name.toLowerCase())) ||
+                        currentPath.toLowerCase().includes(g.name.toLowerCase());
+                      return (
+                        <button
+                          key={g.id || g.name}
+                          type="button"
+                          onClick={() => {
+                            setGenresDropdownOpen(false);
+                            navigate(`/browse?genre=${encodeURIComponent(g.name)}`);
+                          }}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-left transition-all group ${
+                            isSelected
+                              ? 'bg-[#1683FF] text-white font-bold shadow-md shadow-[#1683FF]/20'
+                              : 'text-[#CBD5E1] hover:text-white bg-[#081222]/80 hover:bg-[#1683FF]/15 border border-white/5 hover:border-[#1683FF]/30'
+                          }`}
+                        >
+                          <span className="truncate">{g.name}</span>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              isSelected ? 'bg-white' : 'bg-[#1683FF]/60 group-hover:bg-[#1683FF]'
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* SCHEDULE LINK */}
+            {centerNavLinks.slice(4).map((link) => {
               const active = link.isActive;
               return (
                 <button
@@ -284,7 +415,12 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 <input
                   ref={searchInputRef}
                   id="header-search-bar"
+                  name="site_search"
                   type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   placeholder="Search anime..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -586,7 +722,12 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
               <input
                 ref={mobileSearchInputRef}
+                name="mobile_site_search"
                 type="text"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 placeholder="Search anime..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -667,8 +808,86 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 {[
                   { label: 'Home', path: '/', icon: Film },
                   { label: 'Explore Anime', path: '/browse', icon: Compass },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = currentPath === item.path;
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        navigate(item.path);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
+                        active
+                          ? 'bg-[#1683FF] text-white font-bold'
+                          : 'text-[#CBD5E1] hover:bg-[#07111F]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+
+                {/* Mobile Expandable Genre Menu */}
+                <div className="pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setMobileGenresOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-[#CBD5E1] hover:bg-[#07111F] transition-all text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Tag className="w-4 h-4 shrink-0 text-[#1683FF]" />
+                      <span className={mobileGenresOpen || currentPath.toLowerCase().includes('genre') ? 'text-white font-bold' : ''}>
+                        Genres ({genresList.length})
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={`w-4 h-4 text-[#94A3B8] transition-transform duration-200 ${
+                        mobileGenresOpen ? 'rotate-180 text-[#1683FF]' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {mobileGenresOpen && (
+                    <div className="grid grid-cols-2 gap-1.5 p-2 bg-[#07111F] rounded-xl my-1 max-h-56 overflow-y-auto border border-white/5 animate-in slide-in-from-top-1 duration-150">
+                      {genresList.map((g) => {
+                        const isSelected =
+                          currentPath.toLowerCase().includes(encodeURIComponent(g.name.toLowerCase())) ||
+                          currentPath.toLowerCase().includes(g.name.toLowerCase());
+                        return (
+                          <button
+                            key={g.id || g.name}
+                            type="button"
+                            onClick={() => {
+                              setMobileMenuOpen(false);
+                              setMobileGenresOpen(false);
+                              navigate(`/browse?genre=${encodeURIComponent(g.name)}`);
+                            }}
+                            className={`px-2.5 py-1.5 text-[11px] font-medium rounded-lg text-left truncate transition-colors flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-[#1683FF] text-white font-bold'
+                                : 'text-[#CBD5E1] hover:text-white hover:bg-[#1683FF]/20'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                isSelected ? 'bg-white' : 'bg-[#1683FF]/70'
+                              }`}
+                            />
+                            <span className="truncate">{g.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {[
                   { label: 'Trending', path: '/browse?sort=popular', icon: Flame },
-                  { label: 'Schedule', path: '/browse?sort=schedule', icon: Calendar },
+                  { label: 'Schedule', path: '/schedule', icon: Calendar },
                   { label: 'Watchlist', path: '/watchlist', icon: Bookmark },
                   { label: 'Watch History', path: '/history', icon: History },
                 ].map((item) => {
