@@ -42,7 +42,29 @@ export const ScheduleView: React.FC<ScheduleViewProps> = ({ navigate, onShowMess
     Promise.all([getCmsSchedule(), getAllAnimes()])
       .then(([schList, animeList]) => {
         if (isMounted) {
-          setScheduleItems(schList);
+          const animeMap = new Map<string, Anime>();
+          animeList.forEach((a) => {
+            if (a.id) animeMap.set(a.id, a);
+            if (a.slug) animeMap.set(a.slug, a);
+          });
+          const enriched = schList.map((item) => {
+            const found =
+              animeMap.get(item.animeId) ||
+              (item.animeSlug ? animeMap.get(item.animeSlug) : undefined) ||
+              animeList.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
+            const banner =
+              found?.banner ||
+              (found as any)?.bannerUrl ||
+              item.animeBanner ||
+              found?.poster ||
+              item.animePoster;
+            return {
+              ...item,
+              animePoster: found?.poster || item.animePoster,
+              animeBanner: banner,
+            };
+          });
+          setScheduleItems(enriched);
           setAnimes(animeList);
           setLoading(false);
         }

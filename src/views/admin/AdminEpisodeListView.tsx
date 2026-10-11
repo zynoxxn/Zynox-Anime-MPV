@@ -22,6 +22,7 @@ import {
   Layers,
   Download,
   ListPlus,
+  Clock,
 } from 'lucide-react';
 
 interface AdminEpisodeListViewProps {
@@ -321,19 +322,30 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
                     </div>
 
                     <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
                           EP {ep.episodeNumber}
                         </span>
+                        {(ep.status === 'upcoming' || ep.isUpcoming) && (
+                          <span className="font-mono text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-amber-400" />
+                            Upcoming {ep.airDate ? `(${ep.airDate})` : ''}
+                          </span>
+                        )}
                         <h3 className="text-xs font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
                           {ep.title || `Episode ${ep.episodeNumber}`}
                         </h3>
                       </div>
 
-                      <div className="text-[11px] text-[#94A3B8] flex items-center gap-2">
+                      <div className="text-[11px] text-[#94A3B8] flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-white truncate max-w-[200px]">
                           {getAnimeTitle(ep.animeId)}
                         </span>
+                        {animeObj && (animeObj.status === 'upcoming' || animeObj.isUpcoming) && (
+                          <span className="text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1 rounded">
+                            Upcoming
+                          </span>
+                        )}
                         <span>•</span>
                         <span>Season {ep.seasonNumber || 1}</span>
                         <span>•</span>

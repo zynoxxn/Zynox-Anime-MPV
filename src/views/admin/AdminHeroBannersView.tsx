@@ -11,6 +11,7 @@ import {
 } from '../../lib/firestore/cms';
 import { getAllAnimes, updateAnime } from '../../lib/firestore/anime';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { AdminImageUploader } from '../../components/admin/AdminImageUploader';
 import {
   Layers,
   Plus,
@@ -379,17 +380,18 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
                   />
                 </div>
 
-                {/* Background Image URL */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Background Banner Image URL</label>
-                  <input
-                    type="url"
-                    value={editingBanner.backgroundImage || ''}
-                    onChange={(e) =>
-                      setEditingBanner({ ...editingBanner, backgroundImage: e.target.value })
+                {/* Background Banner Image Direct Upload */}
+                <div className="pt-1">
+                  <AdminImageUploader
+                    label="Background Banner Image"
+                    type="banner"
+                    currentUrl={editingBanner.backgroundImage || ''}
+                    animeId={editingBanner.animeId || editingBanner.animeSlug || 'hero'}
+                    onUrlChange={(url) =>
+                      setEditingBanner({ ...editingBanner, backgroundImage: url })
                     }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
                     required
+                    recommendedText="Landscape 16:9 (Max 10MB • JPG, PNG, WEBP)"
                   />
                 </div>
 

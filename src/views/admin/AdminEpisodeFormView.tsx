@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Anime } from '../../types/anime';
 import type { Episode, VideoSource, SubtitleTrack } from '../../types/episode';
-import { getAllAnimes } from '../../lib/firestore/anime';
+import { getAllAnimes, updateAnime } from '../../lib/firestore/anime';
 import {
   createEpisode,
   getEpisodeById,
@@ -22,6 +22,7 @@ import {
   Server,
   Play,
   Clock,
+  Calendar,
   Subtitles,
   ShieldCheck,
   CheckCircle2,
@@ -53,6 +54,13 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
   const [thumbnail, setThumbnail] = useState('');
   const [duration, setDuration] = useState('24:00');
   const [published, setPublished] = useState(true);
+
+  // Upcoming & Scheduling states
+  const [isUpcoming, setIsUpcoming] = useState(false);
+  const [airDate, setAirDate] = useState('');
+  const [releaseTime, setReleaseTime] = useState('20:00');
+  const [timezone, setTimezone] = useState('Asia/Kolkata');
+  const [syncAnimeUpcoming, setSyncAnimeUpcoming] = useState(true);
 
   // Download options
   const [downloadUrl, setDownloadUrl] = useState('');
@@ -153,6 +161,10 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setOutroStart(epData.outroStart);
             setOutroEnd(epData.outroEnd);
             setPublished(epData.published ?? true);
+            setIsUpcoming(epData.status === 'upcoming' || Boolean(epData.isUpcoming));
+            setAirDate(epData.airDate || epData.releaseDate || '');
+            setReleaseTime(epData.releaseTime || '20:00');
+            setTimezone(epData.timezone || 'Asia/Kolkata');
 
             if (epData.videoSources && epData.videoSources.length > 0) {
               const seenLoadedIds = new Set<string>();
@@ -347,10 +359,10 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setSeasonNumber(parseInt(querySeason, 10) || 1);
           }
 
-          // Auto-set thumbnail from anime banner or poster
+          // Auto-set thumbnail from anime banner
           const foundAnime = animeList.find((a) => a.id === defaultAnimeId || a.slug === defaultAnimeId);
           if (foundAnime) {
-            setThumbnail(foundAnime.banner || foundAnime.poster || '');
+            setThumbnail(foundAnime.banner || (foundAnime as any).bannerUrl || foundAnime.poster || '');
           }
 
           if (defaultAnimeId) {
@@ -376,7 +388,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     setSelectedAnimeId(newAnimeId);
     const foundAnime = animes.find((a) => a.id === newAnimeId || a.slug === newAnimeId);
     if (!isEditMode && foundAnime) {
-      setThumbnail(foundAnime.banner || foundAnime.poster || '');
+      setThumbnail(foundAnime.banner || (foundAnime as any).bannerUrl || foundAnime.poster || '');
     }
     if (!isEditMode && newAnimeId) {
       try {
@@ -509,14 +521,14 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     }
 
     const validSources = videoSources.filter((s) => s.embedUrl?.trim() || s.frameCode?.trim());
-    if (validSources.length === 0) {
-      setError('Please enter at least one valid video embed URL or streaming source.');
+    if (!isUpcoming && validSources.length === 0) {
+      setError('Please enter at least one valid video embed URL or streaming source (or mark episode as Upcoming / Scheduled).');
       return;
     }
 
     // Determine the active default server among valid sources
     let defaultSource = validSources.find((s) => s.isDefault === true);
-    if (!defaultSource) {
+    if (!defaultSource && validSources.length > 0) {
       defaultSource = validSources[0];
     }
 
@@ -526,8 +538,10 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     const targetAnimeId = effectiveAnime?.id || selectedAnimeId;
     const targetAnimeSlug = effectiveAnime?.slug || selectedAnimeId;
     const targetAnimeTitle = effectiveAnime?.title || '';
-    const fallbackThumb = effectiveAnime?.banner || effectiveAnime?.poster || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80';
+    const animeBanner = effectiveAnime?.banner || (effectiveAnime as any)?.bannerUrl || effectiveAnime?.poster || '';
+    const fallbackThumb = animeBanner || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80';
     const finalThumbnail = thumbnail.trim() || fallbackThumb;
+    const formattedAirDate = airDate.trim() || undefined;
 
     const payload: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'> = {
       animeId: targetAnimeId,
@@ -540,13 +554,19 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
       description: description.trim() || undefined,
       thumbnail: finalThumbnail,
       duration: duration.trim() || '24:00',
+      status: isUpcoming ? 'upcoming' : 'released',
+      isUpcoming: isUpcoming,
+      airDate: formattedAirDate,
+      releaseDate: formattedAirDate,
+      releaseTime: releaseTime.trim() || undefined,
+      timezone: timezone.trim() || 'Asia/Kolkata',
       downloadUrl: downloadUrl.trim() || (validDownloadLinks[0]?.url ? validDownloadLinks[0].url.trim() : undefined),
       downloadQuality: downloadQuality.trim() || undefined,
       downloadSize: downloadSize.trim() || undefined,
       downloadLinks: validDownloadLinks.length > 0 ? validDownloadLinks : undefined,
-      videoUrl: defaultSource.embedUrl || validSources[0].embedUrl || '',
-      defaultSourceId: defaultSource.id,
-      defaultCategory: (defaultSource.category as any) || 'sub',
+      videoUrl: defaultSource ? (defaultSource.embedUrl || validSources[0]?.embedUrl || '') : '',
+      defaultSourceId: defaultSource?.id,
+      defaultCategory: (defaultSource?.category as any) || 'sub',
       sources: validSources.map((s, idx) => ({
         id: s.id || `src-${idx + 1}`,
         name: s.name?.trim() || `server ${idx + 1}`,
@@ -561,7 +581,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
         frameCode: s.frameCode?.trim() || '',
         priority: s.priority || idx + 1,
         active: s.active ?? true,
-        isDefault: s.id === defaultSource!.id,
+        isDefault: defaultSource ? s.id === defaultSource.id : false,
       })),
       videoSources: validSources.map((s, idx) => ({
         id: s.id || `src-${idx + 1}`,
@@ -577,7 +597,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
         frameCode: s.frameCode?.trim() || '',
         priority: s.priority || idx + 1,
         active: s.active ?? true,
-        isDefault: s.id === defaultSource!.id,
+        isDefault: defaultSource ? s.id === defaultSource.id : false,
       })),
       subtitles: subtitles.filter((s) => s.url.trim()),
       introStart: introStart ? Number(introStart) : undefined,
@@ -597,9 +617,9 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           'Updated Episode',
           'Episode',
           episodeId,
-          `Ep ${payload.episodeNumber} - ${payload.title}`
+          `Ep ${payload.episodeNumber} - ${payload.title} ${isUpcoming ? '(Upcoming)' : ''}`
         );
-        onShowMessage('Episode updated successfully.');
+        onShowMessage(`Episode updated successfully ${isUpcoming ? 'as Upcoming' : ''}.`);
       } else {
         const newEpId = await createEpisode(payload);
         await logAdminActivity(
@@ -608,10 +628,22 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           'Created Episode',
           'Episode',
           newEpId,
-          `Ep ${payload.episodeNumber} - ${payload.title}`
+          `Ep ${payload.episodeNumber} - ${payload.title} ${isUpcoming ? '(Upcoming)' : ''}`
         );
-        onShowMessage('Episode created successfully.');
+        onShowMessage(`Episode created successfully ${isUpcoming ? 'as Upcoming' : ''}.`);
       }
+
+      // Automatically sync Anime title & catalog status to Upcoming if selected
+      if (isUpcoming && syncAnimeUpcoming && targetAnimeId) {
+        await updateAnime(targetAnimeId, {
+          status: 'upcoming',
+          isUpcoming: true,
+          upcomingEpisodeNumber: Number(episodeNumber) || 1,
+          upcomingAirDate: formattedAirDate,
+          upcomingReleaseTime: releaseTime.trim() || undefined,
+        }).catch((err) => console.warn('Failed to sync anime upcoming upon episode save:', err));
+      }
+
       navigate('/admin/episodes');
     } catch (err: any) {
       console.error('Failed to save episode:', err);
@@ -863,6 +895,112 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Episode Release & Upcoming Scheduling Status */}
+          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 sm:p-7 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <Calendar className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white">Broadcast Status & Upcoming Schedule</h3>
+              </div>
+              <span
+                className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border self-start sm:self-auto ${
+                  isUpcoming
+                    ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
+                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                }`}
+              >
+                {isUpcoming ? 'Upcoming / Scheduled' : 'Available / Released'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <button
+                type="button"
+                onClick={() => setIsUpcoming(false)}
+                className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  !isUpcoming
+                    ? 'bg-emerald-500/10 border-emerald-500/50 text-white shadow-md shadow-emerald-500/10'
+                    : 'bg-[#050A14] border-white/10 text-[#94A3B8] hover:text-white hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-xs text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Available / Released</span>
+                </div>
+                <p className="text-[11px] text-[#94A3B8] mt-1 leading-relaxed">
+                  Episode is officially released. Requires streaming video embed link.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsUpcoming(true)}
+                className={`p-3.5 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  isUpcoming
+                    ? 'bg-cyan-500/10 border-cyan-500/50 text-white shadow-md shadow-cyan-500/10'
+                    : 'bg-[#050A14] border-white/10 text-[#94A3B8] hover:text-white hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-xs text-cyan-400">
+                  <Clock className="w-4 h-4" />
+                  <span>Upcoming / Scheduled Episode</span>
+                </div>
+                <p className="text-[11px] text-[#94A3B8] mt-1 leading-relaxed">
+                  Shows as 'Upcoming' in episode list. Video stream links can be added later upon airing.
+                </p>
+              </button>
+            </div>
+
+            {isUpcoming && (
+              <div className="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl space-y-3.5 animate-in fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-cyan-300">Scheduled Air Date (Date or Day)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2026-10-18 or Monday"
+                      value={airDate}
+                      onChange={(e) => setAirDate(e.target.value)}
+                      className="w-full bg-[#050A14] border border-cyan-500/30 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-cyan-300">Air Time (HH:MM)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 20:00"
+                      value={releaseTime}
+                      onChange={(e) => setReleaseTime(e.target.value)}
+                      className="w-full bg-[#050A14] border border-cyan-500/30 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-cyan-300">Timezone</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Asia/Kolkata"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="w-full bg-[#050A14] border border-cyan-500/30 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-white pt-1">
+                  <input
+                    type="checkbox"
+                    checked={syncAnimeUpcoming}
+                    onChange={(e) => setSyncAnimeUpcoming(e.target.checked)}
+                    className="w-4 h-4 rounded text-cyan-500 focus:ring-0 bg-[#050A14] border-white/20"
+                  />
+                  <span>Also show Anime Title as Upcoming in Catalog & Details page</span>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Video Streaming Servers (Sub & Dub) - Clean & Simple */}

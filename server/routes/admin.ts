@@ -4,6 +4,7 @@ import {
   requireAdmin,
   getAdminAuth,
   getAdminDb,
+  getAdminStorageBucket,
   recordAdminAuditLog,
   PRIMARY_SUPER_ADMIN_EMAIL,
   type AuthenticatedRequest,
@@ -254,6 +255,117 @@ router.post('/validate-video-url', (req, res) => {
   const { url } = req.body;
   const result = validateVideoUrlServer(url);
   res.json(result);
+});
+
+/**
+ * POST /api/admin/storage/upload
+ * Direct server-side upload proxy to Firebase Storage bucket.
+ * Handles poster/banner images securely with size and MIME validation.
+ */
+router.post('/storage/upload', async (req: AuthenticatedRequest, res) => {
+  const { base64, contentType, animeId, imageType, storagePath } = req.body;
+
+  if (!base64 || !contentType || !imageType) {
+    return res.status(400).json({ error: 'base64 data, contentType, and imageType are required.' });
+  }
+
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!validTypes.includes(contentType.toLowerCase())) {
+    return res.status(400).json({ error: 'Unsupported file type. Only JPG, PNG, and WEBP images are allowed.' });
+  }
+
+  const maxBytes = imageType === 'poster' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+  const buffer = Buffer.from(base64, 'base64');
+  if (buffer.length > maxBytes) {
+    return res.status(400).json({
+      error: `File size exceeds the ${imageType === 'poster' ? '5MB' : '10MB'} limit.`,
+    });
+  }
+
+  const cleanAnimeId = (animeId || 'new_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const folder = imageType === 'poster' ? 'posters' : 'banners';
+  const ext = contentType.includes('webp') ? 'webp' : contentType.includes('png') ? 'png' : 'jpg';
+  const uniqueId = Math.random().toString(36).substring(2, 8);
+  const targetPath = storagePath || `zynox-anime/${folder}/${cleanAnimeId}/${imageType}_${Date.now()}_${uniqueId}.${ext}`;
+
+  try {
+    const bucket = getAdminStorageBucket();
+    const file = bucket.file(targetPath);
+    const downloadToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+    await file.save(buffer, {
+      metadata: {
+        contentType,
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken,
+          uploadedBy: req.user?.email || 'admin',
+          animeId: cleanAnimeId,
+          imageType,
+        },
+      },
+      resumable: false,
+    });
+
+    try {
+      await file.makePublic();
+    } catch {
+      // Ignore if uniform bucket-level access is enabled
+    }
+
+    const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(targetPath)}?alt=media&token=${downloadToken}`;
+
+    await recordAdminAuditLog({
+      adminUid: req.user!.uid,
+      adminEmail: req.user!.email || 'unknown',
+      action: `Uploaded ${imageType} to Storage`,
+      resource: 'FirebaseStorage',
+      targetId: cleanAnimeId,
+      details: `Path: ${targetPath}, Size: ${(buffer.length / 1024).toFixed(1)} KB`,
+      ip: req.ip,
+    });
+
+    res.json({
+      success: true,
+      downloadUrl,
+      storagePath: targetPath,
+    });
+  } catch (err: any) {
+    console.error('[STORAGE UPLOAD ERROR]:', err);
+    res.status(500).json({ error: 'Failed to upload image to Firebase Storage.' });
+  }
+});
+
+/**
+ * POST /api/admin/storage/delete
+ * Safely deletes a file from Firebase Storage.
+ */
+router.post('/storage/delete', async (req: AuthenticatedRequest, res) => {
+  const { storagePath, url } = req.body;
+  let targetPath = storagePath;
+
+  if (!targetPath && url && typeof url === 'string') {
+    const match = url.match(/\/o\/(.+?)\?/);
+    if (match && match[1]) {
+      targetPath = decodeURIComponent(match[1]);
+    }
+  }
+
+  if (!targetPath || !targetPath.startsWith('zynox-anime/')) {
+    return res.status(400).json({ error: 'Valid storage path under /zynox-anime/ is required.' });
+  }
+
+  try {
+    const bucket = getAdminStorageBucket();
+    const file = bucket.file(targetPath);
+    const [exists] = await file.exists();
+    if (exists) {
+      await file.delete();
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.warn('[STORAGE DELETE NOTICE]:', err?.message);
+    res.json({ success: false, error: err?.message });
+  }
 });
 
 export default router;

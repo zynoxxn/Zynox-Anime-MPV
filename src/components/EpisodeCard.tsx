@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play } from 'lucide-react';
+import { Play, Clock } from 'lucide-react';
 import type { LatestEpisodeItem } from '../lib/firestore/episodes';
 
 interface EpisodeCardProps {
@@ -13,12 +13,16 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
   navigate,
   variant = 'landscape-card',
 }) => {
-  const { episode, animeTitle, animeSlug, animePoster } = item;
+  const { episode, animeTitle, animeSlug, animePoster, animeBanner } = item;
+  const isEpUpcoming = episode.status === 'upcoming' || Boolean(episode.isUpcoming);
   const sNum = episode.seasonNumber || episode.season || 1;
   const targetUrl = `/anime/${animeSlug}/episode/${episode.episodeNumber}${sNum > 1 ? `?season=${sNum}` : ''}`;
 
   // Time ago calculation
   const getTimeAgo = () => {
+    if (isEpUpcoming) {
+      return episode.airDate ? `Air: ${episode.airDate}` : 'Upcoming premiere';
+    }
     if (!episode.createdAt) return 'Recently';
     try {
       const millis = typeof episode.createdAt?.toMillis === 'function'
@@ -35,7 +39,15 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
   };
 
   const epLabel = sNum > 1 ? `S${sNum} · EP ${episode.episodeNumber}` : `EP ${episode.episodeNumber}`;
-  const thumbnail = episode.thumbnail || animePoster;
+  // Prioritize anime banner for 16:9 episode thumbnail
+  const thumbnail =
+    animeBanner ||
+    (item as any).animeBanner ||
+    (episode as any).animeBanner ||
+    (episode as any).banner ||
+    episode.thumbnail ||
+    animePoster ||
+    '';
 
   if (variant === 'mobile-row') {
     return (
@@ -53,29 +65,50 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              (e.target as HTMLElement).style.display = 'none';
+              const target = e.target as HTMLImageElement;
+              if (animePoster && target.src !== animePoster) {
+                target.src = animePoster;
+              }
             }}
           />
           {/* Centered Play Button Circle */}
           <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-            <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
-              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
-            </div>
+            {isEpUpcoming ? (
+              <div className="w-7 h-7 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-md">
+                <Clock className="w-3.5 h-3.5" />
+              </div>
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
+                <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+              </div>
+            )}
           </div>
         </div>
 
         {/* Middle Info */}
         <div className="flex-1 min-w-0">
-          <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors">
-            {animeTitle}
-          </h4>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors flex-1">
+              {animeTitle}
+            </h4>
+            {isEpUpcoming && (
+              <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none flex items-center gap-0.5">
+                <Clock className="w-2 h-2" />
+                Upcoming
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-[#94A3B8] mt-1">
             {getTimeAgo()}
           </p>
         </div>
 
         {/* Right EP Badge */}
-        <div className="px-2 py-1 rounded-md bg-[#07111F] border border-white/10 text-[11px] font-bold text-[#CBD5E1] shrink-0">
+        <div className={`px-2 py-1 rounded-md border text-[11px] font-bold shrink-0 ${
+          isEpUpcoming
+            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+            : 'bg-[#07111F] border border-white/10 text-[#CBD5E1]'
+        }`}>
           {epLabel}
         </div>
       </div>
@@ -98,28 +131,49 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
+            const target = e.target as HTMLImageElement;
+            if (animePoster && target.src !== animePoster) {
+              target.src = animePoster;
+            }
           }}
         />
 
         {/* Top-Right EP Badge */}
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[10px] sm:text-[11px] font-bold text-white border border-white/10">
-          {epLabel}
+        <div className={`absolute top-2 right-2 px-2 py-0.5 rounded backdrop-blur-sm text-[10px] sm:text-[11px] font-bold border ${
+          isEpUpcoming
+            ? 'bg-amber-500/90 text-black border-amber-400'
+            : 'bg-black/75 text-white border-white/10'
+        }`}>
+          {isEpUpcoming ? `Upcoming ${epLabel}` : epLabel}
         </div>
 
         {/* Center Play Button Overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
-          <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
-            <Play className="w-4 h-4 fill-white ml-0.5" />
-          </div>
+          {isEpUpcoming ? (
+            <div className="w-9 h-9 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-lg shadow-amber-500/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
+              <Clock className="w-4 h-4" />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
+              <Play className="w-4 h-4 fill-white ml-0.5" />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Info Below Thumbnail */}
       <div className="pt-2 flex flex-col gap-0.5">
-        <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight">
-          {animeTitle}
-        </h4>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight flex-1">
+            {animeTitle}
+          </h4>
+          {isEpUpcoming && (
+            <span className="shrink-0 text-[8px] font-black uppercase px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none flex items-center gap-0.5">
+              <Clock className="w-2.5 h-2.5" />
+              Upcoming
+            </span>
+          )}
+        </div>
         <span className="text-[11px] text-[#94A3B8]">
           {getTimeAgo()}
         </span>

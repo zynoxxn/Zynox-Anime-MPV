@@ -97,15 +97,31 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         { id: 'episodes', title: 'Episodes', path: '/admin/episodes', icon: Tv },
         { id: 'bulk-episodes', title: 'Bulk Episodes', path: '/admin/episodes/bulk', icon: ListPlus },
         { id: 'downloads', title: 'Downloads', path: '/admin/downloads', icon: Download },
+        { id: 'schedule', title: 'Schedule', path: '/admin/schedule', icon: Calendar },
       ],
     },
     {
-      groupTitle: 'Configuration',
+      groupTitle: 'Display & Curation',
       items: [
-        { id: 'notice', title: 'Site Notice', path: '/admin/notice', icon: Megaphone },
-        { id: 'requests', title: 'Requests', path: '/admin/requests', icon: FileText },
-        { id: 'users', title: 'Users', path: '/admin/users', icon: Users },
-        { id: 'settings', title: 'Settings', path: '/admin/settings', icon: Settings },
+        { id: 'notice', title: 'Site Pop-up Notice', path: '/admin/notice', icon: Megaphone },
+        { id: 'hero', title: 'Hero Banners', path: '/admin/hero', icon: Sparkles },
+        { id: 'announcements', title: 'Announcements', path: '/admin/announcements', icon: Bell },
+      ],
+    },
+    {
+      groupTitle: 'Community & Moderation',
+      items: [
+        { id: 'requests', title: 'Anime Requests', path: '/admin/requests', icon: FileText },
+        { id: 'reports', title: 'Reports & Comments', path: '/admin/reports', icon: MessageSquare },
+        { id: 'users', title: 'User Management', path: '/admin/users', icon: Users },
+      ],
+    },
+    {
+      groupTitle: 'System & SEO',
+      items: [
+        { id: 'settings', title: 'Site Settings', path: '/admin/settings', icon: Settings },
+        { id: 'seo', title: 'SEO & Metadata', path: '/admin/seo', icon: Globe },
+        { id: 'logs', title: 'Activity Logs', path: '/admin/logs', icon: Activity },
       ],
     },
   ];
@@ -117,14 +133,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#050A14] text-white flex flex-col antialiased selection:bg-[#1683FF] selection:text-white">
-      {/* Top Bar */}
-      <header className="sticky top-0 z-40 bg-[#0B1322]/95 backdrop-blur-md border-b border-white/10 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
+    <div className="h-screen bg-[#050A14] text-white flex flex-col antialiased selection:bg-[#1683FF] selection:text-white overflow-hidden">
+      {/* Top Bar - Single clean header */}
+      <header className="shrink-0 z-40 bg-[#0B1322]/95 backdrop-blur-md border-b border-white/10 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between">
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors"
+            className="md:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors"
             title="Toggle Menu"
           >
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -138,10 +154,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               Z
             </div>
             <div>
-              <div className="text-xs sm:text-sm font-black text-white tracking-wider">
-                ZYNOX
+              <div className="text-xs sm:text-sm font-black text-white tracking-wider flex items-center gap-1.5">
+                ZYNOX <span className="hidden xs:inline text-[#1683FF] text-[10px] uppercase font-bold tracking-normal px-1.5 py-0.5 rounded bg-[#1683FF]/15 border border-[#1683FF]/30">Admin</span>
               </div>
-              <div className="text-[10px] text-[#94A3B8]">Admin Panel</div>
+              <div className="text-[10px] text-[#94A3B8]">Control Panel</div>
             </div>
           </div>
         </div>
@@ -154,7 +170,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         >
           <div className="flex items-center gap-2 truncate">
             <Search className="w-3.5 h-3.5 text-[#1683FF] shrink-0" />
-            <span className="truncate">Search CMS...</span>
+            <span className="truncate">Search CMS & Anime...</span>
           </div>
           <kbd className="hidden md:inline-block px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white shrink-0">
             Ctrl + K
@@ -188,7 +204,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white text-xs font-semibold border border-white/5 transition-colors"
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white text-xs font-semibold border border-white/5 transition-colors"
             title="Go to Live Site"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -208,13 +224,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       </header>
 
       {/* Body container */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar (Desktop & Tablet Landscape) */}
-        <aside className="hidden lg:flex w-64 bg-[#080E1A] border-r border-white/10 flex-col justify-between overflow-y-auto p-4 shrink-0">
-          <div className="space-y-6">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Left Sidebar (Desktop & Tablet / Laptop) */}
+        <aside className="hidden md:flex w-60 lg:w-64 bg-[#080E1A] border-r border-white/10 flex-col justify-between overflow-y-auto p-3.5 lg:p-4 shrink-0">
+          <div className="space-y-5">
             {navGroups.map((group) => (
               <div key={group.groupTitle} className="space-y-1">
-                <div className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider px-3 py-1">
+                <div className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider px-2.5 py-1">
                   {group.groupTitle}
                 </div>
                 {group.items.map((item) => {
@@ -225,18 +241,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                       key={item.id}
                       type="button"
                       onClick={() => navigate(item.path)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
                           : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
-                        <span>{item.title}</span>
+                      <div className="flex items-center gap-2.5 truncate">
+                        <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
+                        <span className="truncate">{item.title}</span>
                       </div>
                       {item.badge && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">
+                        <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] shrink-0">
                           {item.badge}
                         </span>
                       )}
@@ -248,7 +264,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </div>
 
           {/* Admin User Footer */}
-          <div className="mt-8 pt-4 border-t border-white/5 flex items-center gap-2.5 px-2">
+          <div className="mt-6 pt-3.5 border-t border-white/5 flex items-center gap-2.5 px-2">
             <div className="w-8 h-8 rounded-full bg-[#1683FF]/20 text-[#1683FF] border border-[#1683FF]/40 flex items-center justify-center font-bold text-xs shrink-0">
               <Shield className="w-4 h-4" />
             </div>
@@ -261,7 +277,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
-          <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div className="md:hidden fixed inset-0 z-50 flex">
             {/* Backdrop */}
             <div
               className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
@@ -305,7 +321,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                             navigate(item.path);
                             setIsMobileMenuOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                             isActive
                               ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
                               : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
@@ -346,7 +362,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                       setIsMobileMenuOpen(false);
                       navigate('/');
                     }}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#94A3B8] hover:text-white border border-white/5"
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#94A3B8] hover:text-white border border-white/5 cursor-pointer"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Live Site</span>
@@ -354,7 +370,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 border border-rose-500/20"
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 border border-rose-500/20 cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Logout</span>
@@ -366,7 +382,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 bg-[#050A14] pb-24 md:pb-8">
+        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 bg-[#050A14] pb-24 md:pb-8 min-h-0">
           {children}
         </main>
       </div>

@@ -25,6 +25,8 @@ export interface VideoSource {
   isDefault?: boolean;
 }
 
+export type EpisodeStatus = 'released' | 'upcoming' | 'delayed' | string;
+
 export interface Episode {
   id?: string;
   animeId: string;
@@ -37,8 +39,12 @@ export interface Episode {
   language?: EpisodeLanguage;
   quality?: string;
   duration?: number | string; // In seconds or formatted string
+  status?: EpisodeStatus;
+  isUpcoming?: boolean;
+  airDate?: string; // e.g. "2026-10-15" or "Monday at 20:00"
   releaseDate?: string;
   releaseTime?: string;
+  timezone?: string;
   introStart?: number; // seconds (e.g. 0)
   introEnd?: number; // seconds (e.g. 90)
   outroStart?: number; // seconds (e.g. 1320)

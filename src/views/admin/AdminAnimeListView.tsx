@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Search,
   Download,
+  Clock,
 } from 'lucide-react';
 
 interface AdminAnimeListViewProps {
@@ -212,10 +213,16 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     />
 
                     <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-white group-hover:text-[#1683FF] transition-colors truncate">
                           {anime.title}
                         </h3>
+                        {(anime.status === 'upcoming' || anime.isUpcoming) && (
+                          <span className="text-[10px] font-black uppercase text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-amber-400" />
+                            Upcoming Show
+                          </span>
+                        )}
                         <span className="text-[10px] text-[#94A3B8] font-mono">/{anime.slug}</span>
                       </div>
 

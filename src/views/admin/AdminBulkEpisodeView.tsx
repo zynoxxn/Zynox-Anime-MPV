@@ -412,6 +412,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         updateAnimeStats,
         animeTitle: selectedAnime?.title || '',
         animeSlug: selectedAnime?.slug || selectedAnime?.id || '',
+        animePoster: selectedAnime?.poster || '',
+        animeBanner: selectedAnime?.banner || (selectedAnime as any)?.bannerUrl || selectedAnime?.poster || '',
       });
 
       // Log admin audit activity

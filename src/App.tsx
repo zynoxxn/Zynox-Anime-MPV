@@ -535,6 +535,9 @@ const AppContent: React.FC = () => {
     return <HomeView navigate={navigate} onShowMessage={showToast} />;
   };
 
+  const [rawPath] = (currentPath || '').split('?');
+  const isAdminRoute = (rawPath || '').startsWith('/admin');
+
   return (
     <div className="min-h-screen bg-[#030712] text-[#F5F9FF] flex flex-col font-sans relative selection:bg-[#00A8FF]/30 selection:text-white">
       {/* Hardware-Accelerated Ambient Glow Background */}
@@ -558,35 +561,42 @@ const AppContent: React.FC = () => {
         </div>
       )}
 
-      {/* Main Page Layout Wrapper (Applies smooth glass blur when popup notice is open) */}
-      <div
-        className={`flex flex-col flex-1 transition-[filter] duration-300 ${
-          popupNoticeOpen ? 'filter blur-[6px] pointer-events-none select-none' : ''
-        }`}
-      >
-        {/* Persistent App Header */}
-        <Header
-          currentPath={currentPath}
-          navigate={navigate}
-          onShowMessage={showToast}
-        />
-
-        {/* Main Viewport */}
-        <main className="flex-1 pt-16 md:pt-[72px]">
+      {/* When on Admin routes, render Admin Layout directly without double headers and public footer */}
+      {isAdminRoute ? (
+        <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#050A14]">
           {renderRoute()}
-        </main>
+        </div>
+      ) : (
+        /* Main Public Page Layout Wrapper (Applies smooth glass blur when popup notice is open) */
+        <div
+          className={`flex flex-col flex-1 transition-[filter] duration-300 ${
+            popupNoticeOpen ? 'filter blur-[6px] pointer-events-none select-none' : ''
+          }`}
+        >
+          {/* Persistent App Header */}
+          <Header
+            currentPath={currentPath}
+            navigate={navigate}
+            onShowMessage={showToast}
+          />
 
-        {/* Upgraded Footer */}
-        <Footer
-          siteConfig={siteConfig}
-          navigate={navigate}
-          onRequestAnimeClick={() => setRequestModalOpen(true)}
-          onOpenLegal={(tab) => {
-            setLegalModalTab(tab);
-            setLegalModalOpen(true);
-          }}
-        />
-      </div>
+          {/* Main Viewport */}
+          <main className="flex-1 pt-16 md:pt-[72px]">
+            {renderRoute()}
+          </main>
+
+          {/* Upgraded Footer */}
+          <Footer
+            siteConfig={siteConfig}
+            navigate={navigate}
+            onRequestAnimeClick={() => setRequestModalOpen(true)}
+            onOpenLegal={(tab) => {
+              setLegalModalTab(tab);
+              setLegalModalOpen(true);
+            }}
+          />
+        </div>
+      )}
 
       {/* Website Open Notice Pop-up Card */}
       <SiteNoticeModal

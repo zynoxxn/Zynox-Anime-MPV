@@ -28,6 +28,10 @@ import {
   Settings,
   ChevronDown,
   Tag,
+  Clock,
+  Play,
+  ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import { getCmsGenres, DEFAULT_GENRES } from '../lib/firestore/cms';
 import type { CmsGenre } from '../types/cms';
@@ -120,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
       setSearchLoading(true);
       try {
         const results = await searchAndFilterAnimes({ query: searchQuery.trim() });
-        setSearchResults(results.slice(0, 6));
+        setSearchResults(results.slice(0, 8));
         setSearchOpen(true);
       } catch (err) {
         console.error('Search error:', err);
@@ -409,7 +413,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
           {/* 3. RIGHT: Search Bar + Notifications + Profile Avatar */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Desktop Direct Search Input (Section 09) */}
-            <div ref={searchRef} className="relative hidden md:block w-56 lg:w-72">
+            <div ref={searchRef} className="relative hidden md:block w-64 lg:w-80">
               <form onSubmit={handleSearchSubmit} className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
                 <input
@@ -443,72 +447,144 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 )}
               </form>
 
-              {/* Desktop Live Search Dropdown */}
+              {/* Desktop Live Search Dropdown - Large & Spacious */}
               {searchOpen && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-[#081426] border border-[#1683FF]/30 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in backdrop-blur-2xl">
+                <div className="absolute top-full right-0 w-[420px] sm:w-[480px] lg:w-[520px] mt-2.5 bg-[#081426]/98 border border-[#1683FF]/35 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in backdrop-blur-2xl ring-1 ring-black/60">
+                  {/* Dropdown Header */}
+                  <div className="px-4 py-2.5 bg-[#050A14]/85 border-b border-white/5 flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#CBD5E1] flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5 text-[#1683FF]" />
+                      Live Search Results {searchResults.length > 0 && `(${searchResults.length})`}
+                    </span>
+                    <span className="text-[10px] text-[#64748B]">Press Enter for all results</span>
+                  </div>
+
                   {searchLoading ? (
-                    <div className="p-4 text-center text-xs text-[#CBD5E1] flex items-center justify-center gap-2">
-                      <div className="w-3.5 h-3.5 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
-                      <span>Searching...</span>
+                    <div className="p-8 text-center text-xs text-[#CBD5E1] flex items-center justify-center gap-2.5">
+                      <div className="w-4 h-4 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
+                      <span className="font-semibold">Searching anime database...</span>
                     </div>
                   ) : searchResults.length > 0 ? (
-                    <div className="divide-y divide-white/5 max-h-80 overflow-y-auto">
-                      {searchResults.map((anime, idx) => (
-                        <div
-                          key={`hdr-sr-${anime.id || anime.slug}-${idx}`}
-                          onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
-                          className="p-2.5 flex items-center gap-3 hover:bg-[#0B1B32] cursor-pointer transition-colors group"
-                        >
-                          <div className="w-9 h-12 rounded-lg bg-[#050A14] shrink-0 overflow-hidden border border-white/10 group-hover:border-[#1683FF]/50 transition-colors">
-                            {anime.poster ? (
-                              <img
-                                src={anime.poster}
-                                alt={anime.title}
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <Film className="w-4 h-4 m-auto mt-4 text-[#94A3B8]" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-xs font-bold text-white group-hover:text-[#00CFFF] truncate transition-colors">
-                                {anime.title}
-                              </span>
-                              {anime.activeSeasonNumber && (
-                                <span className="px-1.5 py-0.2 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[10px] font-black border border-[#1683FF]/30">
-                                  S{anime.activeSeasonNumber}
-                                </span>
+                    <div className="divide-y divide-white/5 max-h-[460px] overflow-y-auto">
+                      {searchResults.map((anime, idx) => {
+                        const isUpcoming = anime.status === 'upcoming' || Boolean(anime.isUpcoming);
+                        const altTitle = anime.altTitles?.[0] || anime.japaneseTitle;
+                        const ratingStr = anime.rating ? Number(anime.rating).toFixed(1) : null;
+
+                        return (
+                          <div
+                            key={`hdr-sr-${anime.id || anime.slug}-${idx}`}
+                            onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
+                            className="p-3 sm:p-3.5 flex items-center gap-3.5 hover:bg-[#0B1B32] cursor-pointer transition-all group"
+                          >
+                            {/* Large Poster Thumbnail */}
+                            <div className="relative w-14 sm:w-16 h-20 sm:h-22 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 group-hover:border-[#1683FF]/60 shadow-md transition-all">
+                              {anime.poster ? (
+                                <img
+                                  src={anime.poster}
+                                  alt={anime.title}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-[#050A14] text-[#64748B]">
+                                  <Film className="w-6 h-6" />
+                                </div>
+                              )}
+
+                              {/* Hover Play Button Overlay */}
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
+                                  <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                                </div>
+                              </div>
+
+                              {/* Upcoming Badge on top-left of thumb */}
+                              {isUpcoming && (
+                                <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[8px] font-black uppercase shadow leading-none">
+                                  Upcoming
+                                </div>
                               )}
                             </div>
-                            <div className="text-[10px] text-[#94A3B8] flex items-center gap-1.5 mt-0.5">
-                              {anime.rating && (
-                                <span className="flex items-center gap-0.5 text-amber-400 font-bold">
-                                  <Star className="w-2.5 h-2.5 fill-amber-400" />
-                                  <span>{anime.rating}</span>
+
+                            {/* Middle Information Details */}
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#00CFFF] transition-colors leading-snug line-clamp-1">
+                                  {anime.title}
+                                </h4>
+                                {anime.activeSeasonNumber && (
+                                  <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[10px] font-black border border-[#1683FF]/30 shrink-0">
+                                    S{anime.activeSeasonNumber}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Subtitle / Alternate title or Genres */}
+                              {altTitle ? (
+                                <p className="text-xs text-[#94A3B8] line-clamp-1">
+                                  {altTitle}
+                                </p>
+                              ) : anime.genres && anime.genres.length > 0 ? (
+                                <p className="text-xs text-[#94A3B8] line-clamp-1">
+                                  {anime.genres.slice(0, 3).join(' • ')}
+                                </p>
+                              ) : null}
+
+                              {/* Metadata Badges Row */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
+                                {ratingStr && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 text-[10px] font-bold">
+                                    <Star className="w-2.5 h-2.5 fill-amber-400" />
+                                    <span>{ratingStr}</span>
+                                  </span>
+                                )}
+                                <span className="px-1.5 py-0.5 rounded bg-white/5 text-[#CBD5E1] text-[10px] font-bold">
+                                  {anime.type || 'TV'}
                                 </span>
-                              )}
-                              <span>• {anime.year || 2024}</span>
-                              {anime.totalEpisodes && <span>• {anime.totalEpisodes} Eps</span>}
+                                <span className="text-[11px] text-[#94A3B8]">
+                                  {anime.year || 2024}
+                                </span>
+                                <span className="text-[11px] text-[#94A3B8]">
+                                  • {anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : '12+ Eps'}
+                                </span>
+                                {anime.audioLanguage && (
+                                  <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] border border-[#1683FF]/25 text-[10px] font-bold">
+                                    {anime.audioLanguage}
+                                  </span>
+                                )}
+                                {isUpcoming && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black uppercase flex items-center gap-0.5">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    Upcoming
+                                  </span>
+                                )}
+                              </div>
                             </div>
+
+                            {/* Right Arrow */}
+                            <ChevronRight className="w-4 h-4 text-[#64748B] group-hover:text-[#00CFFF] group-hover:translate-x-0.5 transition-all shrink-0 ml-1 hidden sm:block" />
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+
+                      {/* View all results button */}
                       <button
                         type="button"
                         onClick={() => {
                           setSearchOpen(false);
                           navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
                         }}
-                        className="w-full py-2 bg-[#050A14] hover:bg-[#1683FF]/20 text-xs font-bold text-[#1683FF] text-center transition-colors border-t border-white/5"
+                        className="w-full py-3 bg-[#050A14] hover:bg-[#1683FF]/20 text-xs sm:text-sm font-bold text-[#1683FF] hover:text-[#00CFFF] text-center transition-all border-t border-white/5 flex items-center justify-center gap-2"
                       >
-                        View all results &rarr;
+                        <span>View all results for &quot;{searchQuery}&quot;</span>
+                        <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
                   ) : (
-                    <div className="p-4 text-center text-xs text-[#94A3B8]">
-                      No anime found for &quot;{searchQuery}&quot;
+                    <div className="p-8 text-center text-xs text-[#94A3B8] space-y-1">
+                      <p className="font-semibold text-white">No anime found for &quot;{searchQuery}&quot;</p>
+                      <p className="text-[11px] text-[#64748B]">Try searching with a different keyword or Romanized title</p>
                     </div>
                   )}
                 </div>
@@ -742,34 +818,112 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               </button>
             </form>
 
-            {/* Mobile Dropdown Search Results */}
+            {/* Mobile Dropdown Search Results - Large & Spacious */}
             {searchQuery.trim() && (
-              <div className="mt-2 bg-[#081426] border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto divide-y divide-white/5">
-                {searchResults.map((anime, idx) => (
-                  <div
-                    key={`mob-sr-${anime.id || anime.slug}-${idx}`}
-                    onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
-                    className="p-2.5 flex items-center gap-2.5 hover:bg-[#0B1B32] cursor-pointer"
-                  >
-                    <div className="w-8 h-10 rounded bg-[#050A14] shrink-0 overflow-hidden border border-white/10">
-                      <img src={anime.poster} alt={anime.title} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-bold text-white truncate">{anime.title}</span>
-                        {anime.activeSeasonNumber && (
-                          <span className="px-1.5 py-0.2 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[9px] font-black border border-[#1683FF]/30">
-                            S{anime.activeSeasonNumber}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#94A3B8]">
-                        {anime.year || 2024}
-                        {anime.totalEpisodes ? ` • ${anime.totalEpisodes} Eps` : ''}
-                      </div>
-                    </div>
+              <div className="mt-2.5 bg-[#081426] border border-[#1683FF]/30 rounded-2xl overflow-hidden shadow-2xl max-h-[70vh] overflow-y-auto divide-y divide-white/5">
+                <div className="px-3.5 py-2 bg-[#050A14] border-b border-white/5 flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#CBD5E1] flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5 text-[#1683FF]" />
+                    Live Results {searchResults.length > 0 && `(${searchResults.length})`}
+                  </span>
+                  <span className="text-[10px] text-[#64748B]">Tap to open</span>
+                </div>
+
+                {searchLoading ? (
+                  <div className="p-6 text-center text-xs text-[#CBD5E1] flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
+                    <span>Searching anime...</span>
                   </div>
-                ))}
+                ) : searchResults.length > 0 ? (
+                  <>
+                    {searchResults.map((anime, idx) => {
+                      const isUpcoming = anime.status === 'upcoming' || Boolean(anime.isUpcoming);
+                      const altTitle = anime.altTitles?.[0] || anime.japaneseTitle;
+
+                      return (
+                        <div
+                          key={`mob-sr-${anime.id || anime.slug}-${idx}`}
+                          onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
+                          className="p-3 flex items-center gap-3 hover:bg-[#0B1B32] active:bg-[#0B1B32] cursor-pointer"
+                        >
+                          {/* Large Mobile Poster */}
+                          <div className="relative w-14 h-20 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 shadow-md">
+                            {anime.poster ? (
+                              <img src={anime.poster} alt={anime.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-[#050A14] text-[#64748B]">
+                                <Film className="w-5 h-5" />
+                              </div>
+                            )}
+                            {isUpcoming && (
+                              <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[8px] font-black uppercase shadow leading-none">
+                                Upcoming
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h4 className="text-sm font-bold text-white leading-snug line-clamp-1">
+                                {anime.title}
+                              </h4>
+                              {anime.activeSeasonNumber && (
+                                <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[9px] font-black border border-[#1683FF]/30">
+                                  S{anime.activeSeasonNumber}
+                                </span>
+                              )}
+                            </div>
+
+                            {altTitle ? (
+                              <p className="text-xs text-[#94A3B8] line-clamp-1">
+                                {altTitle}
+                              </p>
+                            ) : null}
+
+                            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#94A3B8]">
+                              {anime.rating && (
+                                <span className="inline-flex items-center gap-0.5 text-amber-400 font-bold bg-amber-400/10 px-1 rounded">
+                                  <Star className="w-2.5 h-2.5 fill-amber-400" />
+                                  <span>{anime.rating}</span>
+                                </span>
+                              )}
+                              <span>• {anime.year || 2024}</span>
+                              {anime.totalEpisodes && <span>• {anime.totalEpisodes} Eps</span>}
+                              {anime.audioLanguage && (
+                                <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] text-[9px] font-bold">
+                                  {anime.audioLanguage}
+                                </span>
+                              )}
+                              {isUpcoming && (
+                                <span className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                                  Upcoming
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <ChevronRight className="w-4 h-4 text-[#64748B] shrink-0" />
+                        </div>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileSearchOpen(false);
+                        navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
+                      }}
+                      className="w-full py-3 bg-[#050A14] text-xs font-bold text-[#1683FF] hover:text-[#00CFFF] text-center flex items-center justify-center gap-1.5 border-t border-white/5"
+                    >
+                      <span>View all results for &quot;{searchQuery}&quot;</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="p-6 text-center text-xs text-[#94A3B8]">
+                    No anime found for &quot;{searchQuery}&quot;
+                  </div>
+                )}
               </div>
             )}
           </div>

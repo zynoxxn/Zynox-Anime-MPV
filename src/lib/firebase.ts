@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, setLogLevel, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import rawConfig from '../../firebase-applet-config.json';
 
 // Configure Firestore SDK logging to silent to suppress transient connection retry notices
@@ -21,6 +22,7 @@ const firebaseConfig = {
 
 const app: FirebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth: Auth = getAuth(app);
+export const storage: FirebaseStorage = getStorage(app);
 
 // Developer diagnostics (No sensitive keys or secrets)
 if (typeof window !== 'undefined') {

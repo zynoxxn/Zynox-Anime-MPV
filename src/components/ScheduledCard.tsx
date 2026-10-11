@@ -18,7 +18,12 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
     ? `S${item.seasonNumber} · EP ${item.episodeNumber}`
     : `EP ${item.episodeNumber}`;
 
-  const posterImage = item.animePoster || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80';
+  // Prioritize anime banner for 16:9 schedule card thumbnail
+  const posterImage =
+    (item as any).animeBanner ||
+    (item as any).banner ||
+    item.animePoster ||
+    'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80';
 
   if (variant === 'mobile-row') {
     return (
@@ -36,7 +41,10 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              (e.target as HTMLElement).style.display = 'none';
+              const target = e.target as HTMLImageElement;
+              if (item.animePoster && target.src !== item.animePoster) {
+                target.src = item.animePoster;
+              }
             }}
           />
           {/* Centered Play Button Circle */}
@@ -53,9 +61,14 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
 
         {/* Middle Info */}
         <div className="flex-1 min-w-0">
-          <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors">
-            {item.animeTitle}
-          </h4>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors flex-1">
+              {item.animeTitle}
+            </h4>
+            <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
+              Upcoming
+            </span>
+          </div>
           <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8] mt-1">
             <Clock className="w-3 h-3 text-[#1683FF]" />
             <span>{item.dayOfWeek} {item.releaseTime ? `• ${item.releaseTime}` : ''}</span>
@@ -86,7 +99,10 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
+            const target = e.target as HTMLImageElement;
+            if (item.animePoster && target.src !== item.animePoster) {
+              target.src = item.animePoster;
+            }
           }}
         />
 
@@ -111,9 +127,14 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
 
       {/* Info Below Thumbnail */}
       <div className="pt-2 flex flex-col gap-0.5">
-        <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight">
-          {item.animeTitle}
-        </h4>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight flex-1">
+            {item.animeTitle}
+          </h4>
+          <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
+            Upcoming
+          </span>
+        </div>
         <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
           <span>{item.dayOfWeek} at {item.releaseTime || 'TBA'}</span>
           {item.language && (

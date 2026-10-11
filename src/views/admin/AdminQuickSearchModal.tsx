@@ -4,13 +4,16 @@ import { getAllAnimes } from '../../lib/firestore/anime';
 import {
   Search,
   Film,
+  Download,
   Calendar,
   Layers,
-  Settings,
-  Users,
+  Sliders,
+  Tag,
   MessageSquare,
   FileText,
-  Sliders,
+  Users,
+  Settings,
+  Globe,
   PlusCircle,
   Tv,
   X,
@@ -18,6 +21,9 @@ import {
   Command,
   Megaphone,
   ListPlus,
+  Sparkles,
+  Bell,
+  Activity,
 } from 'lucide-react';
 
 interface AdminQuickSearchModalProps {
@@ -35,20 +41,22 @@ interface QuickAction {
 }
 
 const ADMIN_QUICK_ACTIONS: QuickAction[] = [
-  { id: 'act-add-anime', title: 'Add New Anime', category: 'Anime & Content', path: '/admin/anime/new', icon: PlusCircle },
-  { id: 'act-manage-anime', title: 'Manage Anime Titles', category: 'Anime & Content', path: '/admin/anime', icon: Film },
-  { id: 'act-manage-episodes', title: 'Episodes & Streams', category: 'Anime & Content', path: '/admin/episodes', icon: Tv },
+  { id: 'act-dashboard', title: 'Dashboard Analytics', category: 'Overview', path: '/admin', icon: Sliders },
+  { id: 'act-add-anime', title: 'Add New Anime Series', category: 'Anime & Content', path: '/admin/anime/new', icon: PlusCircle },
+  { id: 'act-manage-anime', title: 'Anime Library (Browse & Edit)', category: 'Anime & Content', path: '/admin/anime', icon: Film },
+  { id: 'act-manage-episodes', title: 'Episodes Manager', category: 'Anime & Content', path: '/admin/episodes', icon: Tv },
   { id: 'act-bulk-episodes', title: 'Bulk Add Episodes (Fast Import)', category: 'Anime & Content', path: '/admin/episodes/bulk', icon: ListPlus },
-  { id: 'act-downloads', title: 'Add Downloads (Zip/Episodes)', category: 'Anime & Content', path: '/admin/downloads', icon: Film },
+  { id: 'act-downloads', title: 'Downloads Manager (Zip & Episodes)', category: 'Anime & Content', path: '/admin/downloads', icon: Download },
   { id: 'act-schedule', title: 'Release Schedule', category: 'Anime & Content', path: '/admin/schedule', icon: Calendar },
-  { id: 'act-taxonomy', title: 'Genres & Studios', category: 'Anime & Content', path: '/admin/taxonomy', icon: Layers },
-  { id: 'act-notice', title: 'Site Pop-Up Notice (1:1 Pop-Up)', category: 'Website Appearance', path: '/admin/notice', icon: Megaphone },
-  { id: 'act-hero-banners', title: 'Hero Carousel Banners', category: 'Website Appearance', path: '/admin/hero-banners', icon: Layers },
-  { id: 'act-homepage', title: 'Homepage Sections', category: 'Website Appearance', path: '/admin/homepage', icon: Sliders },
-  { id: 'act-requests', title: 'User Anime Requests', category: 'Community & System', path: '/admin/requests', icon: FileText },
-  { id: 'act-users', title: 'User Accounts & Roles', category: 'Community & System', path: '/admin/users', icon: Users },
-  { id: 'act-settings', title: 'Site General Settings', category: 'Community & System', path: '/admin/settings', icon: Settings },
-  { id: 'act-seo', title: 'SEO & Meta Tags', category: 'Community & System', path: '/admin/seo', icon: Settings },
+  { id: 'act-notice', title: 'Site Pop-Up Notice (1:1 Pop-Up)', category: 'Display & Curation', path: '/admin/notice', icon: Megaphone },
+  { id: 'act-hero-banners', title: 'Hero Carousel Banners', category: 'Display & Curation', path: '/admin/hero', icon: Sparkles },
+  { id: 'act-announcements', title: 'Announcements', category: 'Display & Curation', path: '/admin/announcements', icon: Bell },
+  { id: 'act-requests', title: 'User Anime Requests', category: 'Community & Moderation', path: '/admin/requests', icon: FileText },
+  { id: 'act-reports', title: 'Reports & Comments Moderation', category: 'Community & Moderation', path: '/admin/reports', icon: MessageSquare },
+  { id: 'act-users', title: 'User Accounts & Roles', category: 'Community & Moderation', path: '/admin/users', icon: Users },
+  { id: 'act-settings', title: 'Site General Settings', category: 'System & SEO', path: '/admin/settings', icon: Settings },
+  { id: 'act-seo', title: 'SEO & Meta Tags', category: 'System & SEO', path: '/admin/seo', icon: Globe },
+  { id: 'act-logs', title: 'Activity Logs', category: 'System & SEO', path: '/admin/logs', icon: Activity },
 ];
 
 export const AdminQuickSearchModal: React.FC<AdminQuickSearchModalProps> = ({

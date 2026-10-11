@@ -365,7 +365,8 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
     animeId: 'anime-alya-russian',
     animeTitle: 'Alya Sometimes Hides Her Feelings in Russian',
     animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
-    animePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
+    animePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80',
+    animeBanner: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
     episodeNumber: 12,
     seasonNumber: 1,
     dayOfWeek: 'Wednesday',
@@ -379,7 +380,8 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
     animeId: 'anime-angel-next-door',
     animeTitle: 'The Angel Next Door Spoils Me Rotten',
     animeSlug: 'the-angel-next-door-spoils-me-rotten',
-    animePoster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=600&auto=format&fit=crop&q=80',
+    animePoster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80',
+    animeBanner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
     episodeNumber: 12,
     seasonNumber: 1,
     dayOfWeek: 'Saturday',
@@ -394,7 +396,14 @@ export async function getCmsSchedule(): Promise<CmsScheduleItem[]> {
   try {
     const snap = await getDocs(collection(db, CMS_SCHEDULE));
     if (!snap.empty) {
-      return snap.docs.map((d) => ({ ...(d.data() as CmsScheduleItem), id: d.id }));
+      return snap.docs.map((d) => {
+        const item = d.data() as CmsScheduleItem;
+        return {
+          ...item,
+          id: d.id,
+          animeBanner: item.animeBanner || item.animePoster,
+        };
+      });
     }
   } catch (err) {
     console.warn('Using default CMS schedule:', err);

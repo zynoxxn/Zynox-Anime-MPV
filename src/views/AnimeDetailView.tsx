@@ -41,6 +41,7 @@ import {
   Loader2,
   Check,
   Calendar,
+  Clock,
   Layers,
   Mic,
   Download,
@@ -323,9 +324,14 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   const currentPoster = activeSeasonEntry?.poster || anime.poster;
   const currentBanner = activeSeasonEntry?.banner || anime.banner || currentPoster;
   const currentDescription = activeSeasonEntry?.description || anime.description;
-  const currentSeasonTitle =
-    activeSeasonEntry?.title ||
-    (selectedSeasonNumber !== 'all' ? `Season ${selectedSeasonNumber}` : null);
+  const currentSeasonNumber =
+    activeSeasonEntry?.seasonNumber ||
+    (selectedSeasonNumber !== 'all' ? selectedSeasonNumber : 1);
+  const currentSeasonTitle = `Season ${currentSeasonNumber}`;
+  const isAnimeUpcoming =
+    anime.status === 'upcoming' ||
+    Boolean(anime.isUpcoming) ||
+    episodes.some((ep) => ep.status === 'upcoming' || Boolean(ep.isUpcoming));
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
@@ -394,8 +400,16 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
               </div>
             )}
 
+            {/* Upcoming Release Badge on Poster */}
+            {isAnimeUpcoming && (
+              <div className="absolute top-2 left-2 px-2.5 py-1 bg-amber-500 text-black text-[10px] font-black uppercase rounded shadow-lg flex items-center gap-1 z-10">
+                <Clock className="w-3 h-3" />
+                <span>Upcoming</span>
+              </div>
+            )}
+
             {/* Optional Rank Badge if explicitly defined */}
-            {anime.badge && (
+            {anime.badge && !isAnimeUpcoming && (
               <div className="absolute top-2 left-2 px-2.5 py-1 bg-[#1683FF] text-white text-[10px] font-black uppercase rounded shadow-md flex items-center gap-1">
                 <Sparkles className="w-3 h-3" />
                 <span>{anime.badge}</span>
@@ -418,13 +432,28 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
               <span className="px-2.5 py-1 bg-[#050A14] border border-white/10 rounded-lg text-xs font-bold text-[#94A3B8]">
                 {episodes.length > 0 ? `${episodes.length} Eps` : anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : 'TBA'}
               </span>
-              <span className="px-2.5 py-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold capitalize">
-                {anime.status || 'Ongoing'}
+              <span
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold capitalize border ${
+                  isAnimeUpcoming
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                }`}
+              >
+                {isAnimeUpcoming ? 'Upcoming Show' : anime.status || 'Ongoing'}
               </span>
               {anime.audioLanguage && (
                 <span className="px-2.5 py-1 bg-[#1683FF]/15 text-[#00CFFF] border border-[#1683FF]/30 rounded-lg text-xs font-bold flex items-center gap-1">
                   <Mic className="w-3 h-3" />
                   <span>{anime.audioLanguage}</span>
+                </span>
+              )}
+              {(anime.upcomingAirDate || anime.releaseDay || anime.releaseTime) && (
+                <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-amber-400" />
+                  <span>
+                    Schedule: {anime.upcomingAirDate || `${anime.releaseDay || 'Weekly'} at ${anime.releaseTime || '20:00'}`}
+                    {anime.upcomingEpisodeNumber ? ` (Ep ${anime.upcomingEpisodeNumber})` : ''}
+                  </span>
                 </span>
               )}
             </div>
@@ -435,6 +464,12 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-[#F8FAFC] tracking-tight uppercase">
                   {anime.title}
                 </h1>
+                {isAnimeUpcoming && (
+                  <span className="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-sm">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Upcoming Show</span>
+                  </span>
+                )}
                 {currentSeasonTitle && (
                   <span className="px-3 py-1 bg-[#1683FF]/20 text-[#00CFFF] border border-[#1683FF]/40 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-sm">
                     <Layers className="w-3.5 h-3.5" />
@@ -583,8 +618,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
         episodes={episodes}
         animeTitle={anime.title}
         animePoster={currentPoster}
+        animeBanner={currentBanner}
         seasonsList={anime.seasonsList}
         selectedSeason={selectedSeasonNumber}
+        isAnimeUpcoming={isAnimeUpcoming}
         onSeasonChange={(s) => setSelectedSeasonNumber(s)}
         watchedEpisodeNumbers={watchedEpNumbers}
         onSelectEpisode={(epNum) => navigate(`/anime/${anime.slug}/episode/${epNum}`)}

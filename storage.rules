@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Public read access so normal visitors can display posters and banners throughout ZYNOX Anime
+    match /{allPaths=**} {
+      allow read: if true;
+    }
+
+    // Helper function: Checks if the user is an authorized ZYNOX Anime administrator
+    function isAdmin() {
+      return request.auth != null && (
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'zairoxmax2.0@gmail.com' ||
+          request.auth.token.email.lower() == 'zairoxmax2.0@gmail.com'
+        )) ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin'
+      );
+    }
+
+    // ZYNOX Anime storage structure:
+    // /zynox-anime/posters/{animeId}/{filename}
+    // /zynox-anime/banners/{animeId}/{filename}
+    // Only authenticated and authorized admins can upload, replace, or delete images.
+    match /zynox-anime/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() &&
+        request.resource.size < 12 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if isAdmin();
+    }
+  }
+}

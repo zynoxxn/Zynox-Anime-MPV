@@ -5,6 +5,7 @@ import { getCmsGenres, getCmsStatuses, getCmsYears, getCmsTypes, getCmsLanguages
 import { generateAnimeSeoMetadata, generateAnimeGoogleTags } from '../../lib/seo';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
+import { AdminImageUploader } from '../../components/admin/AdminImageUploader';
 import {
   ArrowLeft,
   Save,
@@ -447,7 +448,9 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
       slug: trimmedSlug,
       description: trimmedDescription,
       poster: trimmedPoster,
+      posterUrl: trimmedPoster,
       banner: trimmedBanner || undefined,
+      bannerUrl: trimmedBanner || undefined,
       trailerUrl: trailerUrl.trim() || undefined,
       downloadUrl: downloadUrl.trim() || undefined,
       downloadBatchUrl: downloadBatchUrl.trim() || downloadUrl.trim() || undefined,
@@ -457,6 +460,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
       genres: parsedGenres.length > 0 ? parsedGenres : ['Action', 'Fantasy'],
       type,
       status,
+      isUpcoming: status === 'upcoming',
       year: Number(year) || 2026,
       season: season.trim() || undefined,
       audioLanguage: audioLanguage.trim() || 'Hindi Dub & Japanese Sub',
@@ -693,36 +697,17 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                 />
               </div>
 
-              {/* Poster Image URL directly in Tab 1 */}
-              <div className="space-y-2 pt-2 border-t border-white/5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-[#94A3B8]">Poster Image URL *</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!poster) {
-                        setPoster('https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80');
-                      }
-                    }}
-                    className="text-[10px] text-[#1683FF] hover:underline font-semibold"
-                  >
-                    Use Sample Poster URL
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="url"
-                    value={poster}
-                    onChange={(e) => setPoster(e.target.value)}
-                    placeholder="https://... (e.g. anime poster image link)"
-                    className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                  {poster && (
-                    <div className="w-10 h-14 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-[#050A14]">
-                      <img src={poster} alt="Poster preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
+              {/* Poster Direct Image Upload with Firebase Storage in Tab 1 */}
+              <div className="pt-2 border-t border-white/5">
+                <AdminImageUploader
+                  label="Poster Image"
+                  type="poster"
+                  currentUrl={poster}
+                  animeId={animeId || slug}
+                  onUrlChange={setPoster}
+                  required
+                  recommendedText="Recommended 3:4 portrait (Max 5MB • JPG, PNG, WEBP)"
+                />
               </div>
 
               {/* Genres Tag Picker */}
@@ -1008,39 +993,25 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
             <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 sm:p-8 space-y-5">
               <h3 className="text-sm font-bold text-white">Artwork & Media Links</h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#94A3B8]">Poster Image URL *</label>
-                  <input
-                    type="url"
-                    value={poster}
-                    onChange={(e) => setPoster(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                    required
-                  />
-                  {poster && (
-                    <div className="mt-2 w-28 h-40 rounded-xl overflow-hidden border border-white/10 bg-[#050A14]">
-                      <img src={poster} alt="Poster Preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <AdminImageUploader
+                  label="Poster Image"
+                  type="poster"
+                  currentUrl={poster}
+                  animeId={animeId || slug}
+                  onUrlChange={setPoster}
+                  required
+                  recommendedText="Portrait 3:4 (Max 5MB • JPG, PNG, WEBP)"
+                />
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#94A3B8]">Wide Hero Banner Image URL</label>
-                  <input
-                    type="url"
-                    value={banner}
-                    onChange={(e) => setBanner(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                  {banner && (
-                    <div className="mt-2 w-full h-24 rounded-xl overflow-hidden border border-white/10 bg-[#050A14]">
-                      <img src={banner} alt="Banner Preview" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
+                <AdminImageUploader
+                  label="Wide Hero Banner"
+                  type="banner"
+                  currentUrl={banner}
+                  animeId={animeId || slug}
+                  onUrlChange={setBanner}
+                  recommendedText="Landscape 16:9 (Max 10MB • JPG, PNG, WEBP)"
+                />
               </div>
 
               <div className="space-y-1.5 pt-2 border-t border-white/5">
@@ -1608,77 +1579,38 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                 />
               </div>
 
-              {/* Season Poster Image URL */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[11px] font-bold text-[#94A3B8] flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Film className="w-3 h-3 text-[#1683FF]" />
-                    <span>Season Poster Image URL (Crunchyroll Style)</span>
-                  </span>
-                  <span className="text-[10px] text-[#64748B]">Distinct per season</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    value={seasonModalData.poster || ''}
-                    onChange={(e) =>
-                      setSeasonModalData((prev) => ({
-                        ...prev,
-                        poster: e.target.value,
-                      }))
-                    }
-                    placeholder="https://... (Unique poster for this season)"
-                    className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                  {seasonModalData.poster && (
-                    <div className="w-9 h-12 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-[#050A14]">
-                      <img
-                        src={seasonModalData.poster}
-                        alt="Poster preview"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
-                <span className="text-[10px] text-[#64748B] block">
-                  Leave empty to inherit the main anime poster, or paste a custom poster URL for this season.
-                </span>
+              {/* Season Poster Image Direct Upload */}
+              <div className="pt-1">
+                <AdminImageUploader
+                  label="Season Poster Image"
+                  type="poster"
+                  currentUrl={seasonModalData.poster || ''}
+                  animeId={`${animeId || slug || 'season'}_s${seasonModalData.seasonNumber || '1'}`}
+                  onUrlChange={(url) =>
+                    setSeasonModalData((prev) => ({
+                      ...prev,
+                      poster: url,
+                    }))
+                  }
+                  recommendedText="Leave empty to inherit main anime poster (Max 5MB)"
+                />
               </div>
 
-              {/* Season Banner Image URL */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[11px] font-bold text-[#94A3B8] flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-cyan-400" />
-                    <span>Season Banner / Backdrop Image URL</span>
-                  </span>
-                  <span className="text-[10px] text-[#64748B]">Optional hero backdrop</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    value={seasonModalData.banner || ''}
-                    onChange={(e) =>
-                      setSeasonModalData((prev) => ({
-                        ...prev,
-                        banner: e.target.value,
-                      }))
-                    }
-                    placeholder="https://... (Backdrop banner for this season)"
-                    className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                  {seasonModalData.banner && (
-                    <div className="w-16 h-9 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-[#050A14]">
-                      <img
-                        src={seasonModalData.banner}
-                        alt="Banner preview"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
+              {/* Season Banner Image Direct Upload */}
+              <div className="pt-1">
+                <AdminImageUploader
+                  label="Season Banner / Backdrop Image"
+                  type="banner"
+                  currentUrl={seasonModalData.banner || ''}
+                  animeId={`${animeId || slug || 'season'}_s${seasonModalData.seasonNumber || '1'}`}
+                  onUrlChange={(url) =>
+                    setSeasonModalData((prev) => ({
+                      ...prev,
+                      banner: url,
+                    }))
+                  }
+                  recommendedText="Optional hero backdrop (Max 10MB)"
+                />
               </div>
 
               {/* Season Description */}

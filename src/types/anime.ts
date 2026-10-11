@@ -54,7 +54,9 @@ export interface Anime {
   slug: string;
   description: string;
   poster: string;
+  posterUrl?: string;
   banner?: string;
+  bannerUrl?: string;
   background?: string;
   trailerUrl?: string;
   websiteUrl?: string;
@@ -102,6 +104,10 @@ export interface Anime {
   isPopular?: boolean;
   recommended?: boolean;
   isNew?: boolean;
+  isUpcoming?: boolean;
+  upcomingEpisodeNumber?: number;
+  upcomingAirDate?: string;
+  upcomingReleaseTime?: string;
   hidden?: boolean;
   published: boolean;
   displayOrder?: number;

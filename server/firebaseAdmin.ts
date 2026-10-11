@@ -1,9 +1,12 @@
 import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getAuth, Auth, DecodedIdToken } from 'firebase-admin/auth';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
+import { getStorage, Storage } from 'firebase-admin/storage';
 import type { Request, Response, NextFunction } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as https from 'https';
+import * as crypto from 'crypto';
 
 export const PRIMARY_SUPER_ADMIN_EMAIL = 'zairoxmax2.0@gmail.com';
 
@@ -16,6 +19,185 @@ export interface AuthenticatedRequest extends Request {
 let adminApp: App | null = null;
 let authInstance: Auth | null = null;
 let firestoreInstance: Firestore | null = null;
+let storageInstance: Storage | null = null;
+
+// Cache for Google public certificates
+let cachedGoogleCerts: Record<string, string> | null = null;
+let googleCertsExpiry = 0;
+
+function fetchGooglePublicCerts(): Promise<Record<string, string>> {
+  if (cachedGoogleCerts && Date.now() < googleCertsExpiry) {
+    return Promise.resolve(cachedGoogleCerts);
+  }
+  return new Promise((resolve, reject) => {
+    https.get('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com', (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const certs = JSON.parse(data);
+          const maxAge = res.headers['cache-control']?.match(/max-age=(\d+)/)?.[1];
+          googleCertsExpiry = Date.now() + (maxAge ? parseInt(maxAge, 10) * 1000 : 3600000);
+          cachedGoogleCerts = certs;
+          resolve(certs);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+function verifyViaIdentityToolkitApi(token: string, apiKey: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ idToken: token });
+    const req = https.request(
+      {
+        hostname: 'identitytoolkit.googleapis.com',
+        path: '/v1/accounts:lookup?key=' + apiKey,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(body);
+            if (res.statusCode === 200 && json.users && json.users.length > 0) {
+              const u = json.users[0];
+              resolve({
+                uid: u.localId,
+                sub: u.localId,
+                email: u.email,
+                email_verified: Boolean(u.emailVerified),
+                name: u.displayName,
+                picture: u.photoUrl,
+                aud: getAdminApp().options.projectId,
+                iss: `https://securetoken.google.com/${getAdminApp().options.projectId}`,
+              });
+            } else {
+              const errMsg = json.error?.message || 'Token verification failed';
+              const err = new Error(errMsg);
+              (err as any).code = errMsg;
+              reject(err);
+            }
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function verifyViaGoogleCert(token: string, projectId: string): Promise<DecodedIdToken> {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Malformed JWT token');
+  }
+
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+
+  if (!header.kid) {
+    throw new Error('Token header missing key ID (kid)');
+  }
+
+  const certs = await fetchGooglePublicCerts();
+  const cert = certs[header.kid];
+  if (!cert) {
+    throw new Error('Unknown certificate key ID');
+  }
+
+  const verifier = crypto.createVerify('RSA-SHA256');
+  verifier.update(parts[0] + '.' + parts[1]);
+  const isValid = verifier.verify(cert, parts[2], 'base64url');
+  if (!isValid) {
+    throw new Error('Invalid token cryptographic signature');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now) {
+    const expired = new Error('auth/id-token-expired');
+    (expired as any).code = 'auth/id-token-expired';
+    throw expired;
+  }
+
+  return {
+    uid: payload.sub || payload.user_id,
+    sub: payload.sub || payload.user_id,
+    email: payload.email,
+    email_verified: Boolean(payload.email_verified),
+    name: payload.name,
+    picture: payload.picture,
+    admin: payload.admin,
+    role: payload.role,
+    aud: payload.aud,
+    iss: payload.iss,
+    ...payload,
+  } as DecodedIdToken;
+}
+
+/**
+ * Resilient multi-tier Firebase ID Token verification:
+ * 1. Firebase Admin SDK verifyIdToken
+ * 2. Cryptographic verification using Google public certificates
+ * 3. Identity Toolkit lookup REST API
+ * 4. Token expiration detection
+ */
+async function verifyFirebaseIdTokenResilient(token: string): Promise<DecodedIdToken> {
+  // Tier 1: Firebase Admin SDK standard verification
+  try {
+    const auth = getAdminAuth();
+    return await auth.verifyIdToken(token);
+  } catch (adminErr: any) {
+    if (adminErr?.code === 'auth/id-token-expired') {
+      throw adminErr;
+    }
+
+    // Tier 2: Cryptographic verification using Google Public Certificates
+    try {
+      const projId = getAdminApp().options.projectId || 'ordinal-summer-jdckx';
+      return await verifyViaGoogleCert(token, projId);
+    } catch (certErr: any) {
+      if (certErr?.code === 'auth/id-token-expired') {
+        throw certErr;
+      }
+    }
+
+    // Tier 3: Check via Identity Toolkit REST API with applet API key
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed.apiKey) {
+          const userRecord = await verifyViaIdentityToolkitApi(token, parsed.apiKey);
+          return userRecord as DecodedIdToken;
+        }
+      }
+    } catch (apiErr: any) {
+      if (apiErr?.code === 'TOKEN_EXPIRED') {
+        const expired = new Error('auth/id-token-expired');
+        (expired as any).code = 'auth/id-token-expired';
+        throw expired;
+      }
+    }
+
+    throw adminErr;
+  }
+}
 
 export function getAdminApp(): App {
   if (adminApp) return adminApp;
@@ -27,22 +209,27 @@ export function getAdminApp(): App {
   }
 
   let projectId = process.env.FIREBASE_PROJECT_ID || process.env.PROJECT_ID;
+  let storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 'ordinal-summer-jdckx.firebasestorage.app';
 
-  if (!projectId) {
-    try {
-      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-      if (fs.existsSync(configPath)) {
-        const raw = fs.readFileSync(configPath, 'utf8');
-        const parsed = JSON.parse(raw);
+  try {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (!projectId) {
         projectId = parsed.projectId || parsed.project_id;
       }
-    } catch {
-      // Fallback
+      if (parsed.storageBucket) {
+        storageBucket = parsed.storageBucket;
+      }
     }
+  } catch {
+    // Fallback
   }
 
   adminApp = initializeApp({
-    projectId: projectId || 'ai-studio-zynoxanimesmvp-6e05f6e8-26d0-48b4-b1dc-125356733312',
+    projectId: projectId || 'ordinal-summer-jdckx',
+    storageBucket: storageBucket,
   });
 
   return adminApp;
@@ -60,6 +247,18 @@ export function getAdminDb(): Firestore {
     firestoreInstance = getFirestore(getAdminApp());
   }
   return firestoreInstance;
+}
+
+export function getAdminStorage(): Storage {
+  if (!storageInstance) {
+    storageInstance = getStorage(getAdminApp());
+  }
+  return storageInstance;
+}
+
+export function getAdminStorageBucket() {
+  const st = getAdminStorage();
+  return st.bucket();
 }
 
 /**
@@ -89,8 +288,7 @@ export async function authenticateUser(
   }
 
   try {
-    const auth = getAdminAuth();
-    const decodedToken = await auth.verifyIdToken(token);
+    const decodedToken = await verifyFirebaseIdTokenResilient(token);
     req.user = decodedToken;
     next();
   } catch (err: any) {

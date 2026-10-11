@@ -84,9 +84,11 @@ export interface CmsScheduleItem {
   animeTitle: string;
   animeSlug: string;
   animePoster?: string;
+  animeBanner?: string;
   episodeNumber: number;
   seasonNumber?: number;
   dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  airDate?: string;
   releaseDate?: string;
   releaseTime: string; // e.g. "20:30" or "8:30 PM"
   timezone?: string; // e.g. "Asia/Kolkata", "Asia/Tokyo", "UTC"

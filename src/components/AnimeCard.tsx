@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Anime } from '../types/anime';
-import { Star, Play, Heart, Bookmark } from 'lucide-react';
+import { Star, Play, Heart, Bookmark, Clock } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import type { WatchlistStatus } from '../types/library';
 import {
@@ -101,6 +101,7 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
 
   const ratingValue = anime.rating ? Number(anime.rating).toFixed(1) : '9.0';
   const releaseYear = anime.year || 2024;
+  const isUpcoming = anime.status === 'upcoming' || Boolean(anime.isUpcoming);
 
   return (
     <div
@@ -138,14 +139,20 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
           </div>
         )}
 
-        {/* Season Badge Pill (if season-specific result) */}
-        {anime.activeSeasonNumber && (
-          <div className="absolute top-1.5 right-1.5 z-10 pointer-events-none">
+        {/* Season & Upcoming Badge Pills on Poster */}
+        <div className="absolute top-1.5 right-1.5 z-10 pointer-events-none flex items-center gap-1">
+          {anime.activeSeasonNumber && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1683FF] text-[9px] font-black text-white shadow-md leading-none border border-white/20">
               S{anime.activeSeasonNumber}
             </span>
-          </div>
-        )}
+          )}
+          {isUpcoming && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-black uppercase shadow-md leading-none">
+              <Clock className="w-2.5 h-2.5" />
+              <span>Upcoming</span>
+            </span>
+          )}
+        </div>
 
         {/* Subtle Dark Bottom Gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20 opacity-80 group-hover:opacity-40 transition-opacity pointer-events-none" />
@@ -207,9 +214,16 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
 
       {/* Title & Year Below Poster - Compact typography */}
       <div className="pt-1.5 flex flex-col gap-0.5">
-        <h3 className="font-bold text-[11px] sm:text-xs text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug">
-          {anime.title}
-        </h3>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h3 className="font-bold text-[11px] sm:text-xs text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug flex-1">
+            {anime.title}
+          </h3>
+          {isUpcoming && (
+            <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
+              Upcoming
+            </span>
+          )}
+        </div>
         <span className="text-[10px] text-[#94A3B8]">
           {releaseYear}
         </span>

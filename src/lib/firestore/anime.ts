@@ -224,9 +224,12 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
       if (matchingDef.slug) seenSlugs.add(matchingDef.slug);
     }
 
+    const poster = (fsItem as any).posterUrl || (fsItem as any).poster || matchingDef?.poster || '';
+    const banner = (fsItem as any).bannerUrl || (fsItem as any).banner || matchingDef?.banner;
+
     const mergedItem: Anime = matchingDef
-      ? { ...matchingDef, ...fsItem, id, slug }
-      : { ...fsItem, id, slug };
+      ? { ...matchingDef, ...fsItem, id, slug, poster, posterUrl: poster, banner, bannerUrl: banner }
+      : { ...fsItem, id, slug, poster, posterUrl: poster, banner, bannerUrl: banner };
 
     result.push(mergedItem);
   }
@@ -389,9 +392,15 @@ export async function getAnimeById(id: string): Promise<Anime | null> {
     if (docSnap.exists()) {
       const data = docSnap.data() as Anime;
       if (!(data as any).isDeleted) {
+        const poster = (data as any).posterUrl || (data as any).poster || '';
+        const banner = (data as any).bannerUrl || (data as any).banner || undefined;
         return {
           id: docSnap.id,
           ...data,
+          poster,
+          posterUrl: (data as any).posterUrl || poster,
+          banner,
+          bannerUrl: (data as any).bannerUrl || banner,
         };
       }
     }
@@ -407,9 +416,15 @@ export async function getAnimeById(id: string): Promise<Anime | null> {
         for (const slugDoc of slugSnap.docs) {
           const data = slugDoc.data() as Anime;
           if (!(data as any).isDeleted) {
+            const poster = (data as any).posterUrl || (data as any).poster || '';
+            const banner = (data as any).bannerUrl || (data as any).banner || undefined;
             return {
               id: slugDoc.id,
               ...data,
+              poster,
+              posterUrl: (data as any).posterUrl || poster,
+              banner,
+              bannerUrl: (data as any).bannerUrl || banner,
             };
           }
         }
@@ -760,7 +775,15 @@ export async function getRecentlyAddedAnimes(limitCount: number = 24): Promise<A
 
 export async function createAnime(data: Omit<Anime, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
   try {
-    const cleaned = sanitizeData(data);
+    const posterUrl = data.posterUrl || data.poster;
+    const bannerUrl = data.bannerUrl || data.banner;
+    const payload = {
+      ...data,
+      poster: posterUrl,
+      posterUrl,
+      ...(bannerUrl ? { banner: bannerUrl, bannerUrl } : {}),
+    };
+    const cleaned = sanitizeData(payload);
     const docRef = await addDoc(collection(db, ANIME_COLLECTION), {
       ...cleaned,
       isDeleted: false,
@@ -783,7 +806,18 @@ export async function createAnime(data: Omit<Anime, 'id' | 'createdAt' | 'update
 
 export async function updateAnime(id: string, data: Partial<Anime>): Promise<void> {
   try {
-    const cleaned = sanitizeData(data);
+    const payload = { ...data };
+    if (data.poster || data.posterUrl) {
+      const p = data.posterUrl || data.poster;
+      payload.poster = p;
+      payload.posterUrl = p;
+    }
+    if (data.banner !== undefined || data.bannerUrl !== undefined) {
+      const b = data.bannerUrl || data.banner;
+      payload.banner = b;
+      payload.bannerUrl = b;
+    }
+    const cleaned = sanitizeData(payload);
     const docRef = doc(db, ANIME_COLLECTION, id);
 
     // If updating a default catalog anime that was not yet persisted to Firestore, include base metadata

@@ -41,12 +41,13 @@ const FALLBACK_LATEST_EPISODES: LatestEpisodeItem[] = [
     animeTitle: 'The Angel Next Door Spoils Me Rotten',
     animeSlug: 'the-angel-next-door-spoils-me-rotten',
     animePoster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80',
+    animeBanner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
     episode: {
       id: 'ep-anime-angel-next-door-1',
       animeId: 'anime-angel-next-door',
       episodeNumber: 1,
       title: 'Episode 1: Meeting the Angel',
-      thumbnail: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80',
+      thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
       duration: 1440,
       createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
     } as any,
@@ -55,12 +56,13 @@ const FALLBACK_LATEST_EPISODES: LatestEpisodeItem[] = [
     animeTitle: 'Alya Sometimes Hides Her Feelings in Russian',
     animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
     animePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80',
+    animeBanner: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
     episode: {
       id: 'ep-anime-alya-russian-1',
       animeId: 'anime-alya-russian',
       episodeNumber: 1,
       title: 'Episode 1: Secret Whispers in Russian',
-      thumbnail: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80',
+      thumbnail: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
       duration: 1440,
       createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
     } as any,
@@ -271,8 +273,13 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           });
           setRecentlyAdded(sortedRecentlyAdded.slice(0, 24));
 
-          setLatestEpisodes(latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES);
-          
+          // Map all animes by ID and slug for fast poster enrichment
+          const animeMap = new Map<string, Anime>();
+          all.forEach((a) => {
+            if (a.id) animeMap.set(a.id, a);
+            if (a.slug) animeMap.set(a.slug, a);
+          });
+
           // Filter continue watching: strictly 7 items max & no deleted animes
           const publishedAnimeIds = new Set<string>();
           all.forEach((a) => {
@@ -283,7 +290,52 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             .filter((p) => !isAnimeDeleted(p.animeId) && !isAnimeDeleted(p.animeSlug) && (publishedAnimeIds.has(p.animeId) || publishedAnimeIds.has(p.animeSlug)))
             .slice(0, 7);
           setContinueWatching(validProgress);
-          setScheduledAnime(scheduleList || []);
+
+          // Enrich Scheduled Anime so each item thumbnail is guaranteed to have the anime's banner
+          const enrichedSchedule = (scheduleList || []).map((item) => {
+            const found =
+              animeMap.get(item.animeId) ||
+              (item.animeSlug ? animeMap.get(item.animeSlug) : undefined) ||
+              all.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
+            const banner =
+              found?.banner ||
+              (found as any)?.bannerUrl ||
+              item.animeBanner ||
+              found?.poster ||
+              item.animePoster;
+            return {
+              ...item,
+              animeBanner: banner,
+              animePoster: banner,
+            };
+          });
+          setScheduledAnime(enrichedSchedule);
+
+          // Enrich Latest Episodes so each episode thumbnail is guaranteed to have the anime title's banner
+          const baseLatestEps = latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES;
+          const enrichedLatestEps = baseLatestEps.map((item) => {
+            const found =
+              animeMap.get(item.episode.animeId) ||
+              animeMap.get(item.animeSlug) ||
+              all.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
+            const banner =
+              found?.banner ||
+              (found as any)?.bannerUrl ||
+              item.animeBanner ||
+              (item.episode as any).animeBanner ||
+              found?.poster ||
+              item.animePoster;
+            return {
+              ...item,
+              animeBanner: banner,
+              animePoster: banner,
+              episode: {
+                ...item.episode,
+                thumbnail: banner || item.episode.thumbnail,
+              },
+            };
+          });
+          setLatestEpisodes(enrichedLatestEps);
         }
       } catch (err) {
         console.error('HomeView data loading error:', err);

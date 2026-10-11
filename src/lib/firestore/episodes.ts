@@ -42,6 +42,9 @@ function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any
 
 export function sanitizeEpisodeStreamUrls(ep: Episode): Episode {
   if (!ep) return ep;
+  if (ep.status === 'upcoming' || ep.isUpcoming) {
+    return ep;
+  }
   const fixUrl = (u?: string) => {
     if (!u) return u;
     if (u.includes('commondatastorage.googleapis.com/gtv-videos-bucket/sample/')) {
@@ -342,6 +345,7 @@ export interface LatestEpisodeItem {
   animeTitle: string;
   animeSlug: string;
   animePoster: string;
+  animeBanner?: string;
 }
 
 export async function getLatestReleasedEpisodes(limitCount: number = 12): Promise<LatestEpisodeItem[]> {
@@ -439,14 +443,16 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
     });
 
     // Pre-cache anime metadata lookup
-    const animeLookup = new Map<string, { title: string; slug: string; poster: string }>();
+    const animeLookup = new Map<string, { title: string; slug: string; poster: string; banner: string }>();
     try {
       const allAnimes = await getPublishedAnimes();
       for (const a of allAnimes) {
+        const bannerImg = a.banner || (a as any).bannerUrl || a.poster || '';
         const data = {
           title: a.title,
           slug: a.slug || a.id,
-          poster: a.poster || a.banner || '',
+          poster: a.poster || bannerImg,
+          banner: bannerImg,
         };
         if (a.id) animeLookup.set(a.id, data);
         if (a.slug) animeLookup.set(a.slug, data);
@@ -456,10 +462,12 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
     }
 
     for (const a of DEFAULT_ANIMES) {
+      const bannerImg = a.banner || a.poster || '';
       const data = {
         title: a.title,
         slug: a.slug || a.id,
-        poster: a.poster || a.banner || '',
+        poster: a.poster || bannerImg,
+        banner: bannerImg,
       };
       if (a.id && !animeLookup.has(a.id)) animeLookup.set(a.id, data);
       if (a.slug && !animeLookup.has(a.slug)) animeLookup.set(a.slug, data);
@@ -479,10 +487,12 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
         try {
           const anime = await getAnimeById(ep.animeId);
           if (anime) {
+            const bannerImg = anime.banner || (anime as any).bannerUrl || anime.poster || '';
             animeInfo = {
               title: anime.title,
               slug: anime.slug || anime.id || ep.animeId,
-              poster: anime.poster || anime.banner || '',
+              poster: anime.poster || bannerImg,
+              banner: bannerImg,
             };
             if (anime.id) animeLookup.set(anime.id, animeInfo);
             if (anime.slug) animeLookup.set(anime.slug, animeInfo);
@@ -491,11 +501,16 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
       }
 
       if (animeInfo) {
+        const episodeBanner = animeInfo.banner || animeInfo.poster || ep.thumbnail || '';
         result.push({
-          episode: ep,
+          episode: {
+            ...ep,
+            thumbnail: episodeBanner,
+          },
           animeTitle: animeInfo.title,
           animeSlug: animeInfo.slug,
-          animePoster: ep.thumbnail || animeInfo.poster,
+          animePoster: animeInfo.poster || episodeBanner,
+          animeBanner: episodeBanner,
         });
       } else {
         result.push({
@@ -503,6 +518,7 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
           animeTitle: (ep as any).animeTitle || ep.title || 'Anime Series',
           animeSlug: (ep as any).animeSlug || ep.animeId,
           animePoster: ep.thumbnail || '',
+          animeBanner: ep.thumbnail || '',
         });
       }
     }
@@ -527,7 +543,15 @@ export async function incrementEpisodeViews(id: string): Promise<void> {
 
 export async function createEpisode(data: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
   try {
-    const cleaned = sanitizeData(data);
+    let thumbnail = data.thumbnail;
+    if (!thumbnail && data.animeId) {
+      const anime = await getAnimeById(data.animeId).catch(() => null);
+      if (anime) thumbnail = anime.banner || (anime as any).bannerUrl || anime.poster || '';
+    }
+    const cleaned = sanitizeData({
+      ...data,
+      thumbnail: thumbnail || data.thumbnail || '',
+    });
     const docRef = await addDoc(collection(db, EPISODES_COLLECTION), {
       ...cleaned,
       viewsCount: 0,
@@ -629,6 +653,8 @@ export async function bulkCreateEpisodes(
     updateAnimeStats?: boolean;
     animeTitle?: string;
     animeSlug?: string;
+    animePoster?: string;
+    animeBanner?: string;
   }
 ): Promise<{ added: number; updated: number; failed: number }> {
   if (!animeId || !episodes || episodes.length === 0) {
@@ -636,6 +662,14 @@ export async function bulkCreateEpisodes(
   }
 
   try {
+    let fallbackBanner = options?.animeBanner || options?.animePoster || '';
+    if (!fallbackBanner && animeId) {
+      try {
+        const a = await getAnimeById(animeId);
+        if (a) fallbackBanner = a.banner || (a as any).bannerUrl || a.poster || '';
+      } catch {}
+    }
+
     // 1. Fetch existing episodes for this anime to see which ones already exist
     const existingSnap = await getDocs(
       query(collection(db, EPISODES_COLLECTION), where('animeId', '==', animeId))
@@ -675,6 +709,7 @@ export async function bulkCreateEpisodes(
             seasonNumber: sNum,
             episodeNumber: item.episodeNumber,
             title: item.title || `Episode ${item.episodeNumber}`,
+            thumbnail: (item as any).thumbnail || fallbackBanner,
             language: item.language || 'DUB',
             quality: item.quality || '1080p',
             duration: item.duration || '24m',

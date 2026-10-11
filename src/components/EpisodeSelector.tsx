@@ -1,17 +1,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { Episode } from '../types/episode';
 import type { AnimeSeasonEntry } from '../types/anime';
-import { Search, Play, Check, Download, Sparkles, Layers } from 'lucide-react';
+import { Search, Play, Check, Download, Sparkles, Layers, Clock, Calendar } from 'lucide-react';
 import { resolveEpisodeDownloadUrl, executeDownloadRedirect } from '../lib/downloadRedirect';
 
 interface EpisodeSelectorProps {
   episodes: Episode[];
   animeTitle?: string;
   animePoster?: string;
+  animeBanner?: string;
   seasonsList?: AnimeSeasonEntry[];
   currentEpisodeNumber?: number;
   watchedEpisodeNumbers?: number[];
   selectedSeason?: number | 'all';
+  isAnimeUpcoming?: boolean;
   onSeasonChange?: (seasonNumber: number | 'all') => void;
   onSelectEpisode: (episodeNumber: number) => void;
   onDownloadEpisode?: (episode: Episode) => void;
@@ -22,10 +24,12 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   episodes,
   animeTitle,
   animePoster,
+  animeBanner,
   seasonsList = [],
   currentEpisodeNumber,
   watchedEpisodeNumbers = [],
   selectedSeason: controlledSeason,
+  isAnimeUpcoming = false,
   onSeasonChange,
   onSelectEpisode,
   onDownloadEpisode,
@@ -106,50 +110,38 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         </div>
       </div>
 
-      {/* Horizontal Side-by-Side Season Tabs (Season 1, Season 2...) */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 pt-0.5">
-        {seasons.length > 1 && (
-          <button
-            type="button"
-            onClick={() => handleSeasonSelect('all')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
-              selectedSeason === 'all'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30 border border-[#1683FF]'
-                : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-white/5 border border-white/10'
-            }`}
-          >
-            All Seasons
-          </button>
-        )}
+      {/* Horizontal Side-by-Side Season Tabs: Direct Season 1, Season 2... */}
+      {seasons.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 pt-0.5">
+          {seasons.map((s) => {
+            const isActive = selectedSeason === s || (selectedSeason === 'all' && s === seasons[0]);
+            const meta = seasonsList.find((sl) => Number(sl.seasonNumber) === s);
+            const label = `Season ${s}`;
 
-        {seasons.map((s) => {
-          const isActive = selectedSeason === s || (selectedSeason === 'all' && seasons.length === 1);
-          const meta = seasonsList.find((sl) => Number(sl.seasonNumber) === s);
-          const label = meta?.title || `Season ${s}`;
-
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => {
-                if (meta?.slug && onNavigateSeasonAnime) {
-                  onNavigateSeasonAnime(meta.slug);
-                } else {
-                  handleSeasonSelect(s);
-                }
-              }}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
-                isActive
-                  ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30 border border-[#1683FF]'
-                  : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-white/5 border border-white/10'
-              }`}
-            >
-              <span>{label}</span>
-              {isActive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  if (meta?.slug && onNavigateSeasonAnime) {
+                    onNavigateSeasonAnime(meta.slug);
+                  } else {
+                    handleSeasonSelect(s);
+                  }
+                }}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                  isActive
+                    ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30 border border-[#1683FF]'
+                    : 'bg-[#050A14] text-[#94A3B8] hover:text-white hover:bg-white/5 border border-white/10'
+                }`}
+              >
+                <span>{label}</span>
+                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Episodes Content */}
       {filteredEpisodes.length === 0 ? (
@@ -162,7 +154,9 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {filteredEpisodes.map((ep) => {
             const isPlaying = currentEpisodeNumber === ep.episodeNumber;
             const isWatched = watchedEpisodeNumbers.includes(ep.episodeNumber);
-            const epThumbnail = ep.thumbnail || animePoster;
+            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming) || Boolean(isAnimeUpcoming);
+            // Every episode thumbnail uses anime title's banner image
+            const epThumbnail = animeBanner || animePoster || ep.thumbnail;
 
             return (
               <div
@@ -172,6 +166,8 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 className={`group relative p-2.5 sm:p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 sm:gap-4 cursor-pointer ${
                   isPlaying
                     ? 'bg-[#1683FF]/20 border-[#1683FF] shadow-lg shadow-[#1683FF]/15 ring-1 ring-[#1683FF]'
+                    : isEpUpcoming
+                    ? 'bg-[#081220] border-amber-500/20 hover:border-amber-500/40 hover:bg-[#0B182B]'
                     : 'bg-[#050A14] border-white/5 hover:border-[#1683FF]/40 hover:bg-[#081426]'
                 }`}
               >
@@ -190,17 +186,31 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     </div>
                   )}
 
-                  {/* Play Overlay */}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform ${
-                        isPlaying
-                          ? 'bg-[#1683FF] text-white scale-110 shadow-md shadow-[#1683FF]/50'
-                          : 'bg-black/60 border border-white/20 text-white group-hover:bg-[#1683FF] group-hover:text-white group-hover:border-[#1683FF]'
-                      }`}
-                    >
-                      <Play className="w-3 h-3 fill-current ml-0.5" />
+                  {/* Upcoming Badge on top-left of thumbnail */}
+                  {isEpUpcoming && (
+                    <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-500 text-black text-[9px] font-black uppercase rounded shadow-md flex items-center gap-0.5 z-10">
+                      <Clock className="w-2.5 h-2.5" />
+                      <span>Upcoming</span>
                     </div>
+                  )}
+
+                  {/* Play / Upcoming Overlay */}
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    {isEpUpcoming ? (
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center bg-amber-500/90 text-black border border-amber-400 shadow-md">
+                        <Clock className="w-3.5 h-3.5" />
+                      </div>
+                    ) : (
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform ${
+                          isPlaying
+                            ? 'bg-[#1683FF] text-white scale-110 shadow-md shadow-[#1683FF]/50'
+                            : 'bg-black/60 border border-white/20 text-white group-hover:bg-[#1683FF] group-hover:text-white group-hover:border-[#1683FF]'
+                        }`}
+                      >
+                        <Play className="w-3 h-3 fill-current ml-0.5" />
+                      </div>
+                    )}
                   </div>
 
                   {/* Duration Badge bottom right (hidden if invalid or NaN) */}
@@ -244,14 +254,24 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                 {/* Center: Title & Episode Details */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <span
                       className={`text-xs font-black tracking-wide ${
-                        isPlaying ? 'text-[#00CFFF]' : 'text-[#1683FF]'
+                        isPlaying
+                          ? 'text-[#00CFFF]'
+                          : isEpUpcoming
+                          ? 'text-amber-400'
+                          : 'text-[#1683FF]'
                       }`}
                     >
                       Episode {String(ep.episodeNumber).padStart(2, '0')}
                     </span>
+                    {isEpUpcoming && (
+                      <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black uppercase rounded shadow-sm flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5" />
+                        Upcoming Show
+                      </span>
+                    )}
                     {isPlaying && (
                       <span className="px-1.5 py-0.5 bg-[#1683FF] text-white text-[9px] font-black uppercase rounded shadow-sm">
                         Playing
@@ -263,10 +283,19 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     {ep.title || `Episode ${ep.episodeNumber}`}
                   </h4>
 
-                  <p className="text-[11px] text-[#94A3B8] line-clamp-1 mt-0.5 hidden sm:block">
-                    {ep.description ||
-                      `In episode ${ep.episodeNumber}, intense revelations and tactical skirmishes escalate as key heroes unfold new power.`}
-                  </p>
+                  <div className="text-[11px] text-[#94A3B8] mt-0.5">
+                    {isEpUpcoming && (ep.airDate || ep.releaseTime) ? (
+                      <span className="text-amber-300/90 font-medium inline-flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>Scheduled: {ep.airDate || 'Coming Soon'}{ep.releaseTime ? ` at ${ep.releaseTime}` : ''}</span>
+                      </span>
+                    ) : (
+                      <p className="line-clamp-1 hidden sm:block">
+                        {ep.description ||
+                          `In episode ${ep.episodeNumber}, intense revelations and tactical skirmishes escalate as key heroes unfold new power.`}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right: Actions (Download & Status) */}
@@ -294,14 +323,18 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
                         : isPlaying
                         ? 'bg-[#1683FF]/20 border-[#1683FF] text-[#00CFFF]'
+                        : isEpUpcoming
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
                         : 'border-white/20 text-transparent'
                     }`}
-                    title={isWatched ? 'Watched' : isPlaying ? 'Playing' : 'Unwatched'}
+                    title={isWatched ? 'Watched' : isPlaying ? 'Playing' : isEpUpcoming ? 'Upcoming Episode' : 'Unwatched'}
                   >
                     {isWatched ? (
                       <Check className="w-3 h-3 text-emerald-400" />
                     ) : isPlaying ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#00CFFF]" />
+                    ) : isEpUpcoming ? (
+                      <Clock className="w-2.5 h-2.5 text-amber-400" />
                     ) : null}
                   </div>
                 </div>
@@ -315,6 +348,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {filteredEpisodes.map((ep) => {
             const isPlaying = currentEpisodeNumber === ep.episodeNumber;
             const isWatched = watchedEpisodeNumbers.includes(ep.episodeNumber);
+            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming) || Boolean(isAnimeUpcoming);
 
             return (
               <button
@@ -324,6 +358,8 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                   isPlaying
                     ? 'bg-[#1683FF] border-[#00CFFF] text-white shadow-lg shadow-[#1683FF]/40'
+                    : isEpUpcoming
+                    ? 'bg-[#081220] border-amber-500/30 text-amber-300 hover:border-amber-400 hover:bg-[#0B182B]'
                     : isWatched
                     ? 'bg-[#050A14] border-white/5 text-[#64748B] hover:border-[#1683FF]/30 hover:text-white'
                     : 'bg-[#050A14] border-white/10 hover:border-[#1683FF]/50 text-[#F8FAFC] hover:bg-[#081426]'
@@ -332,12 +368,23 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 <div className="flex items-center justify-between gap-1 mb-1">
                   <span
                     className={`text-xs font-bold font-mono ${
-                      isPlaying ? 'text-white' : 'text-[#00CFFF]'
+                      isPlaying
+                        ? 'text-white'
+                        : isEpUpcoming
+                        ? 'text-amber-400'
+                        : 'text-[#00CFFF]'
                     }`}
                   >
                     EP {ep.episodeNumber}
                   </span>
-                  {isWatched && !isPlaying && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                  {isEpUpcoming ? (
+                    <span className="text-[9px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded leading-none flex items-center gap-0.5">
+                      <Clock className="w-2 h-2" />
+                      Upcoming
+                    </span>
+                  ) : isWatched && !isPlaying ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : null}
                 </div>
                 <div className="text-[11px] truncate font-semibold text-[#F8FAFC] group-hover:text-white">
                   {ep.title || `Episode ${ep.episodeNumber}`}
