@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { Episode } from '../../types/episode';
 import type { Anime } from '../../types/anime';
 import { getAllEpisodesByAnimeId, deleteEpisode, updateEpisode } from '../../lib/firestore/episodes';
-import { getAllAnimes } from '../../lib/firestore/anime';
+import { getAllAnimes, cleanAnimeTitle } from '../../lib/firestore/anime';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
@@ -339,13 +339,8 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
 
                       <div className="text-[11px] text-[#94A3B8] flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-white truncate max-w-[200px]">
-                          {getAnimeTitle(ep.animeId)}
+                          {cleanAnimeTitle(getAnimeTitle(ep.animeId))}
                         </span>
-                        {animeObj && (animeObj.status === 'upcoming' || animeObj.isUpcoming) && (
-                          <span className="text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1 rounded">
-                            Upcoming
-                          </span>
-                        )}
                         <span>•</span>
                         <span>Season {ep.seasonNumber || 1}</span>
                         <span>•</span>

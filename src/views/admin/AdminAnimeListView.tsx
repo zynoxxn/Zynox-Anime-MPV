@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { Anime } from '../../types/anime';
-import { getAllAnimes, deleteAnime, updateAnime } from '../../lib/firestore/anime';
+import { getAllAnimes, deleteAnime, updateAnime, cleanAnimeTitle } from '../../lib/firestore/anime';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
@@ -215,14 +215,8 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-white group-hover:text-[#1683FF] transition-colors truncate">
-                          {anime.title}
+                          {cleanAnimeTitle(anime.title)}
                         </h3>
-                        {(anime.status === 'upcoming' || anime.isUpcoming) && (
-                          <span className="text-[10px] font-black uppercase text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5 text-amber-400" />
-                            Upcoming Show
-                          </span>
-                        )}
                         <span className="text-[10px] text-[#94A3B8] font-mono">/{anime.slug}</span>
                       </div>
 

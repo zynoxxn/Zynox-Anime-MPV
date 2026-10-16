@@ -388,7 +388,22 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
     releaseTime: '20:30',
     timezone: 'Asia/Kolkata',
     language: 'Hindi Dub',
-    status: 'released',
+    status: 'upcoming',
+  },
+  {
+    id: 'sch-bleach',
+    animeId: 'anime-bleach',
+    animeTitle: 'Bleach',
+    animeSlug: 'bleach',
+    animePoster: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80',
+    animeBanner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80',
+    episodeNumber: 37,
+    seasonNumber: 3,
+    dayOfWeek: 'Monday',
+    releaseTime: '20:00',
+    timezone: 'Asia/Kolkata',
+    language: 'Hindi Dub & Japanese Sub',
+    status: 'upcoming',
   },
 ];
 
@@ -396,7 +411,7 @@ export async function getCmsSchedule(): Promise<CmsScheduleItem[]> {
   try {
     const snap = await getDocs(collection(db, CMS_SCHEDULE));
     if (!snap.empty) {
-      return snap.docs.map((d) => {
+      const items: CmsScheduleItem[] = snap.docs.map((d) => {
         const item = d.data() as CmsScheduleItem;
         return {
           ...item,
@@ -404,6 +419,19 @@ export async function getCmsSchedule(): Promise<CmsScheduleItem[]> {
           animeBanner: item.animeBanner || item.animePoster,
         };
       });
+
+      // Combine with defaults for animes not yet explicitly saved to Firestore
+      const existingAnimeKeys = new Set(
+        items.map((i) => (i.animeId || i.animeSlug || i.animeTitle || '').toLowerCase())
+      );
+      const combined: CmsScheduleItem[] = [...items];
+      for (const def of DEFAULT_SCHEDULE) {
+        const defKey = (def.animeId || def.animeSlug || def.animeTitle || '').toLowerCase();
+        if (!existingAnimeKeys.has(defKey)) {
+          combined.push(def);
+        }
+      }
+      return combined;
     }
   } catch (err) {
     console.warn('Using default CMS schedule:', err);

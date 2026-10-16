@@ -291,8 +291,17 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             .slice(0, 7);
           setContinueWatching(validProgress);
 
-          // Enrich Scheduled Anime so each item thumbnail is guaranteed to have the anime's banner
-          const enrichedSchedule = (scheduleList || []).map((item) => {
+          // Enrich Scheduled Anime: guaranteed unique anime (no duplicates) & banner thumbnails
+          const seenScheduleAnime = new Set<string>();
+          const uniqueScheduleList = (scheduleList || []).filter((item) => {
+            const key = item.animeId || item.animeSlug || item.animeTitle;
+            if (!key) return true;
+            if (seenScheduleAnime.has(key)) return false;
+            seenScheduleAnime.add(key);
+            return true;
+          });
+
+          const enrichedSchedule = uniqueScheduleList.map((item) => {
             const found =
               animeMap.get(item.animeId) ||
               (item.animeSlug ? animeMap.get(item.animeSlug) : undefined) ||
@@ -311,9 +320,18 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           });
           setScheduledAnime(enrichedSchedule);
 
-          // Enrich Latest Episodes so each episode thumbnail is guaranteed to have the anime title's banner
+          // Enrich Latest Episodes: strictly unique anime per card & banner thumbnails
           const baseLatestEps = latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES;
-          const enrichedLatestEps = baseLatestEps.map((item) => {
+          const seenLatestAnime = new Set<string>();
+          const uniqueLatestList = baseLatestEps.filter((item) => {
+            const key = item.animeSlug || item.animeTitle || item.episode.animeId;
+            if (!key) return true;
+            if (seenLatestAnime.has(key)) return false;
+            seenLatestAnime.add(key);
+            return true;
+          });
+
+          const enrichedLatestEps = uniqueLatestList.map((item) => {
             const found =
               animeMap.get(item.episode.animeId) ||
               animeMap.get(item.animeSlug) ||
@@ -602,7 +620,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <span className="w-1 h-3.5 sm:h-4 bg-[#1683FF] rounded-full inline-block" />
                   <h2 className="text-sm sm:text-base font-bold text-white tracking-wide">
-                    Scheduled Anime
+                    Upcoming Episodes
                   </h2>
                 </div>
                 <button

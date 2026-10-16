@@ -44,6 +44,7 @@ export interface Episode {
   airDate?: string; // e.g. "2026-10-15" or "Monday at 20:00"
   releaseDate?: string;
   releaseTime?: string;
+  dayOfWeek?: string;
   timezone?: string;
   introStart?: number; // seconds (e.g. 0)
   introEnd?: number; // seconds (e.g. 90)

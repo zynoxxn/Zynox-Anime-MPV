@@ -73,15 +73,9 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
           />
           {/* Centered Play Button Circle */}
           <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-            {isEpUpcoming ? (
-              <div className="w-7 h-7 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-md">
-                <Clock className="w-3.5 h-3.5" />
-              </div>
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
-                <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
-              </div>
-            )}
+            <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
+              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+            </div>
           </div>
         </div>
 
@@ -91,12 +85,6 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors flex-1">
               {animeTitle}
             </h4>
-            {isEpUpcoming && (
-              <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none flex items-center gap-0.5">
-                <Clock className="w-2 h-2" />
-                Upcoming
-              </span>
-            )}
           </div>
           <p className="text-[11px] text-[#94A3B8] mt-1">
             {getTimeAgo()}
@@ -104,11 +92,7 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
         </div>
 
         {/* Right EP Badge */}
-        <div className={`px-2 py-1 rounded-md border text-[11px] font-bold shrink-0 ${
-          isEpUpcoming
-            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-            : 'bg-[#07111F] border border-white/10 text-[#CBD5E1]'
-        }`}>
+        <div className="px-2 py-1 rounded-md border border-white/10 bg-[#07111F] text-[11px] font-bold text-[#CBD5E1] shrink-0">
           {epLabel}
         </div>
       </div>
@@ -139,25 +123,15 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
         />
 
         {/* Top-Right EP Badge */}
-        <div className={`absolute top-2 right-2 px-2 py-0.5 rounded backdrop-blur-sm text-[10px] sm:text-[11px] font-bold border ${
-          isEpUpcoming
-            ? 'bg-amber-500/90 text-black border-amber-400'
-            : 'bg-black/75 text-white border-white/10'
-        }`}>
-          {isEpUpcoming ? `Upcoming ${epLabel}` : epLabel}
+        <div className="absolute top-2 right-2 px-2 py-0.5 rounded backdrop-blur-sm text-[10px] sm:text-[11px] font-bold border bg-black/75 text-white border-white/10">
+          {epLabel}
         </div>
 
         {/* Center Play Button Overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
-          {isEpUpcoming ? (
-            <div className="w-9 h-9 rounded-full bg-amber-500 text-black flex items-center justify-center shadow-lg shadow-amber-500/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
-              <Clock className="w-4 h-4" />
-            </div>
-          ) : (
-            <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
-              <Play className="w-4 h-4 fill-white ml-0.5" />
-            </div>
-          )}
+          <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
+            <Play className="w-4 h-4 fill-white ml-0.5" />
+          </div>
         </div>
       </div>
 
@@ -167,12 +141,6 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
           <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight flex-1">
             {animeTitle}
           </h4>
-          {isEpUpcoming && (
-            <span className="shrink-0 text-[8px] font-black uppercase px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none flex items-center gap-0.5">
-              <Clock className="w-2.5 h-2.5" />
-              Upcoming
-            </span>
-          )}
         </div>
         <span className="text-[11px] text-[#94A3B8]">
           {getTimeAgo()}

@@ -10,6 +10,7 @@ import {
   isFavoriteCached,
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
+import { cleanAnimeTitle } from '../lib/firestore/anime';
 
 interface AnimeCardProps {
   anime: Anime;
@@ -214,16 +215,9 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
 
       {/* Title & Year Below Poster - Compact typography */}
       <div className="pt-1.5 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <h3 className="font-bold text-[11px] sm:text-xs text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug flex-1">
-            {anime.title}
-          </h3>
-          {isUpcoming && (
-            <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
-              Upcoming
-            </span>
-          )}
-        </div>
+        <h3 className="font-bold text-[11px] sm:text-xs text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug">
+          {cleanAnimeTitle(anime.title)}
+        </h3>
         <span className="text-[10px] text-[#94A3B8]">
           {releaseYear}
         </span>

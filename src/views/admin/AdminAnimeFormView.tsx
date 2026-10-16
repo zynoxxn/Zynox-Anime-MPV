@@ -73,8 +73,8 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
   const [duration, setDuration] = useState('24m');
   const [rating, setRating] = useState<number>(8.5);
   const [ageRating, setAgeRating] = useState('PG-13');
-  const [releaseDay, setReleaseDay] = useState('Saturday');
-  const [releaseTime, setReleaseTime] = useState('20:00');
+  const [releaseDay, setReleaseDay] = useState('');
+  const [releaseTime, setReleaseTime] = useState('');
   const [timezone, setTimezone] = useState('Asia/Kolkata');
   const [isTrending, setIsTrending] = useState(false);
   const [isPopular, setIsPopular] = useState(false);
@@ -154,8 +154,8 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
             setDuration(data.duration || '24m');
             setRating(data.rating || 8.5);
             setAgeRating(data.ageRating || 'PG-13');
-            setReleaseDay(data.releaseDay || 'Saturday');
-            setReleaseTime(data.releaseTime || '20:00');
+            setReleaseDay(data.releaseDay || '');
+            setReleaseTime(data.releaseTime || '');
             setTimezone(data.timezone || 'Asia/Kolkata');
             setIsTrending(data.trending || data.isTrending || false);
             setIsPopular(data.popular || data.isPopular || false);
@@ -1339,6 +1339,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                     onChange={(e) => setReleaseDay(e.target.value)}
                     className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
                   >
+                    <option value="">None / Not Scheduled</option>
                     {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(
                       (d) => (
                         <option key={d} value={d}>
@@ -1355,7 +1356,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                     type="text"
                     value={releaseTime}
                     onChange={(e) => setReleaseTime(e.target.value)}
-                    placeholder="20:00"
+                    placeholder="e.g. 20:00"
                     className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
                   />
                 </div>

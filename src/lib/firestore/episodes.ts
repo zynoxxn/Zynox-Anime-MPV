@@ -381,20 +381,18 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
       defaultEpisodes.push(...epList);
     }
 
-    // Merge episodes with season-aware key
+    // Merge episodes with season-aware key (guarantee no duplicates)
     const epMap = new Map<string, Episode>();
     for (const ep of defaultEpisodes) {
-      if (isAnimeDeleted(ep.animeId)) continue;
+      if (isAnimeDeleted(ep.animeId) || ep.status === 'upcoming' || ep.isUpcoming) continue;
       const key = `${ep.animeId}-s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`;
       epMap.set(key, ep);
     }
     for (const ep of firestoreEpisodes) {
-      if (isAnimeDeleted(ep.animeId)) continue;
+      if (isAnimeDeleted(ep.animeId) || ep.status === 'upcoming' || ep.isUpcoming) continue;
       const naturalKey = `${ep.animeId}-s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`;
-      // Remove any matching default key so Firestore episode cleanly overrides
-      epMap.delete(naturalKey);
-      const uniqueKey = ep.id || naturalKey;
-      epMap.set(uniqueKey, ep);
+      // Firestore episode overrides default cleanly with the exact same naturalKey
+      epMap.set(naturalKey, ep);
     }
 
     const allEpisodes = Array.from(epMap.values());
@@ -474,6 +472,7 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
     }
 
     const result: LatestEpisodeItem[] = [];
+    const seenAnimeKeys = new Set<string>();
 
     for (const ep of allEpisodes) {
       if (result.length >= limitCount) break;
@@ -499,6 +498,12 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
           }
         } catch {}
       }
+
+      const dedupeKey = animeInfo?.slug || animeInfo?.title || (ep as any).animeSlug || ep.animeId;
+      if (dedupeKey && seenAnimeKeys.has(dedupeKey)) {
+        continue; // Prevent adding the same anime multiple times
+      }
+      if (dedupeKey) seenAnimeKeys.add(dedupeKey);
 
       if (animeInfo) {
         const episodeBanner = animeInfo.banner || animeInfo.poster || ep.thumbnail || '';

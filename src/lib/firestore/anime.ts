@@ -40,6 +40,15 @@ function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any
   return cleaned;
 }
 
+export function cleanAnimeTitle(title?: string): string {
+  if (!title) return '';
+  return title
+    .replace(/\s*[\(\[]\s*upcoming(?:\s+show)?\s*[\)\]]/gi, '')
+    .replace(/\s*-\s*upcoming(?:\s+show)?\s*$/gi, '')
+    .replace(/\s+upcoming(?:\s+show)?\s*$/gi, '')
+    .trim();
+}
+
 const OLD_REMOVED_ANIME_IDS = new Set([
   'anime-wistoria',
   'anime-solo-leveling',

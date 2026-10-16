@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../lib/auth';
-import { searchAndFilterAnimes } from '../lib/firestore/anime';
+import { searchAndFilterAnimes, cleanAnimeTitle } from '../lib/firestore/anime';
 import {
   getUserNotifications,
   markNotificationRead,
@@ -511,7 +511,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                             <div className="flex-1 min-w-0 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#00CFFF] transition-colors leading-snug line-clamp-1">
-                                  {anime.title}
+                                  {cleanAnimeTitle(anime.title)}
                                 </h4>
                                 {anime.activeSeasonNumber && (
                                   <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[10px] font-black border border-[#1683FF]/30 shrink-0">
@@ -551,12 +551,6 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                 {anime.audioLanguage && (
                                   <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] border border-[#1683FF]/25 text-[10px] font-bold">
                                     {anime.audioLanguage}
-                                  </span>
-                                )}
-                                {isUpcoming && (
-                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black uppercase flex items-center gap-0.5">
-                                    <Clock className="w-2.5 h-2.5" />
-                                    Upcoming
                                   </span>
                                 )}
                               </div>
@@ -865,7 +859,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           <div className="flex-1 min-w-0 space-y-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <h4 className="text-sm font-bold text-white leading-snug line-clamp-1">
-                                {anime.title}
+                                {cleanAnimeTitle(anime.title)}
                               </h4>
                               {anime.activeSeasonNumber && (
                                 <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[9px] font-black border border-[#1683FF]/30">
@@ -892,11 +886,6 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                               {anime.audioLanguage && (
                                 <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] text-[9px] font-bold">
                                   {anime.audioLanguage}
-                                </span>
-                              )}
-                              {isUpcoming && (
-                                <span className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
-                                  Upcoming
                                 </span>
                               )}
                             </div>

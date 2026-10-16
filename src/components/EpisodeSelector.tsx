@@ -1,8 +1,44 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { Episode } from '../types/episode';
 import type { AnimeSeasonEntry } from '../types/anime';
-import { Search, Play, Check, Download, Sparkles, Layers, Clock, Calendar } from 'lucide-react';
+import { Search, Play, Check, Download, Sparkles, Layers, Calendar } from 'lucide-react';
 import { resolveEpisodeDownloadUrl, executeDownloadRedirect } from '../lib/downloadRedirect';
+interface ScheduledEpisodeMetaProps {
+  dayOfWeek?: string;
+  releaseTime?: string;
+  airDate?: string;
+  language?: string;
+}
+
+const ScheduledEpisodeMeta: React.FC<ScheduledEpisodeMetaProps> = ({
+  dayOfWeek,
+  releaseTime,
+  airDate,
+  language,
+}) => {
+  const formattedDateTime = airDate
+    ? airDate
+    : dayOfWeek
+    ? `${dayOfWeek}${releaseTime ? ` · ${releaseTime}` : ''}`
+    : releaseTime
+    ? `Airing at ${releaseTime}`
+    : 'Scheduled Broadcast';
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5 text-[11px]">
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1683FF]/10 border border-[#1683FF]/25 text-[#00CFFF] font-semibold">
+        <Calendar className="w-3 h-3 text-[#00CFFF] shrink-0" />
+        <span>{formattedDateTime}</span>
+      </span>
+
+      {language && (
+        <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[#94A3B8] text-[10px] font-medium truncate max-w-[150px]">
+          {language}
+        </span>
+      )}
+    </div>
+  );
+};
 
 interface EpisodeSelectorProps {
   episodes: Episode[];
@@ -154,7 +190,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {filteredEpisodes.map((ep) => {
             const isPlaying = currentEpisodeNumber === ep.episodeNumber;
             const isWatched = watchedEpisodeNumbers.includes(ep.episodeNumber);
-            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming) || Boolean(isAnimeUpcoming);
+            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming);
             // Every episode thumbnail uses anime title's banner image
             const epThumbnail = animeBanner || animePoster || ep.thumbnail;
 
@@ -167,7 +203,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   isPlaying
                     ? 'bg-[#1683FF]/20 border-[#1683FF] shadow-lg shadow-[#1683FF]/15 ring-1 ring-[#1683FF]'
                     : isEpUpcoming
-                    ? 'bg-[#081220] border-amber-500/20 hover:border-amber-500/40 hover:bg-[#0B182B]'
+                    ? 'bg-[#050A14] border-[#1683FF]/30 hover:border-[#00CFFF]/60 hover:bg-[#081426]'
                     : 'bg-[#050A14] border-white/5 hover:border-[#1683FF]/40 hover:bg-[#081426]'
                 }`}
               >
@@ -186,31 +222,19 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     </div>
                   )}
 
-                  {/* Upcoming Badge on top-left of thumbnail */}
-                  {isEpUpcoming && (
-                    <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-amber-500 text-black text-[9px] font-black uppercase rounded shadow-md flex items-center gap-0.5 z-10">
-                      <Clock className="w-2.5 h-2.5" />
-                      <span>Upcoming</span>
-                    </div>
-                  )}
-
-                  {/* Play / Upcoming Overlay */}
+                  {/* Play Overlay */}
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    {isEpUpcoming ? (
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center bg-amber-500/90 text-black border border-amber-400 shadow-md">
-                        <Clock className="w-3.5 h-3.5" />
-                      </div>
-                    ) : (
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform ${
-                          isPlaying
-                            ? 'bg-[#1683FF] text-white scale-110 shadow-md shadow-[#1683FF]/50'
-                            : 'bg-black/60 border border-white/20 text-white group-hover:bg-[#1683FF] group-hover:text-white group-hover:border-[#1683FF]'
-                        }`}
-                      >
-                        <Play className="w-3 h-3 fill-current ml-0.5" />
-                      </div>
-                    )}
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform ${
+                        isPlaying
+                          ? 'bg-[#1683FF] text-white scale-110 shadow-md shadow-[#1683FF]/50'
+                          : isEpUpcoming
+                          ? 'bg-[#081426]/90 border border-[#1683FF]/60 text-[#00CFFF] group-hover:bg-[#1683FF] group-hover:text-white group-hover:border-[#1683FF]'
+                          : 'bg-black/60 border border-white/20 text-white group-hover:bg-[#1683FF] group-hover:text-white group-hover:border-[#1683FF]'
+                      }`}
+                    >
+                      <Play className="w-3 h-3 fill-current ml-0.5" />
+                    </div>
                   </div>
 
                   {/* Duration Badge bottom right (hidden if invalid or NaN) */}
@@ -257,26 +281,24 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <span
                       className={`text-xs font-black tracking-wide ${
-                        isPlaying
+                        isEpUpcoming
                           ? 'text-[#00CFFF]'
-                          : isEpUpcoming
-                          ? 'text-amber-400'
+                          : isPlaying
+                          ? 'text-[#00CFFF]'
                           : 'text-[#1683FF]'
                       }`}
                     >
                       Episode {String(ep.episodeNumber).padStart(2, '0')}
                     </span>
-                    {isEpUpcoming && (
-                      <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black uppercase rounded shadow-sm flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" />
-                        Upcoming Show
+                    {isEpUpcoming ? (
+                      <span className="px-1.5 py-0.5 bg-[#1683FF]/20 border border-[#1683FF]/40 text-[#00CFFF] text-[9px] font-black uppercase rounded shadow-sm">
+                        Upcoming
                       </span>
-                    )}
-                    {isPlaying && (
+                    ) : isPlaying ? (
                       <span className="px-1.5 py-0.5 bg-[#1683FF] text-white text-[9px] font-black uppercase rounded shadow-sm">
                         Playing
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   <h4 className="text-xs sm:text-sm font-bold text-[#F8FAFC] group-hover:text-white truncate">
@@ -284,13 +306,15 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   </h4>
 
                   <div className="text-[11px] text-[#94A3B8] mt-0.5">
-                    {isEpUpcoming && (ep.airDate || ep.releaseTime) ? (
-                      <span className="text-amber-300/90 font-medium inline-flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-amber-400 shrink-0" />
-                        <span>Scheduled: {ep.airDate || 'Coming Soon'}{ep.releaseTime ? ` at ${ep.releaseTime}` : ''}</span>
-                      </span>
+                    {isEpUpcoming ? (
+                      <ScheduledEpisodeMeta
+                        dayOfWeek={ep.dayOfWeek}
+                        releaseTime={ep.releaseTime}
+                        airDate={ep.airDate}
+                        language={ep.language}
+                      />
                     ) : (
-                      <p className="line-clamp-1 hidden sm:block">
+                      <p className="line-clamp-1">
                         {ep.description ||
                           `In episode ${ep.episodeNumber}, intense revelations and tactical skirmishes escalate as key heroes unfold new power.`}
                       </p>
@@ -300,43 +324,47 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                 {/* Right: Actions (Download & Status) */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onDownloadEpisode) {
-                        onDownloadEpisode(ep);
-                      } else {
-                        const dlUrl = resolveEpisodeDownloadUrl(ep, undefined);
-                        executeDownloadRedirect(dlUrl, `Episode ${ep.episodeNumber}`);
-                      }
-                    }}
-                    className="p-2 rounded-xl bg-[#081426] hover:bg-emerald-600 hover:text-white text-[#94A3B8] border border-white/10 hover:border-emerald-500/50 transition-all"
-                    title={`Download Episode ${ep.episodeNumber}`}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
+                  {isEpUpcoming ? (
+                    <div className="px-2.5 py-1 rounded-lg bg-[#1683FF]/10 border border-[#1683FF]/25 text-[#00CFFF] text-xs font-bold shrink-0">
+                      Scheduled
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onDownloadEpisode) {
+                            onDownloadEpisode(ep);
+                          } else {
+                            const dlUrl = resolveEpisodeDownloadUrl(ep, undefined);
+                            executeDownloadRedirect(dlUrl, `Episode ${ep.episodeNumber}`);
+                          }
+                        }}
+                        className="p-2 rounded-xl bg-[#081426] hover:bg-emerald-600 hover:text-white text-[#94A3B8] border border-white/10 hover:border-emerald-500/50 transition-all"
+                        title={`Download Episode ${ep.episodeNumber}`}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
 
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center border ${
-                      isWatched
-                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
-                        : isPlaying
-                        ? 'bg-[#1683FF]/20 border-[#1683FF] text-[#00CFFF]'
-                        : isEpUpcoming
-                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                        : 'border-white/20 text-transparent'
-                    }`}
-                    title={isWatched ? 'Watched' : isPlaying ? 'Playing' : isEpUpcoming ? 'Upcoming Episode' : 'Unwatched'}
-                  >
-                    {isWatched ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    ) : isPlaying ? (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#00CFFF]" />
-                    ) : isEpUpcoming ? (
-                      <Clock className="w-2.5 h-2.5 text-amber-400" />
-                    ) : null}
-                  </div>
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                          isWatched
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                            : isPlaying
+                            ? 'bg-[#1683FF]/20 border-[#1683FF] text-[#00CFFF]'
+                            : 'border-white/20 text-transparent'
+                        }`}
+                        title={isWatched ? 'Watched' : isPlaying ? 'Playing' : 'Unwatched'}
+                      >
+                        {isWatched ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : isPlaying ? (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#00CFFF]" />
+                        ) : null}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -348,7 +376,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {filteredEpisodes.map((ep) => {
             const isPlaying = currentEpisodeNumber === ep.episodeNumber;
             const isWatched = watchedEpisodeNumbers.includes(ep.episodeNumber);
-            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming) || Boolean(isAnimeUpcoming);
+            const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming);
 
             return (
               <button
@@ -359,7 +387,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   isPlaying
                     ? 'bg-[#1683FF] border-[#00CFFF] text-white shadow-lg shadow-[#1683FF]/40'
                     : isEpUpcoming
-                    ? 'bg-[#081220] border-amber-500/30 text-amber-300 hover:border-amber-400 hover:bg-[#0B182B]'
+                    ? 'bg-[#050A14] border-[#1683FF]/30 text-[#00CFFF] hover:border-[#00CFFF] hover:bg-[#081426]'
                     : isWatched
                     ? 'bg-[#050A14] border-white/5 text-[#64748B] hover:border-[#1683FF]/30 hover:text-white'
                     : 'bg-[#050A14] border-white/10 hover:border-[#1683FF]/50 text-[#F8FAFC] hover:bg-[#081426]'
@@ -371,24 +399,27 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       isPlaying
                         ? 'text-white'
                         : isEpUpcoming
-                        ? 'text-amber-400'
+                        ? 'text-[#00CFFF]'
                         : 'text-[#00CFFF]'
                     }`}
                   >
                     EP {ep.episodeNumber}
                   </span>
-                  {isEpUpcoming ? (
-                    <span className="text-[9px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded leading-none flex items-center gap-0.5">
-                      <Clock className="w-2 h-2" />
-                      Upcoming
-                    </span>
-                  ) : isWatched && !isPlaying ? (
+                  {isWatched && !isPlaying ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
                   ) : null}
                 </div>
                 <div className="text-[11px] truncate font-semibold text-[#F8FAFC] group-hover:text-white">
                   {ep.title || `Episode ${ep.episodeNumber}`}
                 </div>
+                {isEpUpcoming && (
+                  <div className="mt-1.5 px-1.5 py-0.5 rounded bg-[#1683FF]/15 border border-[#1683FF]/30 text-[#00CFFF] text-[10px] font-semibold flex items-center gap-1">
+                    <Calendar className="w-2.5 h-2.5 text-[#00CFFF] shrink-0" />
+                    <span className="truncate">
+                      {ep.airDate || (ep.dayOfWeek ? `${ep.dayOfWeek.slice(0, 3)}${ep.releaseTime ? ` · ${ep.releaseTime}` : ''}` : 'Scheduled')}
+                    </span>
+                  </div>
+                )}
               </button>
             );
           })}

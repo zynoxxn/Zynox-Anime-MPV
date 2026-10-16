@@ -3,7 +3,7 @@ import type { Anime } from '../types/anime';
 import type { Episode, VideoSource } from '../types/episode';
 import type { WatchlistStatus } from '../types/library';
 import { useAuth } from '../lib/auth';
-import { getAnimeBySlug, getPublishedAnimes, incrementAnimeViews } from '../lib/firestore/anime';
+import { getAnimeBySlug, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
 import {
   getEpisodeById,
   getEpisodeByAnimeAndNumber,
@@ -112,6 +112,17 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [shareOpen, setShareOpen] = useState<boolean>(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState<boolean>(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
+
+  // Watchlist & Favorite state
+  const [watchlistStatus, setWatchlistStatusState] = useState<WatchlistStatus | null>(null);
+  const [fav, setFav] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (anime?.id) {
+      getAnimeWatchlistStatus(user?.uid || null, anime.id).then(setWatchlistStatusState).catch(() => {});
+      isFavorite(user?.uid || null, anime.id).then(setFav).catch(() => {});
+    }
+  }, [anime?.id, user?.uid]);
 
   const handleShare = () => {
     const shareTitle = `${anime?.title || 'Anime'} - Episode ${episode?.episodeNumber || episodeNumberOrId}`;
@@ -534,15 +545,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     isUpcomingEpisode ||
     allEpisodes.some((e) => e.status === 'upcoming' || Boolean(e.isUpcoming));
 
-  const [watchlistStatus, setWatchlistStatusState] = useState<WatchlistStatus | null>(null);
-  const [fav, setFav] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (anime?.id) {
-      getAnimeWatchlistStatus(user?.uid || null, anime.id).then(setWatchlistStatusState).catch(() => {});
-      isFavorite(user?.uid || null, anime.id).then(setFav).catch(() => {});
-    }
-  }, [anime?.id, user?.uid]);
 
   const handleWatchlistToggle = async () => {
     if (!anime?.id) return;
@@ -872,12 +874,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               <span className="text-xs font-black text-[#00CFFF] tracking-wider uppercase">
                 EPISODE {episode.episodeNumber} OF {allEpisodes.length > 0 ? allEpisodes.length : episode.episodeNumber}
               </span>
-              {isUpcomingEpisode && (
-                <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] font-black uppercase flex items-center gap-1 shadow-sm">
-                  <Clock className="w-2.5 h-2.5" />
-                  Upcoming Show
-                </span>
-              )}
             </div>
 
             {/* Episode Title */}
@@ -888,39 +884,11 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
             {/* Subtitle with year and anime title */}
             <div className="flex items-center gap-2 flex-wrap mt-0.5">
               <p className="text-xs text-[#94A3B8]">
-                {anime.title}{anime.year ? ` (${anime.year})` : ''}
+                {cleanAnimeTitle(anime.title)}{anime.year ? ` (${anime.year})` : ''}
               </p>
-              {isAnimeUpcoming && (
-                <span className="px-1.5 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded text-[9px] font-bold uppercase flex items-center gap-1">
-                  <Clock className="w-2.5 h-2.5" />
-                  Upcoming Show
-                </span>
-              )}
             </div>
 
-            {/* Next Episode Estimated Upcoming Time */}
-            {(() => {
-              const nextEpNum = episode.episodeNumber + 1;
-              const nextAirTime = nextEpisode?.airDate
-                ? `${nextEpisode.airDate}${nextEpisode.releaseTime ? ` at ${nextEpisode.releaseTime}` : ''}`
-                : anime.upcomingAirDate
-                ? anime.upcomingAirDate
-                : anime.releaseDay
-                ? `${anime.releaseDay} at ${anime.releaseTime || '20:00'}`
-                : null;
 
-              return (
-                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#081426] border border-[#1683FF]/25 text-xs">
-                  <Clock className="w-3.5 h-3.5 text-[#00CFFF] shrink-0 animate-pulse" />
-                  <span className="text-[#94A3B8]">
-                    Next Episode <strong className="text-white">({nextEpisode ? `Ep ${nextEpisode.episodeNumber}` : `Ep ${nextEpNum}`})</strong>:
-                  </span>
-                  <span className="text-[#00CFFF] font-bold">
-                    {nextAirTime ? `Estimated Air: ${nextAirTime}` : nextEpisode ? 'Available Now' : 'Coming Soon'}
-                  </span>
-                </div>
-              );
-            })()}
           </div>
 
           {/* Action Toolbar: [◀ Prev] [Next ▶] | [⬇ Download] [🔖 Watchlist] [♥ Favorite] [🔗 Share] [✓ Watched] [🚩 Report] */}

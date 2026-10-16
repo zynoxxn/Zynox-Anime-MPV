@@ -1,6 +1,7 @@
 import React from 'react';
-import { Play, Clock } from 'lucide-react';
+import { Play } from 'lucide-react';
 import type { CmsScheduleItem } from '../types/cms';
+import { cleanAnimeTitle } from '../lib/firestore/anime';
 
 interface ScheduledCardProps {
   item: CmsScheduleItem;
@@ -13,10 +14,26 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
   navigate,
   variant = 'landscape-card',
 }) => {
-  const targetUrl = `/anime/${item.animeSlug}`;
+  const animeSlug =
+    item.animeSlug ||
+    item.animeId ||
+    (item.animeTitle
+      ? cleanAnimeTitle(item.animeTitle).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      : '');
+  const targetUrl = item.episodeNumber
+    ? `/anime/${animeSlug}/episode/${item.episodeNumber}`
+    : `/anime/${animeSlug}`;
   const epLabel = item.seasonNumber && item.seasonNumber > 1
     ? `S${item.seasonNumber} · EP ${item.episodeNumber}`
     : `EP ${item.episodeNumber}`;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (targetUrl) {
+      navigate(targetUrl);
+    }
+  };
 
   // Prioritize anime banner for 16:9 schedule card thumbnail
   const posterImage =
@@ -28,7 +45,7 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
   if (variant === 'mobile-row') {
     return (
       <div
-        onClick={() => navigate(targetUrl)}
+        onClick={handleClick}
         className="flex items-center gap-3 p-2 rounded-xl bg-[#081426]/70 border border-white/5 hover:border-[#1683FF]/30 active:scale-[0.99] cursor-pointer group transition-all"
       >
         {/* Landscape Thumbnail with Center Play Button */}
@@ -53,24 +70,16 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
               <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
             </div>
           </div>
-          {/* Day tag on mobile thumb */}
-          <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[9px] font-bold text-[#00CFFF]">
-            {item.dayOfWeek.slice(0, 3)}
-          </div>
         </div>
 
         {/* Middle Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors flex-1">
-              {item.animeTitle}
+              {cleanAnimeTitle(item.animeTitle)}
             </h4>
-            <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
-              Upcoming
-            </span>
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8] mt-1">
-            <Clock className="w-3 h-3 text-[#1683FF]" />
             <span>{item.dayOfWeek} {item.releaseTime ? `• ${item.releaseTime}` : ''}</span>
           </div>
         </div>
@@ -86,7 +95,7 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
   // Desktop Landscape Card (Identical to Latest Episode desktop card)
   return (
     <div
-      onClick={() => navigate(targetUrl)}
+      onClick={handleClick}
       className="flex flex-col cursor-pointer group transition-transform duration-200 hover:-translate-y-1 select-none"
     >
       {/* 16:9 Thumbnail with badges & play overlay */}
@@ -106,12 +115,6 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
           }}
         />
 
-        {/* Top-Left Day & Time Badge */}
-        <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-[#1683FF]/90 backdrop-blur-sm text-[10px] sm:text-[11px] font-bold text-white shadow-sm flex items-center gap-1">
-          <Clock className="w-3 h-3 text-white" />
-          <span>{item.dayOfWeek} {item.releaseTime ? `• ${item.releaseTime}` : ''}</span>
-        </div>
-
         {/* Top-Right EP Badge */}
         <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[10px] sm:text-[11px] font-bold text-white border border-white/10">
           {epLabel}
@@ -127,14 +130,9 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
 
       {/* Info Below Thumbnail */}
       <div className="pt-2 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight flex-1">
-            {item.animeTitle}
-          </h4>
-          <span className="shrink-0 text-[8px] font-black uppercase px-1 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded leading-none">
-            Upcoming
-          </span>
-        </div>
+        <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight">
+          {cleanAnimeTitle(item.animeTitle)}
+        </h4>
         <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
           <span>{item.dayOfWeek} at {item.releaseTime || 'TBA'}</span>
           {item.language && (

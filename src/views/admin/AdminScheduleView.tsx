@@ -65,7 +65,16 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
     try {
       setLoading(true);
       const [schList, animeList] = await Promise.all([getCmsSchedule(), getAllAnimes()]);
-      setScheduleItems(schList);
+      // Deduplicate schedule list by unique anime
+      const seenAnime = new Set<string>();
+      const dedupedSchedule = schList.filter((item) => {
+        const key = item.animeId || item.animeSlug || item.animeTitle;
+        if (!key) return true;
+        if (seenAnime.has(key)) return false;
+        seenAnime.add(key);
+        return true;
+      });
+      setScheduleItems(dedupedSchedule);
       setAnimes(animeList);
     } catch (err) {
       console.error('Failed to load schedule data:', err);
@@ -79,13 +88,17 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
   }, []);
 
   const handleOpenNew = () => {
+    // Pick the first anime that is not already scheduled if possible
+    const scheduledAnimeIds = new Set(scheduleItems.map((s) => s.animeId || s.animeSlug));
+    const availableAnime = animes.find((a) => !scheduledAnimeIds.has(a.id) && !scheduledAnimeIds.has(a.slug)) || animes[0];
+
     setEditingItem({
       id: `sch-${Date.now()}`,
-      animeId: animes[0]?.id || animes[0]?.slug || '',
-      animeTitle: animes[0]?.title || '',
-      animeSlug: animes[0]?.slug || '',
-      animePoster: animes[0]?.poster || '',
-      animeBanner: animes[0]?.banner || (animes[0] as any)?.bannerUrl || animes[0]?.poster || '',
+      animeId: availableAnime?.id || availableAnime?.slug || '',
+      animeTitle: availableAnime?.title || '',
+      animeSlug: availableAnime?.slug || '',
+      animePoster: availableAnime?.poster || '',
+      animeBanner: availableAnime?.banner || (availableAnime as any)?.bannerUrl || availableAnime?.poster || '',
       episodeNumber: 1,
       seasonNumber: 1,
       dayOfWeek: 'Monday',
@@ -105,14 +118,23 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
   const handleAnimeSelect = (animeIdOrSlug: string) => {
     const found = animes.find((a) => a.id === animeIdOrSlug || a.slug === animeIdOrSlug);
     if (found && editingItem) {
+      // Check if this anime already has a schedule slot to prevent duplicates
+      const existing = scheduleItems.find(
+        (s) => s.animeId === found.id || s.animeSlug === found.slug || s.animeId === found.slug
+      );
+
       setEditingItem({
-        ...editingItem,
+        ...(existing || editingItem),
+        id: existing?.id || editingItem.id || `sch-${Date.now()}`,
         animeId: found.id || found.slug,
         animeTitle: found.title,
         animeSlug: found.slug,
         animePoster: found.poster,
         animeBanner: found.banner || (found as any).bannerUrl || found.poster || '',
       });
+      if (existing) {
+        setIsNew(false);
+      }
     }
   };
 
@@ -126,9 +148,21 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
     try {
       setSaving(true);
       const itemToSave = editingItem as CmsScheduleItem;
+
+      // Prevent adding the same anime multiple times: reuse existing schedule ID if it exists
+      const existingSlot = scheduleItems.find(
+        (s) =>
+          s.id !== itemToSave.id &&
+          ((itemToSave.animeId && (s.animeId === itemToSave.animeId || s.animeSlug === itemToSave.animeId)) ||
+            (itemToSave.animeSlug && (s.animeSlug === itemToSave.animeSlug || s.animeId === itemToSave.animeSlug)))
+      );
+      if (existingSlot) {
+        itemToSave.id = existingSlot.id;
+      }
+
       await saveCmsScheduleItem(itemToSave);
 
-      // Automatically sync Anime title & Episode list to show 'Upcoming' when scheduled
+      // Automatically sync broadcast time onto anime record
       if (itemToSave.animeId) {
         const targetAnime = animes.find(
           (a) => a.id === itemToSave.animeId || a.slug === itemToSave.animeId || a.title === itemToSave.animeTitle
@@ -154,20 +188,16 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
             releaseDay: itemToSave.dayOfWeek,
             releaseTime: itemToSave.releaseTime,
             timezone: itemToSave.timezone || 'Asia/Kolkata',
-            isUpcoming: isSlotUpcoming,
             upcomingEpisodeNumber: Number(itemToSave.episodeNumber) || 1,
             upcomingAirDate: airText,
             upcomingReleaseTime: itemToSave.releaseTime,
           };
-          if (isSlotUpcoming) {
-            animePatch.status = 'upcoming';
-          }
           await updateAnime(animeDocId, animePatch).catch((err) =>
-            console.warn('Failed to sync anime status upon scheduling:', err)
+            console.warn('Failed to sync anime broadcast info upon scheduling:', err)
           );
         }
 
-        // Also ensure the scheduled episode is reflected in the episode list as Upcoming with Anime Banner
+        // If episode already exists in Firestore, sync airDate without creating duplicates
         if (itemToSave.episodeNumber && animeDocId) {
           try {
             const isSlotUpcoming = itemToSave.status !== 'released';
@@ -184,33 +214,34 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
               itemToSave.animePoster ||
               '';
             if (targetEp && targetEp.id) {
-              await updateEpisode(targetEp.id, {
-                status: isSlotUpcoming ? 'upcoming' : 'released',
-                isUpcoming: isSlotUpcoming,
-                airDate: airText,
-                releaseTime: itemToSave.releaseTime,
-                timezone: itemToSave.timezone || 'Asia/Kolkata',
-                thumbnail: bannerThumb,
-              });
+              const epHasStream = Boolean(targetEp.videoUrl || (targetEp.sources && targetEp.sources.length > 0));
+              if (!epHasStream && targetEp.status !== 'released') {
+                await updateEpisode(targetEp.id, {
+                  status: isSlotUpcoming ? 'upcoming' : 'released',
+                  isUpcoming: isSlotUpcoming,
+                  airDate: airText,
+                  releaseTime: itemToSave.releaseTime,
+                  dayOfWeek: itemToSave.dayOfWeek,
+                  timezone: itemToSave.timezone || 'Asia/Kolkata',
+                  thumbnail: bannerThumb,
+                });
+              }
             } else if (isSlotUpcoming) {
               await createEpisode({
                 animeId: animeDocId,
-                animeSlug: itemToSave.animeSlug || targetAnime?.slug || '',
-                animeTitle: itemToSave.animeTitle || targetAnime?.title || '',
                 episodeNumber: Number(itemToSave.episodeNumber),
                 seasonNumber: Number(itemToSave.seasonNumber || 1),
-                season: Number(itemToSave.seasonNumber || 1),
                 title: `Episode ${itemToSave.episodeNumber}`,
-                thumbnail: bannerThumb,
+                description: `Scheduled release on ${itemToSave.dayOfWeek} at ${itemToSave.releaseTime}${itemToSave.timezone ? ` (${itemToSave.timezone})` : ''}`,
                 status: 'upcoming',
                 isUpcoming: true,
+                published: true,
                 airDate: airText,
                 releaseTime: itemToSave.releaseTime,
+                dayOfWeek: itemToSave.dayOfWeek,
                 timezone: itemToSave.timezone || 'Asia/Kolkata',
-                published: true,
-                videoUrl: '',
+                thumbnail: bannerThumb,
                 sources: [],
-                videoSources: [],
               });
             }
           } catch (epErr) {
