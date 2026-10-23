@@ -141,7 +141,7 @@ export const DEFAULT_ANIMES: Anime[] = [
     slug: 'bleach',
     description:
       'High school student Ichigo Kurosaki gains the powers of a Soul Reaper to defend his loved ones and the living world from monstrous spirits called Hollows and malicious otherworldly threats.',
-    poster: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80',
+    poster: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80',
     banner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
     genres: ['Action', 'Supernatural', 'Shounen', 'Adventure'],
     status: 'ongoing',
@@ -166,7 +166,7 @@ export const DEFAULT_ANIMES: Anime[] = [
         id: 'bleach-s1',
         seasonNumber: 1,
         title: 'Bleach Season 1 (Substitute Soul Reaper)',
-        poster: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80',
+        poster: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80',
         banner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
         totalEpisodes: 12,
         year: 2004,
@@ -334,7 +334,7 @@ export const DEFAULT_EPISODES: Record<string, Episode[]> = {
     'anime-bleach',
     'Bleach',
     36,
-    'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=600&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80',
     [
       // Season 1 (1-12)
       'The Day I Became a Shinigami',
@@ -380,7 +380,7 @@ export const DEFAULT_EPISODES: Record<string, Episode[]> = {
       if (epNum <= 12) {
         return {
           seasonNumber: 1,
-          thumbnail: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=600&auto=format&fit=crop&q=80',
+          thumbnail: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80',
         };
       }
       if (epNum <= 24) {

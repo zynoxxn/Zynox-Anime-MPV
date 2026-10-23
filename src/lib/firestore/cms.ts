@@ -395,7 +395,7 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
     animeId: 'anime-bleach',
     animeTitle: 'Bleach',
     animeSlug: 'bleach',
-    animePoster: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80',
+    animePoster: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80',
     animeBanner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80',
     episodeNumber: 37,
     seasonNumber: 3,

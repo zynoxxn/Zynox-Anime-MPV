@@ -751,9 +751,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 key={currentUrl}
                 src={currentUrl}
                 controls
-                autoPlay
                 playsInline
-                onError={() => setVideoError(true)}
+                preload="metadata"
                 className="w-full h-full bg-black object-contain"
               >
                 <source src={currentUrl} type="video/mp4" />

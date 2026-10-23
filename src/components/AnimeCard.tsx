@@ -131,7 +131,11 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             onDragStart={(e) => e.preventDefault()}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out select-none pointer-events-none"
             onError={(e) => {
-              (e.target as HTMLElement).style.display = 'none';
+              const target = e.target as HTMLImageElement;
+              const fallbackUrl = 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80';
+              if (target.src !== fallbackUrl) {
+                target.src = fallbackUrl;
+              }
             }}
           />
         ) : (
