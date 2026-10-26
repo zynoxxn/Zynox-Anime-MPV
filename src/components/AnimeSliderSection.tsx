@@ -320,7 +320,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
             touchAction: 'pan-x pan-y',
             overscrollBehaviorX: 'contain',
           }}
-          className={`flex items-start gap-2.5 sm:gap-3.5 overflow-x-auto no-scrollbar pb-2 pt-1 px-0.5 ${
+          className={`flex items-start gap-3 sm:gap-4 md:gap-5 lg:gap-6 overflow-x-auto no-scrollbar pb-3 pt-1 px-1 ${
             isDraggingState ? 'cursor-grabbing select-none' : 'cursor-grab'
           }`}
           onClickCapture={(e) => {
@@ -333,7 +333,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
           {animes.map((anime, idx) => (
             <div
               key={`slider-${title.toLowerCase().replace(/\s+/g, '-')}-${anime.id || anime.slug}-${idx}`}
-              className="w-[115px] sm:w-[135px] md:w-[155px] lg:w-[170px] xl:w-[180px] shrink-0"
+              className="w-[125px] sm:w-[150px] md:w-[175px] lg:w-[200px] xl:w-[215px] shrink-0"
               draggable={false}
             >
               <AnimeCard

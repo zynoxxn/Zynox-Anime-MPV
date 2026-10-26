@@ -118,8 +118,8 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
       onDragStart={(e) => e.preventDefault()}
       className="group relative cursor-pointer flex flex-col transition-transform duration-200 hover:-translate-y-1 will-change-transform select-none"
     >
-      {/* Poster Image Container - 2:3 Aspect Ratio with compact rounded corners */}
-      <div className="relative aspect-[2/3] bg-[#081426] rounded-lg sm:rounded-xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/40 transition-colors shadow-sm">
+      {/* Poster Image Container - 2:3 Aspect Ratio with rounded corners */}
+      <div className="relative aspect-[2/3] bg-[#081426] rounded-xl sm:rounded-2xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/50 transition-all duration-300 shadow-md group-hover:shadow-xl group-hover:shadow-[#1683FF]/10">
         {anime.poster ? (
           <img
             src={anime.poster}
@@ -139,76 +139,76 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#6E7F95] bg-[#050A14] font-bold text-[9px] uppercase">
+          <div className="w-full h-full flex items-center justify-center text-[#6E7F95] bg-[#050A14] font-bold text-[10px] uppercase">
             ZYNOX
           </div>
         )}
 
         {/* Season & Upcoming Badge Pills on Poster */}
-        <div className="absolute top-1.5 right-1.5 z-10 pointer-events-none flex items-center gap-1">
+        <div className="absolute top-2 right-2 z-10 pointer-events-none flex items-center gap-1">
           {anime.activeSeasonNumber && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1683FF] text-[9px] font-black text-white shadow-md leading-none border border-white/20">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#1683FF] text-[10px] font-black text-white shadow-md leading-none border border-white/20">
               S{anime.activeSeasonNumber}
             </span>
           )}
           {isUpcoming && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-black uppercase shadow-md leading-none">
-              <Clock className="w-2.5 h-2.5" />
+            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-500 text-black text-[10px] font-black uppercase shadow-md leading-none">
+              <Clock className="w-3 h-3" />
               <span>Upcoming</span>
             </span>
           )}
         </div>
 
         {/* Subtle Dark Bottom Gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20 opacity-80 group-hover:opacity-40 transition-opacity pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 opacity-80 group-hover:opacity-40 transition-opacity pointer-events-none" />
 
-        {/* Bottom-Left Star Rating (e.g. ★ 9.4) - Compact */}
-        <div className="absolute bottom-1.5 left-1.5 z-10 pointer-events-none">
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[9px] sm:text-[10px] font-bold text-amber-400 border border-white/10 shadow-sm leading-none">
-            <Star className="w-2.5 h-2.5 fill-amber-400 shrink-0" />
+        {/* Bottom-Left Star Rating (e.g. ★ 9.4) */}
+        <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-[10px] sm:text-xs font-bold text-amber-400 border border-white/10 shadow-sm leading-none">
+            <Star className="w-3 h-3 fill-amber-400 shrink-0" />
             <span className="text-white">{ratingValue}</span>
           </span>
         </div>
 
         {/* Desktop Quick Action Buttons (Favorite & Watchlist on Hover) */}
-        <div className="absolute top-1.5 left-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
           <button
             type="button"
             onClick={handleFavoriteClick}
-            className={`p-1 rounded-md backdrop-blur-md transition-all ${
+            className={`p-1.5 rounded-lg backdrop-blur-md transition-all ${
               fav
                 ? 'bg-rose-500 text-white'
-                : 'bg-black/60 text-white hover:bg-[#1683FF] border border-white/10'
+                : 'bg-black/70 text-white hover:bg-[#1683FF] border border-white/10'
             }`}
             title={fav ? 'Remove from favorites' : 'Add to favorites'}
           >
-            <Heart className={`w-2.5 h-2.5 ${fav ? 'fill-current' : ''}`} />
+            <Heart className={`w-3.5 h-3.5 ${fav ? 'fill-current' : ''}`} />
           </button>
 
           <button
             type="button"
             onClick={handleWatchlistToggle}
-            className={`p-1 rounded-md backdrop-blur-md transition-all ${
+            className={`p-1.5 rounded-lg backdrop-blur-md transition-all ${
               watchlistStatus
                 ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/40'
-                : 'bg-black/60 text-white hover:bg-[#1683FF] border border-white/10'
+                : 'bg-black/70 text-white hover:bg-[#1683FF] border border-white/10'
             }`}
             title={watchlistStatus ? 'Remove from Watchlist' : 'Add to Watchlist'}
           >
-            <Bookmark className={`w-2.5 h-2.5 ${watchlistStatus ? 'fill-current' : ''}`} />
+            <Bookmark className={`w-3.5 h-3.5 ${watchlistStatus ? 'fill-current' : ''}`} />
           </button>
         </div>
 
         {/* Center Hover Play Icon */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md shadow-[#1683FF]/40 transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200">
-            <Play className="w-3 h-3 fill-white ml-0.5" />
+          <div className="w-10 h-10 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-xl shadow-[#1683FF]/50 transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300">
+            <Play className="w-4 h-4 fill-white ml-0.5" />
           </div>
         </div>
 
         {/* Progress Bar (if provided) */}
         {progressPercentage !== undefined && progressPercentage > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60 overflow-hidden">
+          <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60 overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-[#1683FF] to-[#00CFFF]"
               style={{ width: `${progressPercentage}%` }}
@@ -217,12 +217,12 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
         )}
       </div>
 
-      {/* Title & Year Below Poster - Compact typography */}
-      <div className="pt-1.5 flex flex-col gap-0.5">
-        <h3 className="font-bold text-[11px] sm:text-xs text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug">
+      {/* Title & Year Below Poster */}
+      <div className="pt-2 flex flex-col gap-0.5">
+        <h3 className="font-bold text-xs sm:text-sm md:text-[14px] text-white truncate group-hover:text-[#00CFFF] transition-colors leading-snug">
           {cleanAnimeTitle(anime.title)}
         </h3>
-        <span className="text-[10px] text-[#94A3B8]">
+        <span className="text-[11px] sm:text-xs text-[#94A3B8]">
           {releaseYear}
         </span>
       </div>

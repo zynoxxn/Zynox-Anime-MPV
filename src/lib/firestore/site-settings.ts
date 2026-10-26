@@ -6,9 +6,9 @@ const SETTINGS_COLLECTION = 'siteSettings';
 const CONFIG_DOC = 'config';
 
 export const DEFAULT_SITE_CONFIG: SiteConfig = {
-  siteName: 'ZYNOX ANIME',
+  siteName: 'Zynox Anime',
   logoText: 'ZYNOX',
-  tagline: 'Your #1 Destination For Free Anime in Multi Audio',
+  tagline: 'Watch & download Indian Regional Dubbed Anime Online',
   contactEmail: 'zairoxmax2.0@gmail.com',
   telegramUrl: 'https://t.me/ZynoxAnime',
   youtubeUrl: '',

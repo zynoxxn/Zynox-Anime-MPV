@@ -131,7 +131,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       style={{ touchAction: 'pan-y' }}
-      className="relative w-full h-[250px] sm:h-[300px] md:h-[350px] lg:h-[390px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[#050A14] group select-none cursor-pointer transition-all duration-300 hover:border-[#1683FF]/40"
+      className="relative w-full h-[260px] sm:h-[320px] md:h-[380px] lg:h-[440px] xl:h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[#050A14] group select-none cursor-pointer transition-all duration-300 hover:border-[#1683FF]/40"
       role="button"
       tabIndex={0}
       aria-label={`View ${title}`}
@@ -156,10 +156,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
         />
 
         {/* Soft bottom edge blend */}
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-[#050A14] via-[#050A14]/40 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-[#050A14] via-[#050A14]/50 to-transparent pointer-events-none" />
 
         {/* Localized left text-readability fade - keeps right & center anime artwork bright & visible */}
-        <div className="absolute inset-y-0 left-0 w-full sm:w-4/5 md:w-3/5 bg-gradient-to-r from-[#050A14]/90 via-[#050A14]/50 to-transparent pointer-events-none" />
+        <div className="absolute inset-y-0 left-0 w-full sm:w-4/5 md:w-3/5 lg:w-1/2 bg-gradient-to-r from-[#050A14]/95 via-[#050A14]/60 to-transparent pointer-events-none" />
 
         {/* Subtle top edge vignette */}
         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/40 to-transparent pointer-events-none" />
@@ -171,45 +171,45 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
           <button
             type="button"
             onClick={handlePrev}
-            className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-[#1683FF] text-white border border-white/15 flex items-center justify-center transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 backdrop-blur-md shadow-lg cursor-pointer"
+            className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 md:w-11 md:h-11 rounded-full bg-black/60 hover:bg-[#1683FF] text-white border border-white/15 flex items-center justify-center transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 backdrop-blur-md shadow-lg cursor-pointer hover:scale-110 active:scale-95"
             title="Previous slide"
             aria-label="Previous slide"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
           </button>
           <button
             type="button"
             onClick={handleNext}
-            className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/60 hover:bg-[#1683FF] text-white border border-white/15 flex items-center justify-center transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 backdrop-blur-md shadow-lg cursor-pointer"
+            className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-20 w-9 h-9 md:w-11 md:h-11 rounded-full bg-black/60 hover:bg-[#1683FF] text-white border border-white/15 flex items-center justify-center transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 backdrop-blur-md shadow-lg cursor-pointer hover:scale-110 active:scale-95"
             title="Next slide"
             aria-label="Next slide"
           >
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-5 h-5 md:w-6 md:h-6" />
           </button>
         </>
       )}
 
       {/* Hero Content on Left */}
-      <div className="relative h-full flex flex-col justify-end p-4 sm:p-6 md:p-8 space-y-2.5 z-10 max-w-xl">
+      <div className="relative h-full flex flex-col justify-end p-5 sm:p-7 md:p-10 lg:p-12 space-y-3 z-10 max-w-xl lg:max-w-3xl">
         {/* Small Badges */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-2.5 py-0.5 bg-[#1683FF]/30 text-[#00CFFF] border border-[#1683FF]/50 rounded-md text-[10px] sm:text-xs font-bold tracking-wide uppercase shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="px-3 py-1 bg-[#1683FF]/30 text-[#00CFFF] border border-[#1683FF]/50 rounded-lg text-xs font-bold tracking-wide uppercase shadow-sm backdrop-blur-sm">
             #{currentIndex + 1} SPOTLIGHT
           </span>
           {subtitle && (
-            <span className="text-[10px] sm:text-xs text-white/90 font-medium hidden sm:inline-block drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+            <span className="text-xs md:text-sm text-white/90 font-medium hidden sm:inline-block drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
               {subtitle}
             </span>
           )}
         </div>
 
         {/* Hero Title */}
-        <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-wide line-clamp-1 sm:line-clamp-2 drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] group-hover:text-[#00CFFF] transition-colors">
+        <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-wide line-clamp-1 sm:line-clamp-2 drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] group-hover:text-[#00CFFF] transition-colors">
           {title}
         </h1>
 
         {/* Description / Synopsis */}
-        <p className="text-xs sm:text-sm text-white/85 line-clamp-2 leading-relaxed max-w-lg hidden sm:block drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">
+        <p className="text-xs sm:text-sm md:text-base text-white/85 line-clamp-2 md:line-clamp-3 leading-relaxed max-w-lg lg:max-w-2xl hidden sm:block drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]">
           {description}
         </p>
 

@@ -370,9 +370,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
   }, [user?.uid]);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-3 sm:px-6 py-3 sm:py-4">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       {/* 3-COLUMN DESKTOP LAYOUT (Left Sidebar | Main Content | Right Sidebar) */}
-      <div className="flex gap-4 xl:gap-6 items-start">
+      <div className="flex gap-5 xl:gap-8 items-start">
         
         {/* 1. LEFT NAVIGATION SIDEBAR (Desktop) */}
         <LeftSidebar
@@ -383,7 +383,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
         />
 
         {/* 2. MAIN CENTER CONTENT */}
-        <main className="flex-1 min-w-0 space-y-6 sm:space-y-8">
+        <main className="flex-1 min-w-0 space-y-8 sm:space-y-10 lg:space-y-12">
           {loading ? (
             <>
               {/* SKELETON SCREENS DURING FIRESTORE FETCH */}

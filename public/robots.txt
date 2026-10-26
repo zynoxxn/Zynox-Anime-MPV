@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin
 Disallow: /api/admin
 
-Sitemap: /sitemap.xml
+Sitemap: https://www.zynoxanime.cv/sitemap.xml
