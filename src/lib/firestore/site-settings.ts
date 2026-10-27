@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { SiteConfig } from '../../types/library';
+import { withTimeout } from './fast-cache';
 
 const SETTINGS_COLLECTION = 'siteSettings';
 const CONFIG_DOC = 'config';
@@ -22,8 +23,8 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
 export async function getSiteSettings(): Promise<SiteConfig> {
   try {
     const docRef = doc(db, SETTINGS_COLLECTION, CONFIG_DOC);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
+    const snap = await withTimeout(getDoc(docRef), 1500, null);
+    if (snap && snap.exists()) {
       const data = snap.data() as Partial<SiteConfig>;
       let siteName = data.siteName || DEFAULT_SITE_CONFIG.siteName;
       if (

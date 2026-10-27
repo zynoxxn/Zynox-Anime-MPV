@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { withTimeout, getStoredCache, setStoredCache } from './fast-cache';
 import type { Episode } from '../../types/episode';
 import type { Anime } from '../../types/anime';
 import { getAnimeById, getPublishedAnimes, isAnimeDeleted } from './anime';
@@ -113,7 +114,8 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
         where('animeId', 'in', idList.slice(0, 10)),
         where('published', '==', true)
       );
-      const snapshot = await getDocs(q);
+      const snapshot = await withTimeout(getDocs(q), 2000, null);
+      if (!snapshot) throw new Error('Timeout fetching episodes');
       list = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<Episode, 'id'>),
@@ -218,7 +220,8 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
     }
 
     // If no animeId specified, combine all Firestore and default catalog episodes
-    const snapshot = await getDocs(collection(db, EPISODES_COLLECTION));
+    const snapshot = await withTimeout(getDocs(collection(db, EPISODES_COLLECTION)), 1800, null);
+      if (!snapshot) throw new Error('Timeout fetching fallback episodes');
     list = snapshot.docs
       .map((docSnap) => ({
         id: docSnap.id,

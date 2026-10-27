@@ -17,10 +17,14 @@ import { db } from '../firebase';
 import type { Anime, AnimeStatus, AnimeType } from '../../types/anime';
 import { DEFAULT_ANIMES } from '../../data/defaultCatalog';
 import { deleteHeroBannersForAnime } from './cms';
+import { withTimeout, getStoredCache, setStoredCache } from './fast-cache';
 
 const ANIME_COLLECTION = 'anime';
 const DELETED_IDS_STORAGE_KEY = 'zynox_deleted_anime_ids';
 const DELETED_ANIMES_DOC = 'deleted_anime_ids';
+
+let memoryPublishedAnimes: Anime[] | null = null;
+let inFlightPublishedPromise: Promise<Anime[]> | null = null;
 
 function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any> {
   const cleaned: Record<string, any> = {};
@@ -262,31 +266,66 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
   return result;
 }
 
-export async function getPublishedAnimes(): Promise<Anime[]> {
-  try {
-    await fetchDeletedAnimeIds();
-    const q = query(
-      collection(db, ANIME_COLLECTION),
-      where('published', '==', true)
-    );
-    const snapshot = await getDocs(q);
-    const list: Anime[] = snapshot.docs.map((docSnap) => ({
-      ...(docSnap.data() as Omit<Anime, 'id'>),
-      id: docSnap.id,
-    }));
-
-    const merged = mergeWithDefaultAnimes(list, true);
-    return merged.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis?.() || 0;
-      const timeB = b.createdAt?.toMillis?.() || 0;
-      if (timeB !== timeA) return timeB - timeA;
-      return (b.viewsCount || 0) - (a.viewsCount || 0);
-    });
-  } catch (err) {
-    console.warn('Failed to get published animes from Firestore, using default catalog:', err);
-    const deletedSet = getLocalDeletedAnimeIds();
-    return DEFAULT_ANIMES.filter((a) => a.published !== false && !deletedSet.has(a.id) && (!a.slug || !deletedSet.has(a.slug)));
+export function getCachedPublishedAnimes(): Anime[] {
+  if (memoryPublishedAnimes && memoryPublishedAnimes.length > 0) {
+    return memoryPublishedAnimes;
   }
+  const fromStorage = getStoredCache<Anime[]>('published_animes', []);
+  if (fromStorage && fromStorage.length > 0) {
+    memoryPublishedAnimes = fromStorage;
+    return fromStorage;
+  }
+  const deletedSet = getLocalDeletedAnimeIds();
+  const defaults = DEFAULT_ANIMES.filter(
+    (a) => a.published !== false && !deletedSet.has(a.id) && (!a.slug || !deletedSet.has(a.slug))
+  );
+  memoryPublishedAnimes = defaults;
+  return defaults;
+}
+
+export async function getPublishedAnimes(forceFresh: boolean = false): Promise<Anime[]> {
+  if (inFlightPublishedPromise) {
+    return inFlightPublishedPromise;
+  }
+
+  inFlightPublishedPromise = (async () => {
+    try {
+      // 1. Fetch deleted IDs with quick 1200ms timeout
+      await withTimeout(fetchDeletedAnimeIds(), 1200, new Set<string>());
+
+      // 2. Fetch published animes with strict 2200ms timeout
+      const q = query(
+        collection(db, ANIME_COLLECTION),
+        where('published', '==', true)
+      );
+      const snapshot = await withTimeout(getDocs(q), 2200, null);
+
+      if (snapshot && !snapshot.empty) {
+        const list: Anime[] = snapshot.docs.map((docSnap) => ({
+          ...(docSnap.data() as Omit<Anime, 'id'>),
+          id: docSnap.id,
+        }));
+
+        const merged = mergeWithDefaultAnimes(list, true);
+        merged.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          if (timeB !== timeA) return timeB - timeA;
+          return (b.viewsCount || 0) - (a.viewsCount || 0);
+        });
+        memoryPublishedAnimes = merged;
+        setStoredCache('published_animes', merged);
+        return merged;
+      }
+    } catch (err) {
+      console.warn('Fast fallback for getPublishedAnimes:', err);
+    }
+    return getCachedPublishedAnimes();
+  })().finally(() => {
+    inFlightPublishedPromise = null;
+  });
+
+  return inFlightPublishedPromise;
 }
 
 export async function getAllAnimes(): Promise<Anime[]> {
@@ -461,9 +500,9 @@ export async function incrementAnimeViews(id: string): Promise<void> {
   }
 }
 
-export async function getFeaturedAnimes(): Promise<Anime[]> {
+export async function getFeaturedAnimes(sourceList?: Anime[]): Promise<Anime[]> {
   try {
-    const all = await getPublishedAnimes();
+    const all = sourceList && sourceList.length > 0 ? sourceList : await getPublishedAnimes();
     return all.filter((a) => {
       // Must not be explicitly set to false
       if (a.featured === false || a.isFeatured === false) return false;
@@ -475,10 +514,10 @@ export async function getFeaturedAnimes(): Promise<Anime[]> {
   }
 }
 
-export async function getTrendingAnimes(limitCount: number = 10): Promise<Anime[]> {
+export async function getTrendingAnimes(limitCount: number = 10, sourceList?: Anime[]): Promise<Anime[]> {
   try {
-    const all = await getPublishedAnimes();
-    return all
+    const all = sourceList && sourceList.length > 0 ? sourceList : await getPublishedAnimes();
+    return [...all]
       .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0) || (b.rating || 0) - (a.rating || 0))
       .slice(0, limitCount);
   } catch (err) {
@@ -487,10 +526,10 @@ export async function getTrendingAnimes(limitCount: number = 10): Promise<Anime[
   }
 }
 
-export async function getPopularAnimes(limitCount: number = 10): Promise<Anime[]> {
+export async function getPopularAnimes(limitCount: number = 10, sourceList?: Anime[]): Promise<Anime[]> {
   try {
-    const all = await getPublishedAnimes();
-    return all
+    const all = sourceList && sourceList.length > 0 ? sourceList : await getPublishedAnimes();
+    return [...all]
       .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (b.viewsCount || 0) - (a.viewsCount || 0))
       .slice(0, limitCount);
   } catch (err) {

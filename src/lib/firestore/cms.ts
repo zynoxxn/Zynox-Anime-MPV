@@ -12,6 +12,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { withTimeout, getStoredCache, setStoredCache } from './fast-cache';
 import type {
   CmsGenre,
   CmsStatus,
@@ -407,10 +408,22 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
   },
 ];
 
+let memorySchedule: CmsScheduleItem[] | null = null;
+
+export function getCachedSchedule(): CmsScheduleItem[] {
+  if (memorySchedule && memorySchedule.length > 0) return memorySchedule;
+  const fromStorage = getStoredCache<CmsScheduleItem[]>('schedule', []);
+  if (fromStorage && fromStorage.length > 0) {
+    memorySchedule = fromStorage;
+    return fromStorage;
+  }
+  return DEFAULT_SCHEDULE;
+}
+
 export async function getCmsSchedule(): Promise<CmsScheduleItem[]> {
   try {
-    const snap = await getDocs(collection(db, CMS_SCHEDULE));
-    if (!snap.empty) {
+    const snap = await withTimeout(getDocs(collection(db, CMS_SCHEDULE)), 2000, null);
+    if (snap && !snap.empty) {
       const items: CmsScheduleItem[] = snap.docs.map((d) => {
         const item = d.data() as CmsScheduleItem;
         return {
@@ -431,12 +444,14 @@ export async function getCmsSchedule(): Promise<CmsScheduleItem[]> {
           combined.push(def);
         }
       }
+      memorySchedule = combined;
+      setStoredCache('schedule', combined);
       return combined;
     }
   } catch (err) {
-    console.warn('Using default CMS schedule:', err);
+    console.warn('Using fast cached CMS schedule:', err);
   }
-  return DEFAULT_SCHEDULE;
+  return getCachedSchedule();
 }
 
 export async function saveCmsScheduleItem(item: CmsScheduleItem): Promise<void> {

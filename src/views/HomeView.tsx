@@ -6,13 +6,15 @@ import type { LatestEpisodeItem } from '../lib/firestore/episodes';
 import type { CmsScheduleItem } from '../types/cms';
 import {
   getPublishedAnimes,
+  getCachedPublishedAnimes,
   getTrendingAnimes,
   getPopularAnimes,
   getFeaturedAnimes,
   isAnimeDeleted,
   getAnimeUploadTimestamp,
 } from '../lib/firestore/anime';
-import { getCmsHeroBanners, getCmsSchedule } from '../lib/firestore/cms';
+import { getCmsHeroBanners, getCachedHeroBanners, getCmsSchedule, getCachedSchedule } from '../lib/firestore/cms';
+import { withTimeout } from '../lib/firestore/fast-cache';
 import { getLatestReleasedEpisodes } from '../lib/firestore/episodes';
 import { getContinueWatching } from '../lib/firestore/user-activity';
 import { HeroSkeleton, HomeSectionsSkeleton } from '../components/SkeletonLoader';
@@ -71,15 +73,24 @@ const FALLBACK_LATEST_EPISODES: LatestEpisodeItem[] = [
 
 export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onOpenLegal }) => {
   const { user, isAdmin } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [featuredAnimes, setFeaturedAnimes] = useState<Anime[]>([]);
-  const [trending, setTrending] = useState<Anime[]>([]);
-  const [popular, setPopular] = useState<Anime[]>([]);
-  const [recentlyAdded, setRecentlyAdded] = useState<Anime[]>([]);
-  const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>([]);
+  // Instant Stale-While-Revalidate: render catalog in 0ms without waiting for network
+  const initialAnimes = useMemo(() => getCachedPublishedAnimes(), []);
+  const initialBanners = useMemo(() => getCachedHeroBanners(), []);
+  const initialSchedule = useMemo(() => getCachedSchedule(), []);
+
+  const [loading, setLoading] = useState<boolean>(initialAnimes.length === 0);
+  const [featuredAnimes, setFeaturedAnimes] = useState<any[]>(initialBanners);
+  const [trending, setTrending] = useState<Anime[]>(() => initialAnimes.slice(0, 24));
+  const [popular, setPopular] = useState<Anime[]>(() =>
+    [...initialAnimes].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 24)
+  );
+  const [recentlyAdded, setRecentlyAdded] = useState<Anime[]>(() =>
+    [...initialAnimes].sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a)).slice(0, 24)
+  );
+  const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>(FALLBACK_LATEST_EPISODES);
   const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
-  const [scheduledAnime, setScheduledAnime] = useState<CmsScheduleItem[]>([]);
-  const [allAnimes, setAllAnimes] = useState<Anime[]>([]);
+  const [scheduledAnime, setScheduledAnime] = useState<CmsScheduleItem[]>(initialSchedule);
+  const [allAnimes, setAllAnimes] = useState<Anime[]>(initialAnimes);
   const [exploreFilter, setExploreFilter] = useState<string>('All');
   const [isFilterTransitioning, setIsFilterTransitioning] = useState<boolean>(false);
   const filterTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,29 +188,31 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
 
     const loadData = async () => {
       try {
-        setLoading(true);
+        // Only show skeleton if we have zero cached items
+        if (initialAnimes.length === 0) {
+          setLoading(true);
+        }
         const [
           all,
           cmsBanners,
-          featuredList,
-          trendingList,
-          popularList,
           latestEpList,
           progressList,
           scheduleList,
         ] = await Promise.all([
-          getPublishedAnimes().catch((err) => {
-            console.warn('getPublishedAnimes fallback:', err);
-            return [];
-          }),
-          getCmsHeroBanners().catch(() => []),
-          getFeaturedAnimes().catch(() => []),
-          getTrendingAnimes(24).catch(() => []),
-          getPopularAnimes(24).catch(() => []),
-          getLatestReleasedEpisodes(10).catch(() => []),
-          getContinueWatching(user?.uid || null).catch(() => []),
-          getCmsSchedule().catch(() => []),
+          withTimeout(getPublishedAnimes(), 2200, initialAnimes),
+          withTimeout(getCmsHeroBanners(), 1800, initialBanners as any),
+          withTimeout(getLatestReleasedEpisodes(10), 1800, FALLBACK_LATEST_EPISODES),
+          withTimeout(getContinueWatching(user?.uid || null), 1200, []),
+          withTimeout(getCmsSchedule(), 1800, initialSchedule),
         ]);
+
+        const featuredList = all.filter((a) => a.featured === true || a.isFeatured === true);
+        const trendingList = [...all]
+          .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0) || (b.rating || 0) - (a.rating || 0))
+          .slice(0, 24);
+        const popularList = [...all]
+          .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (b.viewsCount || 0) - (a.viewsCount || 0))
+          .slice(0, 24);
 
         if (isMounted) {
           // Build set of anime IDs and slugs that have been explicitly unfeatured

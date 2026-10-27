@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { Anime, AnimeStatus, AnimeType } from '../types/anime';
 import type { CmsGenre, CmsYear, CmsStatus, CmsType, CmsLanguage } from '../types/cms';
-import { searchAndFilterAnimes } from '../lib/firestore/anime';
+import { searchAndFilterAnimes, getCachedPublishedAnimes } from '../lib/firestore/anime';
 import {
   getCmsGenres,
   getCmsYears,
@@ -69,8 +69,9 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   const [language, setLanguage] = useState<string>(initialLanguage);
   const [selectedLetter, setSelectedLetter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<any>(initialSort || 'latest');
-  const [animes, setAnimes] = useState<Anime[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialCached = getCachedPublishedAnimes();
+  const [animes, setAnimes] = useState<Anime[]>(initialCached);
+  const [loading, setLoading] = useState(initialCached.length === 0);
   const [showDetailedFilters, setShowDetailedFilters] = useState<boolean>(false);
 
   // Dynamic CMS Taxonomy States
