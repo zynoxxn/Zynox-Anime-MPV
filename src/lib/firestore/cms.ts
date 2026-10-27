@@ -501,30 +501,47 @@ export const DEFAULT_HERO_BANNERS: CmsHeroBanner[] = [
   },
 ];
 
+let memoryHeroBanners: CmsHeroBanner[] | null = null;
+
+export function getCachedHeroBanners(): CmsHeroBanner[] {
+  if (memoryHeroBanners && memoryHeroBanners.length > 0) return memoryHeroBanners;
+  const fromStorage = getStoredCache<CmsHeroBanner[]>('hero_banners', []);
+  if (fromStorage && fromStorage.length > 0) {
+    memoryHeroBanners = fromStorage;
+    return fromStorage;
+  }
+  return DEFAULT_HERO_BANNERS;
+}
+
 export async function getCmsHeroBanners(): Promise<CmsHeroBanner[]> {
   try {
-    const snap = await getDocs(collection(db, CMS_HERO_BANNERS));
-    if (!snap.empty) {
+    const snap = await withTimeout(getDocs(collection(db, CMS_HERO_BANNERS)), 2500, null);
+    if (snap && !snap.empty) {
       const list = snap.docs
         .filter((d) => d.id !== CMS_META_DOC_ID && d.id !== '__meta__')
         .map((d) => ({ ...(d.data() as CmsHeroBanner), id: d.id }));
       // If collection only contains meta doc, it means the admin cleared all banners
       if (list.length > 0 || snap.docs.some((d) => d.id === CMS_META_DOC_ID || d.id === '__meta__')) {
-        return list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+        const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+        memoryHeroBanners = sorted;
+        setStoredCache('hero_banners', sorted);
+        return sorted;
       }
     }
   } catch (err) {
-    console.warn('Using default CMS hero banners:', err);
+    console.warn('Using fast cached CMS hero banners:', err);
   }
-  return DEFAULT_HERO_BANNERS;
+  return getCachedHeroBanners();
 }
 
 export async function saveCmsHeroBanner(banner: CmsHeroBanner): Promise<void> {
+  memoryHeroBanners = null;
   const docRef = doc(db, CMS_HERO_BANNERS, banner.id);
   await setDoc(docRef, sanitize(banner), { merge: true });
 }
 
 export async function deleteCmsHeroBanner(id: string): Promise<void> {
+  memoryHeroBanners = null;
   try {
     const snap = await getDocs(collection(db, CMS_HERO_BANNERS));
     if (snap.empty) {
@@ -550,6 +567,7 @@ export async function deleteCmsHeroBanner(id: string): Promise<void> {
 
 export async function deleteHeroBannersForAnime(animeIdOrSlug: string): Promise<void> {
   if (!animeIdOrSlug) return;
+  memoryHeroBanners = null;
   try {
     const targetKey = animeIdOrSlug.toLowerCase().trim();
     const cleanKey = targetKey.replace(/^anime-/, '');
