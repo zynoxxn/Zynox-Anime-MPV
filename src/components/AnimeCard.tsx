@@ -107,13 +107,15 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
   return (
     <div
       id={`anime-card-${anime.slug}${anime.activeSeasonNumber ? `-s${anime.activeSeasonNumber}` : ''}`}
-      onClick={() =>
+      onClick={() => {
+        const targetSlug = (anime.slug || anime.id || '').trim();
+        if (!targetSlug) return;
         navigate(
           anime.activeSeasonNumber
-            ? `/anime/${anime.slug}?season=${anime.activeSeasonNumber}`
-            : `/anime/${anime.slug}`
-        )
-      }
+            ? `/anime/${encodeURIComponent(targetSlug)}?season=${anime.activeSeasonNumber}`
+            : `/anime/${encodeURIComponent(targetSlug)}`
+        );
+      }}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}
       className="group relative cursor-pointer flex flex-col transition-transform duration-200 hover:-translate-y-1 will-change-transform select-none"

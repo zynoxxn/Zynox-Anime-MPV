@@ -74,9 +74,9 @@ const FALLBACK_LATEST_EPISODES: LatestEpisodeItem[] = [
 export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onOpenLegal }) => {
   const { user, isAdmin } = useAuth();
   // Instant Stale-While-Revalidate: render catalog in 0ms without waiting for network
-  const initialAnimes = useMemo(() => getCachedPublishedAnimes(), []);
-  const initialBanners = useMemo(() => getCachedHeroBanners(), []);
-  const initialSchedule = useMemo(() => getCachedSchedule(), []);
+  const initialAnimes = useMemo(() => getCachedPublishedAnimes().filter((a) => !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug))), []);
+  const initialBanners = useMemo(() => getCachedHeroBanners().filter((b) => !isAnimeDeleted(b.animeId) && (!b.animeSlug || !isAnimeDeleted(b.animeSlug))), []);
+  const initialSchedule = useMemo(() => getCachedSchedule().filter((s) => !isAnimeDeleted(s.animeId) && (!s.animeSlug || !isAnimeDeleted(s.animeSlug))), []);
 
   const [loading, setLoading] = useState<boolean>(initialAnimes.length === 0);
   const [featuredAnimes, setFeaturedAnimes] = useState<any[]>(initialBanners);
@@ -87,7 +87,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
   const [recentlyAdded, setRecentlyAdded] = useState<Anime[]>(() =>
     [...initialAnimes].sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a)).slice(0, 24)
   );
-  const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>(FALLBACK_LATEST_EPISODES);
+  const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>(() =>
+    FALLBACK_LATEST_EPISODES.filter((item) => !isAnimeDeleted(item.episode.animeId) && !isAnimeDeleted(item.animeSlug))
+  );
   const [continueWatching, setContinueWatching] = useState<WatchProgress[]>([]);
   const [scheduledAnime, setScheduledAnime] = useState<CmsScheduleItem[]>(initialSchedule);
   const [allAnimes, setAllAnimes] = useState<Anime[]>(initialAnimes);
@@ -266,22 +268,25 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             }
           }
 
-          // If no custom banners and no user-featured animes, only fall back to non-unfeatured active banners.
-          // Never force unfeatured animes into the spotlight.
+          // If no custom banners and no user-featured animes, only fall back to non-unfeatured active banners or initialBanners.
           const finalFeatured =
             combinedSpotlight.length > 0
               ? combinedSpotlight
               : activeCms.length > 0
               ? activeCms
-              : [];
+              : (initialBanners && initialBanners.length > 0 ? initialBanners : all.slice(0, 5));
+
+          const validAll = all && all.length > 0 ? all : (initialAnimes && initialAnimes.length > 0 ? initialAnimes : []);
+          const validTrending = trendingList.length > 0 ? trendingList : validAll.slice(0, 24);
+          const validPopular = popularList.length > 0 ? popularList : validAll.slice(0, 24);
 
           setFeaturedAnimes(finalFeatured as any);
-          setTrending(trendingList.length > 0 ? trendingList : all.slice(0, 24));
-          setPopular(popularList.length > 0 ? popularList : all.slice(0, 24));
-          setAllAnimes(all.length > 0 ? all : (popularList.length > 0 ? popularList : trendingList));
+          setTrending(validTrending);
+          setPopular(validPopular);
+          setAllAnimes(validAll);
 
           // Sort animes by latest upload / creation date for 'Recently Added'
-          const sortedRecentlyAdded = [...all].sort((a, b) => {
+          const sortedRecentlyAdded = [...validAll].sort((a, b) => {
             return getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a);
           });
           setRecentlyAdded(sortedRecentlyAdded.slice(0, 24));
@@ -307,6 +312,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           // Enrich Scheduled Anime: guaranteed unique anime (no duplicates) & banner thumbnails
           const seenScheduleAnime = new Set<string>();
           const uniqueScheduleList = (scheduleList || []).filter((item) => {
+            if (isAnimeDeleted(item.animeId) || isAnimeDeleted(item.animeSlug)) return false;
             const key = item.animeId || item.animeSlug || item.animeTitle;
             if (!key) return true;
             if (seenScheduleAnime.has(key)) return false;
@@ -334,7 +340,9 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           setScheduledAnime(enrichedSchedule);
 
           // Enrich Latest Episodes: strictly unique anime per card & banner thumbnails
-          const baseLatestEps = latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES;
+          const baseLatestEps = (latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES).filter(
+            (item) => !isAnimeDeleted(item.episode.animeId) && !isAnimeDeleted(item.animeSlug)
+          );
           const seenLatestAnime = new Set<string>();
           const uniqueLatestList = baseLatestEps.filter((item) => {
             const key = item.animeSlug || item.animeTitle || item.episode.animeId;

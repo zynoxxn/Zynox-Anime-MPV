@@ -3,7 +3,7 @@ import type { Anime } from '../types/anime';
 import type { Episode, VideoSource } from '../types/episode';
 import type { WatchlistStatus } from '../types/library';
 import { useAuth } from '../lib/auth';
-import { getAnimeBySlug, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
+import { getAnimeBySlug, getAnimeById, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
 import {
   getEpisodeById,
   getEpisodeByAnimeAndNumber,
@@ -161,7 +161,10 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
         setSelectedSourceType('primary');
         setAutoNextOpen(false);
 
-        const animeData = await getAnimeBySlug(animeSlug);
+        let animeData = await getAnimeBySlug(animeSlug);
+        if (!animeData) {
+          animeData = await getAnimeById(animeSlug);
+        }
         if (!animeData) {
           if (isMounted) setError('Anime not found.');
           return;

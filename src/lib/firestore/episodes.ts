@@ -22,6 +22,35 @@ import { notifyFollowersNewEpisode } from './follows';
 import { DEFAULT_EPISODES, DEFAULT_ANIMES } from '../../data/defaultCatalog';
 
 const EPISODES_COLLECTION = 'episodes';
+const LOCAL_EPISODES_KEY = 'zynox_local_admin_episodes';
+
+export function getLocalStoredEpisodes(): Episode[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_EPISODES_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalStoredEpisode(ep: Episode): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const list = getLocalStoredEpisodes();
+    const idx = list.findIndex((e) => e.id === ep.id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...ep };
+    } else {
+      list.unshift(ep);
+    }
+    localStorage.setItem(LOCAL_EPISODES_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.warn('Failed to save episode to local storage:', e);
+  }
+}
 
 function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any> {
   const cleaned: Record<string, any> = {};
@@ -76,12 +105,27 @@ export function sanitizeEpisodeStreamUrls(ep: Episode): Episode {
 }
 
 function generateFallbackEpisodes(animeId: string): Episode[] {
-  if (isAnimeDeleted(animeId)) return [];
+  if (!animeId) return [];
+  const lower = animeId.toLowerCase().trim();
+  
   if (DEFAULT_EPISODES[animeId]) {
     return DEFAULT_EPISODES[animeId].map(sanitizeEpisodeStreamUrls);
   }
+  if (DEFAULT_EPISODES[lower]) {
+    return DEFAULT_EPISODES[lower].map(sanitizeEpisodeStreamUrls);
+  }
+
+  // Check aliases
+  for (const [key, epList] of Object.entries(DEFAULT_EPISODES)) {
+    if (key.toLowerCase() === lower || key.replace(/^anime-/, '') === lower || lower.replace(/^anime-/, '') === key) {
+      return epList.map(sanitizeEpisodeStreamUrls);
+    }
+  }
+
   // Try matching by checking DEFAULT_ANIMES by slug or ID
-  const matchedAnime = DEFAULT_ANIMES.find((a) => (a.id === animeId || a.slug === animeId) && !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug)));
+  const matchedAnime = DEFAULT_ANIMES.find(
+    (a) => a.id.toLowerCase() === lower || a.slug.toLowerCase() === lower || a.id.replace(/^anime-/, '') === lower
+  );
   if (matchedAnime) {
     if (DEFAULT_EPISODES[matchedAnime.id]) return DEFAULT_EPISODES[matchedAnime.id].map(sanitizeEpisodeStreamUrls);
     if (matchedAnime.slug && DEFAULT_EPISODES[matchedAnime.slug]) return DEFAULT_EPISODES[matchedAnime.slug].map(sanitizeEpisodeStreamUrls);
@@ -94,7 +138,7 @@ export async function getAllEpisodes(): Promise<Episode[]> {
 }
 
 export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Episode[]> {
-  if (isAnimeDeleted(animeId)) return [];
+  const defaults = generateFallbackEpisodes(animeId);
   try {
     const targetIds = new Set<string>([animeId]);
     try {
@@ -114,27 +158,31 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
         where('animeId', 'in', idList.slice(0, 10)),
         where('published', '==', true)
       );
-      const snapshot = await withTimeout(getDocs(q), 2000, null);
-      if (!snapshot) throw new Error('Timeout fetching episodes');
-      list = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<Episode, 'id'>),
-      }));
-    } catch {
-      const q = query(
-        collection(db, EPISODES_COLLECTION),
-        where('animeId', '==', animeId)
-      );
-      const snapshot = await getDocs(q);
-      list = snapshot.docs
-        .map((docSnap) => ({
+      const snapshot = await withTimeout(getDocs(q), 1800, null);
+      if (snapshot && !snapshot.empty) {
+        list = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<Episode, 'id'>),
-        }))
-        .filter((ep) => ep.published !== false);
+        }));
+      }
+    } catch {
+      try {
+        const q = query(
+          collection(db, EPISODES_COLLECTION),
+          where('animeId', '==', animeId)
+        );
+        const snapshot = await withTimeout(getDocs(q), 1500, null);
+        if (snapshot && !snapshot.empty) {
+          list = snapshot.docs
+            .map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() as Omit<Episode, 'id'>),
+            }))
+            .filter((ep) => ep.published !== false);
+        }
+      } catch {}
     }
 
-    const defaults = generateFallbackEpisodes(animeId);
     if (list.length === 0) {
       return defaults;
     }
@@ -157,7 +205,7 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
     });
   } catch (err) {
     console.warn(`Failed to get published episodes for anime ${animeId}, checking default catalog:`, err);
-    return generateFallbackEpisodes(animeId);
+    return defaults;
   }
 }
 
@@ -260,10 +308,17 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
 }
 
 export async function getEpisodeById(id: string): Promise<Episode | null> {
+  if (!id) return null;
+  // 1. Quick check default catalog first
+  for (const [, epList] of Object.entries(DEFAULT_EPISODES)) {
+    const match = epList.find((e) => e.id === id);
+    if (match) return sanitizeEpisodeStreamUrls(match);
+  }
+
   try {
     const docRef = doc(db, EPISODES_COLLECTION, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
+    const docSnap = await withTimeout(getDoc(docRef), 1800, null);
+    if (docSnap && docSnap.exists()) {
       const data = docSnap.data() as Episode;
       if (isAnimeDeleted(data.animeId)) return null;
       return sanitizeEpisodeStreamUrls({
@@ -271,26 +326,20 @@ export async function getEpisodeById(id: string): Promise<Episode | null> {
         ...data,
       });
     }
-    // Search default catalog
-    for (const [aId, epList] of Object.entries(DEFAULT_EPISODES)) {
-      if (isAnimeDeleted(aId)) continue;
-      const match = epList.find((e) => e.id === id);
-      if (match) return sanitizeEpisodeStreamUrls(match);
-    }
     return null;
   } catch (err) {
     console.warn(`Failed to get episode by id ${id}:`, err);
-    for (const [aId, epList] of Object.entries(DEFAULT_EPISODES)) {
-      if (isAnimeDeleted(aId)) continue;
-      const match = epList.find((e) => e.id === id);
-      if (match) return sanitizeEpisodeStreamUrls(match);
-    }
     return null;
   }
 }
 
 export async function getEpisodeByAnimeAndNumber(animeId: string, episodeNumber: number): Promise<Episode | null> {
-  if (isAnimeDeleted(animeId)) return null;
+  if (!animeId || isNaN(episodeNumber)) return null;
+
+  // 1. Quick check default catalog first
+  const fallbacks = generateFallbackEpisodes(animeId);
+  const defaultMatch = fallbacks.find((e) => Number(e.episodeNumber) === Number(episodeNumber));
+
   try {
     const targetIds = new Set<string>([animeId]);
     try {
@@ -308,38 +357,38 @@ export async function getEpisodeByAnimeAndNumber(animeId: string, episodeNumber:
         where('animeId', 'in', idList.slice(0, 10)),
         where('episodeNumber', '==', episodeNumber)
       );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
+      const snapshot = await withTimeout(getDocs(q), 1800, null);
+      if (snapshot && !snapshot.empty) {
         const firstDoc = snapshot.docs[0];
         return sanitizeEpisodeStreamUrls({
           id: firstDoc.id,
+          ...defaultMatch,
           ...(firstDoc.data() as Omit<Episode, 'id'>),
         });
       }
     } catch {
-      const q = query(
-        collection(db, EPISODES_COLLECTION),
-        where('animeId', '==', animeId),
-        where('episodeNumber', '==', episodeNumber)
-      );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        const firstDoc = snapshot.docs[0];
-        return sanitizeEpisodeStreamUrls({
-          id: firstDoc.id,
-          ...(firstDoc.data() as Omit<Episode, 'id'>),
-        });
-      }
+      try {
+        const q = query(
+          collection(db, EPISODES_COLLECTION),
+          where('animeId', '==', animeId),
+          where('episodeNumber', '==', episodeNumber)
+        );
+        const snapshot = await withTimeout(getDocs(q), 1500, null);
+        if (snapshot && !snapshot.empty) {
+          const firstDoc = snapshot.docs[0];
+          return sanitizeEpisodeStreamUrls({
+            id: firstDoc.id,
+            ...defaultMatch,
+            ...(firstDoc.data() as Omit<Episode, 'id'>),
+          });
+        }
+      } catch {}
     }
 
-    const fallbacks = generateFallbackEpisodes(animeId);
-    const matched = fallbacks.find((e) => e.episodeNumber === episodeNumber);
-    return matched ? sanitizeEpisodeStreamUrls(matched) : null;
+    return defaultMatch ? sanitizeEpisodeStreamUrls(defaultMatch) : null;
   } catch (err) {
     console.warn(`Failed to get episode by anime ${animeId} and number ${episodeNumber}:`, err);
-    const fallbacks = generateFallbackEpisodes(animeId);
-    const matched = fallbacks.find((e) => e.episodeNumber === episodeNumber);
-    return matched ? sanitizeEpisodeStreamUrls(matched) : null;
+    return defaultMatch ? sanitizeEpisodeStreamUrls(defaultMatch) : null;
   }
 }
 
@@ -359,22 +408,28 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
         collection(db, EPISODES_COLLECTION),
         where('published', '==', true)
       );
-      const snapshot = await getDocs(q);
-      firestoreEpisodes = snapshot.docs
-        .map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<Episode, 'id'>),
-        }))
-        .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
+      const snapshot = await withTimeout(getDocs(q), 1800, null);
+      if (snapshot && !snapshot.empty) {
+        firestoreEpisodes = snapshot.docs
+          .map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<Episode, 'id'>),
+          }))
+          .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
+      }
     } catch (qErr) {
       console.warn('Failed query published episodes, falling back to all docs:', qErr);
-      const snapshot = await getDocs(collection(db, EPISODES_COLLECTION));
-      firestoreEpisodes = snapshot.docs
-        .map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<Episode, 'id'>),
-        }))
-        .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
+      try {
+        const snapshot = await withTimeout(getDocs(collection(db, EPISODES_COLLECTION)), 1500, null);
+        if (snapshot && !snapshot.empty) {
+          firestoreEpisodes = snapshot.docs
+            .map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() as Omit<Episode, 'id'>),
+            }))
+            .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
+        }
+      } catch {}
     }
 
     // Flatten default episodes
@@ -550,22 +605,31 @@ export async function incrementEpisodeViews(id: string): Promise<void> {
 }
 
 export async function createEpisode(data: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  let thumbnail = data.thumbnail;
+  if (!thumbnail && data.animeId) {
+    const anime = await getAnimeById(data.animeId).catch(() => null);
+    if (anime) thumbnail = anime.banner || (anime as any).bannerUrl || anime.poster || '';
+  }
+  const cleaned = sanitizeData({
+    ...data,
+    thumbnail: thumbnail || data.thumbnail || '',
+  });
+  const fallbackId = `ep-${data.animeId || 'custom'}-s${data.seasonNumber || data.season || 1}-e${data.episodeNumber}-${Date.now()}`;
+
   try {
-    let thumbnail = data.thumbnail;
-    if (!thumbnail && data.animeId) {
-      const anime = await getAnimeById(data.animeId).catch(() => null);
-      if (anime) thumbnail = anime.banner || (anime as any).bannerUrl || anime.poster || '';
-    }
-    const cleaned = sanitizeData({
-      ...data,
-      thumbnail: thumbnail || data.thumbnail || '',
-    });
     const docRef = await addDoc(collection(db, EPISODES_COLLECTION), {
       ...cleaned,
       viewsCount: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    saveLocalStoredEpisode({
+      id: docRef.id,
+      ...cleaned,
+      viewsCount: 0,
+      published: data.published !== false,
+    } as Episode);
 
     // Notify anime followers if episode is published
     if (data.published !== false && data.animeId) {
@@ -583,15 +647,24 @@ export async function createEpisode(data: Omit<Episode, 'id' | 'createdAt' | 'up
     }
 
     return docRef.id;
-  } catch (err) {
-    console.error('Failed to create episode:', err);
-    throw err;
+  } catch (err: any) {
+    console.warn('Firestore createEpisode encountered an error, saving to local storage fallback:', err);
+    const localEp: Episode = {
+      id: fallbackId,
+      ...cleaned,
+      viewsCount: 0,
+      published: data.published !== false,
+    } as Episode;
+    saveLocalStoredEpisode(localEp);
+    return fallbackId;
   }
 }
 
 export async function updateEpisode(id: string, data: Partial<Episode>): Promise<void> {
+  const cleaned = sanitizeData(data);
+  saveLocalStoredEpisode({ id, ...cleaned } as Episode);
+
   try {
-    const cleaned = sanitizeData(data);
     const docRef = doc(db, EPISODES_COLLECTION, id);
 
     // If updating a default catalog episode that was not yet persisted to Firestore, include base metadata
@@ -614,8 +687,7 @@ export async function updateEpisode(id: string, data: Partial<Episode>): Promise
       { merge: true }
     );
   } catch (err) {
-    console.error(`Failed to update episode ${id}:`, err);
-    throw err;
+    console.warn(`Firestore updateEpisode ${id} error, preserved in local storage:`, err);
   }
 }
 

@@ -79,8 +79,13 @@ export const SignupView: React.FC<SignupViewProps> = ({ navigate, onShowMessage 
     <div className="max-w-xl mx-auto px-4 py-10 sm:py-14">
       <div className="bg-[#081426] border border-[#1683FF]/30 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center text-[#00CFFF] mx-auto mb-3 shadow-lg shadow-[#1683FF]/20">
-            <UserPlus className="w-6 h-6" />
+          <div className="flex justify-center mb-3">
+            <img
+              src="/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png"
+              alt="ZYNOX ANIME"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-contain drop-shadow-[0_0_20px_rgba(22,131,255,0.4)] cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => navigate('/')}
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Create Account</h1>
           <p className="text-xs text-[#94A3B8] mt-1">

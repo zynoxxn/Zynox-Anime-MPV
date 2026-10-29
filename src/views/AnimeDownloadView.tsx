@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAnimeBySlug } from '../lib/firestore/anime';
+import { getAnimeBySlug, getAnimeById } from '../lib/firestore/anime';
 import { getPublishedEpisodesByAnimeId } from '../lib/firestore/episodes';
 import type { Anime, ZipDownloadPackage } from '../types/anime';
 import type { Episode } from '../types/episode';
@@ -88,7 +88,10 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
         setLoading(true);
         setError(null);
 
-        const animeData = await getAnimeBySlug(slug);
+        let animeData = await getAnimeBySlug(slug);
+        if (!animeData) {
+          animeData = await getAnimeById(slug);
+        }
         if (!animeData) {
           if (isMounted) setError('Anime not found.');
           return;

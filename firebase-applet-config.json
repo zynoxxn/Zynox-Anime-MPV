@@ -1,12 +1,12 @@
 {
-  "projectId": "zynox-anime-5b144",
-  "appId": "1:153679691063:web:24b7226424eedf4b37eeb2",
-  "apiKey": "AIzaSyCZ6bPeZ4763MmKvMXShOocbTTBuAiT6vc",
-  "authDomain": "zynox-anime-5b144.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-zynoxanimesmvp-6e05f6e8-26d0-48b4-b1dc-125356733312",
-  "storageBucket": "zynox-anime-5b144.firebasestorage.app",
-  "messagingSenderId": "153679691063",
-  "measurementId": "G-QG01DXZ4LR",
-  "oAuthClientId": "153679691063-2b5pe93i21vqihdtgp1rb28n3dit68l5.apps.googleusercontent.com",
+  "projectId": "zynox-anime-xn",
+  "appId": "1:49548721488:web:eb6e006822e4adf826c055",
+  "apiKey": "AIzaSyBxV_RDB5MPfls93Imw8X72ZucdwW7jrj8",
+  "authDomain": "zynox-anime-xn.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "zynox-anime-xn.firebasestorage.app",
+  "messagingSenderId": "49548721488",
+  "measurementId": "",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

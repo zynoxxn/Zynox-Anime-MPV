@@ -247,7 +247,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40 w-full bg-[#050A14]/95 border-b border-white/5 backdrop-blur-xl transition-all select-none">
+      <header className="fixed top-0 left-0 right-0 z-40 w-full bg-[#050A14]/40 border-b border-white/10 backdrop-blur-md transition-all select-none">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3 sm:gap-6">
           
           {/* 1. LEFT: Hamburger Menu (Mobile) + zynox anime Branding */}
@@ -271,14 +271,13 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 setMobileSearchOpen(false);
                 navigate('/');
               }}
-              className="flex items-center gap-1.5 focus:outline-none cursor-pointer"
+              className="flex items-center gap-1.5 focus:outline-none cursor-pointer group py-1"
             >
-              <span className="font-extrabold text-lg sm:text-xl md:text-2xl text-white tracking-wider uppercase">
-                ZYNOX
-              </span>
-              <span className="font-extrabold text-lg sm:text-xl md:text-2xl text-[#1683FF] tracking-wider uppercase">
-                ANIME
-              </span>
+              <img
+                src="/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png"
+                alt="ZYNOX ANIME"
+                className="h-7 xs:h-8 sm:h-9 md:h-10 w-auto object-contain drop-shadow-[0_0_12px_rgba(22,131,255,0.4)] group-hover:brightness-110 group-hover:scale-[1.02] transition-all"
+              />
             </button>
           </div>
 
@@ -933,9 +932,18 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
             <div className="space-y-6">
               {/* Header inside drawer */}
               <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-lg text-white uppercase">ZYNOX</span>
-                  <span className="font-extrabold text-lg text-[#1683FF] uppercase">ANIME</span>
+                <div
+                  className="flex items-center cursor-pointer py-0.5"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    navigate('/');
+                  }}
+                >
+                  <img
+                    src="/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png"
+                    alt="ZYNOX ANIME"
+                    className="h-8 w-auto object-contain drop-shadow-[0_0_10px_rgba(22,131,255,0.4)]"
+                  />
                 </div>
                 <button
                   type="button"

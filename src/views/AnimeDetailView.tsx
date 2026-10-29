@@ -3,7 +3,7 @@ import type { Anime } from '../types/anime';
 import type { Episode } from '../types/episode';
 import type { WatchlistStatus } from '../types/library';
 import { useAuth } from '../lib/auth';
-import { getAnimeBySlug, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
+import { getAnimeBySlug, getAnimeById, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
 import { getPublishedEpisodesByAnimeId } from '../lib/firestore/episodes';
 import {
   toggleFavorite,
@@ -64,7 +64,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [anime, setAnime] = useState<Anime | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [relatedAnimes, setRelatedAnimes] = useState<Anime[]>([]);
@@ -147,13 +147,16 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
         setLoading(true);
         setError(null);
 
-        const animeData = await getAnimeBySlug(slug);
+        let animeData = await getAnimeBySlug(slug);
+        if (!animeData) {
+          animeData = await getAnimeById(slug);
+        }
         if (!animeData) {
           if (isMounted) setError('Anime not found or not published.');
           return;
         }
 
-        if (!animeData.published) {
+        if (animeData.published === false && !isAdmin) {
           if (isMounted) setError('This anime is currently not published.');
           return;
         }

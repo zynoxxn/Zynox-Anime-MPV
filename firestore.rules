@@ -57,7 +57,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Anime catalog
+    // Anime catalog (supports anime, Anime, animes)
     match /anime/{animeId} {
       allow read: if true;
       allow create, delete: if isAdmin();
@@ -69,9 +69,49 @@ service cloud.firestore {
         request.resource.data.viewsCount <= resource.data.viewsCount + 5
       );
     }
+    match /Anime/{animeId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
+    match /animes/{animeId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
 
-    // Episodes collection
+    // Episodes collection (supports episodes, Episodes, episode)
     match /episodes/{episodeId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
+    match /Episodes/{episodeId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.viewsCount &&
+        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      );
+    }
+    match /episode/{episodeId} {
       allow read: if true;
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (

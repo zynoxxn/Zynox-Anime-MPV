@@ -51,8 +51,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ navigate, onShowMessage })
     <div className="max-w-md mx-auto px-4 py-16">
       <div className="bg-[#0A1628] border border-[#00A8FF]/25 rounded-3xl p-6 sm:p-8 shadow-2xl">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#0066FF]/20 border border-[#00A8FF]/40 flex items-center justify-center text-[#00D9FF] mx-auto mb-3 shadow-lg shadow-[#00A8FF]/20">
-            <LogIn className="w-6 h-6" />
+          <div className="flex justify-center mb-3">
+            <img
+              src="/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png"
+              alt="ZYNOX ANIME"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-contain drop-shadow-[0_0_20px_rgba(22,131,255,0.4)] cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => navigate('/')}
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#F5F9FF] tracking-tight">Sign In</h1>
           <p className="text-xs text-[#A9B8CC] mt-1">

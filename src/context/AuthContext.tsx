@@ -45,16 +45,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setUser(currentUser);
 
+    // 1. Immediately grant admin rights to super admin email without any network delay
+    const isSuperAdminEmail = currentUser.email?.toLowerCase().trim() === 'zairoxmax2.0@gmail.com';
+    if (isSuperAdminEmail) {
+      setIsAdmin(true);
+    }
+
     try {
-      // 1. Check custom claims and verified super admin email
-      const isSuperAdminEmail = currentUser.email?.toLowerCase().trim() === 'zairoxmax2.0@gmail.com';
       let hasAdminClaim = isSuperAdminEmail;
+
+      // Check custom claims with a 1000ms safety timeout
       try {
-        const tokenResult = await getIdTokenResult(currentUser, false);
-        hasAdminClaim = isSuperAdminEmail || Boolean(
-          tokenResult.claims.admin === true || 
-          tokenResult.claims.role === 'admin'
-        );
+        const tokenPromise = getIdTokenResult(currentUser, false);
+        const tokenResult = await Promise.race([
+          tokenPromise,
+          new Promise<null>((r) => setTimeout(() => r(null), 1000)),
+        ]);
+        if (tokenResult) {
+          hasAdminClaim = isSuperAdminEmail || Boolean(
+            tokenResult.claims.admin === true || 
+            tokenResult.claims.role === 'admin'
+          );
+        }
       } catch (tokenErr) {
         console.warn('Error reading idTokenResult claims:', tokenErr);
       }
@@ -63,19 +75,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const defaultProfile: UserProfile = {
         uid: currentUser.uid,
-        displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+        displayName: currentUser.displayName || currentUser.email?.split('@')[0] || (hasAdminClaim ? 'Admin' : 'User'),
         email: currentUser.email || '',
         avatar: currentUser.photoURL || undefined,
         role: hasAdminClaim ? 'admin' : 'user',
         createdAt: new Date(),
       };
 
-      // 2. Fetch or initialize Firestore user profile
+      // 2. Fetch or initialize Firestore user profile with 1200ms timeout
       try {
         const userDocRef = doc(db, 'users', currentUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
+        const docPromise = getDoc(userDocRef);
+        const userDocSnap = await Promise.race([
+          docPromise,
+          new Promise<null>((r) => setTimeout(() => r(null), 1200)),
+        ]);
 
-        if (userDocSnap.exists()) {
+        if (userDocSnap && userDocSnap.exists()) {
           const data = userDocSnap.data() as UserProfile;
           setUserProfile(data);
           if (hasAdminClaim || data.role === 'admin') {
@@ -96,7 +112,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
+    let hasResolved = false;
+
+    // Hard fallback: after 2000ms maximum, stop loading spinner regardless of network condition
+    const safetyTimer = setTimeout(() => {
+      if (!hasResolved) {
+        console.warn('[Firebase Auth] Safety timeout reached, resolving loading state.');
+        setLoading(false);
+      }
+    }, 2000);
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      hasResolved = true;
+      clearTimeout(safetyTimer);
       if (typeof window !== 'undefined') {
         console.log(
           '[Firebase Auth] currentUser:',
@@ -106,7 +134,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await fetchUserData(currentUser);
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   const refreshAuth = async () => {

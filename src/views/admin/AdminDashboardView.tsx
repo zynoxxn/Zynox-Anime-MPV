@@ -20,6 +20,9 @@ import {
   Eye,
   RefreshCw,
   Megaphone,
+  Lock,
+  Mail,
+  LogIn,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -31,7 +34,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
-  const { user, isAdmin, loading } = useAuth();
+  const { user, isAdmin, loading, signIn, logout } = useAuth();
   const [stats, setStats] = useState({
     totalAnime: 0,
     ongoingAnime: 0,
@@ -107,36 +110,173 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
+  const isSuperAdmin = Boolean(
+    isAdmin || (user?.email && user.email.toLowerCase().trim() === 'zairoxmax2.0@gmail.com')
+  );
+
+  const [adminEmail, setAdminEmail] = useState('zairoxmax2.0@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+
   useEffect(() => {
-    if (isAdmin) {
+    // 1500ms fallback so "Verifying administrator credentials..." never hangs
+    const timer = setTimeout(() => {
+      setAuthTimedOut(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
       loadAllData();
     }
-  }, [isAdmin]);
+  }, [isSuperAdmin]);
 
-  if (loading) {
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminPassword) {
+      setLoginError('Please enter your password.');
+      return;
+    }
+    setLoginSubmitting(true);
+    setLoginError(null);
+    try {
+      const res = await signIn(adminEmail.trim(), adminPassword);
+      if (!res.success) {
+        setLoginError(res.error || 'Failed to sign in. Please verify your password.');
+      } else {
+        onShowMessage('Welcome to Admin Dashboard!');
+        loadAllData();
+      }
+    } catch (err: any) {
+      setLoginError(err.message || 'Login failed.');
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
+  // 1. Loading state with fast timeout
+  if (loading && !authTimedOut && !isSuperAdmin) {
     return (
-      <div className="min-h-screen bg-[#050A14] flex items-center justify-center text-xs text-[#94A3B8]">
-        Verifying administrator credentials...
+      <div className="min-h-screen bg-[#050A14] flex flex-col items-center justify-center p-4 space-y-3">
+        <RefreshCw className="w-5 h-5 text-[#1683FF] animate-spin" />
+        <div className="text-xs text-[#94A3B8] font-medium tracking-wide">
+          Verifying administrator credentials...
+        </div>
       </div>
     );
   }
 
-  if (!user || !isAdmin) {
+  // 2. Unauthenticated or non-admin state: sleek inline login portal
+  if (!user || !isSuperAdmin) {
     return (
       <div className="min-h-screen bg-[#050A14] flex items-center justify-center p-4">
-        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 p-8 rounded-3xl max-w-md text-center space-y-4">
-          <AlertTriangle className="w-10 h-10 text-rose-400 mx-auto" />
-          <h2 className="text-xl font-bold text-white">Administrator Access Required</h2>
-          <p className="text-xs text-[#94A3B8]">
-            Your user account ({user?.email || 'Guest'}) does not have administrator privileges.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-[#1683FF] text-white text-xs font-bold rounded-xl"
-          >
-            Back to Home
-          </button>
+        <div className="w-full max-w-md bg-[#0B1322] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-[#1683FF]/15 border border-[#1683FF]/30 flex items-center justify-center mx-auto text-[#1683FF]">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              ZYNOX Admin Portal
+            </h2>
+            <p className="text-xs text-[#94A3B8]">
+              {user ? (
+                <span>
+                  Signed in as <strong className="text-white">{user.email}</strong> (Non-admin). Switch to the admin account below.
+                </span>
+              ) : (
+                'Sign in with your verified administrator account to manage anime and episodes.'
+              )}
+            </p>
+          </div>
+
+          {loginError && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
+                Admin Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="zairoxmax2.0@gmail.com"
+                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Enter administrator password"
+                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loginSubmitting}
+              className="w-full py-3 bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-[#1683FF]/25 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              {loginSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In as Administrator</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-[#94A3B8]">
+            {user ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  await logout();
+                  onShowMessage('Logged out.');
+                }}
+                className="hover:text-white transition-colors cursor-pointer"
+              >
+                Sign out current user
+              </button>
+            ) : (
+              <span className="text-[11px] text-[#64748B]">Admin email: zairoxmax2.0@gmail.com</span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-[#1683FF] hover:underline font-semibold cursor-pointer"
+            >
+              Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );

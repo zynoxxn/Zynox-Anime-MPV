@@ -53,58 +53,29 @@ export function cleanAnimeTitle(title?: string): string {
     .trim();
 }
 
-const OLD_REMOVED_ANIME_IDS = new Set([
-  'anime-wistoria',
-  'anime-solo-leveling',
-  'anime-demon-slayer',
-  'anime-frieren',
-  'anime-jujutsu-kaisen',
-  'anime-attack-on-titan',
-  'anime-one-piece',
-  'anime-mushoku-tensei',
-  'anime-vinland-saga',
-  'anime-chainsaw-man',
-  'anime-hells-paradise',
-  'anime-oshi-no-ko',
-  'anime-death-note',
-  'anime-dr-stone',
-  'anime-bleach-tybw',
-  'anime-my-hero-academia',
-  'anime-the-eminence-in-shadow',
-  'anime-fullmetal-alchemist',
-  'anime-dandadan',
-  'anime-kaiju-no-8',
-  'anime-wind-breaker',
-  'anime-blue-lock-s2',
-  'anime-spy-x-family-s2',
-  'anime-re-zero-s3',
-  'solo-leveling',
-  'wistoria-wand-and-sword',
-  'demon-slayer-hashira-training',
-  'frieren-beyond-journeys-end',
-  'jujutsu-kaisen-season-2',
-  'attack-on-titan-final-season',
-  'one-piece-egghead',
-  'mushoku-tensei-s2',
-  'vinland-saga-season-2',
-  'chainsaw-man',
-  'hells-paradise',
-  'oshi-no-ko-s2',
-  'death-note',
-  'dr-stone-new-world',
-  'bleach-thousand-year-blood-war',
-  'my-hero-academia-s7',
-  'the-eminence-in-shadow-s2',
-  'fullmetal-alchemist-brotherhood',
-  'dandadan',
-  'kaiju-no-8',
-  'wind-breaker',
-  'blue-lock-vs-u20-japan',
-  'spy-x-family-season-2',
-  're-zero-starting-life-in-another-world-s3',
-]);
+const OLD_REMOVED_ANIME_IDS = new Set<string>();
 
 let cachedDeletedIds: Set<string> | null = null;
+
+export function deleteLocalStoredAnime(idOrSlug: string): void {
+  if (typeof localStorage === 'undefined' || !idOrSlug) return;
+  try {
+    const raw = localStorage.getItem(LOCAL_ANIMES_KEY);
+    if (!raw) return;
+    const list = JSON.parse(raw);
+    if (Array.isArray(list)) {
+      const lower = idOrSlug.toLowerCase();
+      const filtered = list.filter(
+        (a: any) =>
+          a.id !== idOrSlug &&
+          a.slug !== idOrSlug &&
+          a.id?.toLowerCase() !== lower &&
+          a.slug?.toLowerCase() !== lower
+      );
+      localStorage.setItem(LOCAL_ANIMES_KEY, JSON.stringify(filtered));
+    }
+  } catch {}
+}
 
 // Initial immediate cleanup of local storage for deleted items (e.g. dandadan)
 try {
@@ -135,13 +106,14 @@ export function undeleteAnime(idOrSlug: string): void {
   OLD_REMOVED_ANIME_IDS.delete(idOrSlug);
   const set = getLocalDeletedAnimeIds();
   set.delete(idOrSlug);
+  set.delete(idOrSlug.toLowerCase());
   try {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          const filtered = parsed.filter((x: string) => x !== idOrSlug);
+          const filtered = parsed.filter((x: string) => x !== idOrSlug && x !== idOrSlug.toLowerCase());
           localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(filtered));
         }
       }
@@ -157,7 +129,12 @@ export function getLocalDeletedAnimeIds(): Set<string> {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          parsed.forEach((id) => cachedDeletedIds!.add(id));
+          parsed.forEach((id) => {
+            if (id) {
+              cachedDeletedIds!.add(id);
+              cachedDeletedIds!.add(id.toLowerCase());
+            }
+          });
         }
       }
     } catch {
@@ -176,7 +153,10 @@ export async function fetchDeletedAnimeIds(): Promise<Set<string>> {
       const data = snap.data();
       if (Array.isArray(data?.ids)) {
         data.ids.forEach((id: string) => {
-          if (id) set.add(id);
+          if (id) {
+            set.add(id);
+            set.add(id.toLowerCase());
+          }
         });
         try {
           if (typeof localStorage !== 'undefined') {
@@ -193,15 +173,62 @@ export async function fetchDeletedAnimeIds(): Promise<Set<string>> {
 
 export function isAnimeDeleted(idOrSlug?: string | null): boolean {
   if (!idOrSlug) return false;
+  const clean = idOrSlug.toLowerCase().trim();
   const set = getLocalDeletedAnimeIds();
-  return set.has(idOrSlug);
+  return set.has(idOrSlug) || set.has(clean);
+}
+
+const LOCAL_ANIMES_KEY = 'zynox_local_admin_animes';
+
+export function getLocalStoredAnimes(): Anime[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_ANIMES_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalStoredAnime(anime: Anime): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const list = getLocalStoredAnimes();
+    const idx = list.findIndex(
+      (a) => (anime.id && a.id === anime.id) || (anime.slug && a.slug === anime.slug)
+    );
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...anime };
+    } else {
+      list.unshift(anime);
+    }
+    localStorage.setItem(LOCAL_ANIMES_KEY, JSON.stringify(list));
+    memoryPublishedAnimes = null;
+  } catch (e) {
+    console.warn('Failed to save anime to local storage:', e);
+  }
 }
 
 function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean = true): Anime[] {
   const result: Anime[] = [];
   const seenIds = new Set<string>();
   const seenSlugs = new Set<string>();
-  const deletedSet = getLocalDeletedAnimeIds();
+
+  // 0. Include locally saved admin animes (resilient against database deletion)
+  const localList = getLocalStoredAnimes();
+  for (const localItem of localList) {
+    if ((localItem as any).isDeleted === true) continue;
+    if (publishedOnly && localItem.published === false) continue;
+    const id = localItem.id || localItem.slug;
+    const slug = localItem.slug || localItem.id;
+    if (!id) continue;
+    if (seenIds.has(id) || (slug && seenSlugs.has(slug))) continue;
+    seenIds.add(id);
+    if (slug) seenSlugs.add(slug);
+    result.push(localItem);
+  }
 
   // 1. Overlay Firestore documents first (they take precedence)
   for (const fsItem of firestoreList) {
@@ -214,9 +241,6 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
     const slug = fsItem.slug || fsItem.id;
     if (!id) continue;
 
-    // Real Firestore documents created by the admin take full precedence.
-    // If a Firestore document exists and is not explicitly marked isDeleted,
-    // ensure it is un-deleted from any old mock cleanup set.
     if (slug) undeleteAnime(slug);
     undeleteAnime(id);
 
@@ -250,7 +274,7 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
   // 2. Add default catalog animes that haven't been overridden, duplicated, or deleted
   for (const def of DEFAULT_ANIMES) {
     if (publishedOnly && def.published === false) continue;
-    if (deletedSet.has(def.id) || (def.slug && deletedSet.has(def.slug))) {
+    if (isAnimeDeleted(def.id) || (def.slug && isAnimeDeleted(def.slug))) {
       continue;
     }
     
@@ -267,17 +291,19 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
 }
 
 export function getCachedPublishedAnimes(): Anime[] {
-  if (memoryPublishedAnimes && memoryPublishedAnimes.length > 0) {
+  if (memoryPublishedAnimes) {
     return memoryPublishedAnimes;
   }
   const fromStorage = getStoredCache<Anime[]>('published_animes', []);
-  if (fromStorage && fromStorage.length > 0) {
-    memoryPublishedAnimes = fromStorage;
-    return fromStorage;
+  if (fromStorage && Array.isArray(fromStorage)) {
+    const valid = fromStorage.filter((a) => a && (a.id || a.slug) && a.title && !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug)));
+    if (valid.length > 0 || fromStorage.length > 0) {
+      memoryPublishedAnimes = valid;
+      return valid;
+    }
   }
-  const deletedSet = getLocalDeletedAnimeIds();
   const defaults = DEFAULT_ANIMES.filter(
-    (a) => a.published !== false && !deletedSet.has(a.id) && (!a.slug || !deletedSet.has(a.slug))
+    (a) => a.published !== false && !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug))
   );
   memoryPublishedAnimes = defaults;
   return defaults;
@@ -290,18 +316,36 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
 
   inFlightPublishedPromise = (async () => {
     try {
-      // 1. Fetch deleted IDs with quick 1200ms timeout
-      await withTimeout(fetchDeletedAnimeIds(), 1200, new Set<string>());
+      // 1. Fetch deleted IDs with quick 1000ms timeout
+      await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
 
-      // 2. Fetch published animes with strict 2200ms timeout
-      const q = query(
-        collection(db, ANIME_COLLECTION),
-        where('published', '==', true)
-      );
-      const snapshot = await withTimeout(getDocs(q), 2200, null);
+      // 2. Fetch published animes - checks 'anime', and falls back to 'Anime' / 'animes'
+      const collectionNames = ['anime', 'Anime', 'animes'];
+      const allDocs: any[] = [];
+      const seenDocIds = new Set<string>();
 
-      if (snapshot && !snapshot.empty) {
-        const list: Anime[] = snapshot.docs.map((docSnap) => ({
+      for (const coll of collectionNames) {
+        try {
+          const q = query(
+            collection(db, coll),
+            where('published', '==', true)
+          );
+          const snapshot = await withTimeout(getDocs(q), 1800, null);
+          if (snapshot && !snapshot.empty) {
+            for (const docSnap of snapshot.docs) {
+              if (!seenDocIds.has(docSnap.id)) {
+                seenDocIds.add(docSnap.id);
+                allDocs.push(docSnap);
+              }
+            }
+          }
+        } catch {
+          // ignore error per collection
+        }
+      }
+
+      if (allDocs.length > 0) {
+        const list: Anime[] = allDocs.map((docSnap) => ({
           ...(docSnap.data() as Omit<Anime, 'id'>),
           id: docSnap.id,
         }));
@@ -313,6 +357,12 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
           if (timeB !== timeA) return timeB - timeA;
           return (b.viewsCount || 0) - (a.viewsCount || 0);
         });
+        const finalResult = merged;
+        memoryPublishedAnimes = finalResult;
+        setStoredCache('published_animes', finalResult);
+        return finalResult;
+      } else {
+        const merged = mergeWithDefaultAnimes([], true);
         memoryPublishedAnimes = merged;
         setStoredCache('published_animes', merged);
         return merged;
@@ -330,126 +380,282 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
 
 export async function getAllAnimes(): Promise<Anime[]> {
   try {
-    await fetchDeletedAnimeIds();
-    const snapshot = await getDocs(collection(db, ANIME_COLLECTION));
-    const list: Anime[] = snapshot.docs.map((docSnap) => ({
-      ...(docSnap.data() as Omit<Anime, 'id'>),
-      id: docSnap.id,
-    }));
+    await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
+    const collectionNames = ['anime', 'Anime', 'animes'];
+    const allDocs: any[] = [];
+    const seenDocIds = new Set<string>();
 
-    const merged = mergeWithDefaultAnimes(list, false);
-    return merged.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis?.() || 0;
-      const timeB = b.createdAt?.toMillis?.() || 0;
-      if (timeB !== timeA) return timeB - timeA;
-      return (b.viewsCount || 0) - (a.viewsCount || 0);
-    });
+    for (const coll of collectionNames) {
+      try {
+        const snapshot = await withTimeout(getDocs(collection(db, coll)), 1800, null);
+        if (snapshot && !snapshot.empty) {
+          for (const docSnap of snapshot.docs) {
+            if (!seenDocIds.has(docSnap.id)) {
+              seenDocIds.add(docSnap.id);
+              allDocs.push(docSnap);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (allDocs.length > 0) {
+      const list: Anime[] = allDocs.map((docSnap) => ({
+        ...(docSnap.data() as Omit<Anime, 'id'>),
+        id: docSnap.id,
+      }));
+
+      const merged = mergeWithDefaultAnimes(list, false);
+      return merged.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis?.() || 0;
+        const timeB = b.createdAt?.toMillis?.() || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.viewsCount || 0) - (a.viewsCount || 0);
+      });
+    }
   } catch (err) {
     console.warn('Failed to get all animes from Firestore, using default catalog:', err);
-    const deletedSet = getLocalDeletedAnimeIds();
-    return DEFAULT_ANIMES.filter((a) => !deletedSet.has(a.id) && (!a.slug || !deletedSet.has(a.slug)));
   }
+  return DEFAULT_ANIMES.filter((a) => !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug)));
 }
 
 export async function getAnimeBySlug(rawSlug: string): Promise<Anime | null> {
   if (!rawSlug) return null;
   const slug = decodeURIComponent(rawSlug).trim();
   const lowerSlug = slug.toLowerCase();
+  const slugified = lowerSlug.replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+
+  // 1. Instant check in local storage & memory (0ms latency, works offline)
+  const localList = getLocalStoredAnimes();
+  const localMatch = localList.find((a) => {
+    if ((a as any).isDeleted === true) return false;
+    const aSlug = a.slug?.trim()?.toLowerCase();
+    const aId = a.id?.trim()?.toLowerCase();
+    const aTitle = a.title?.trim()?.toLowerCase();
+    return (
+      a.slug === slug ||
+      a.id === slug ||
+      aSlug === lowerSlug ||
+      aId === lowerSlug ||
+      aTitle === lowerSlug ||
+      (slugified && (aSlug === slugified || aId === slugified))
+    );
+  });
+
+  if (localMatch) {
+    const poster = (localMatch as any).posterUrl || localMatch.poster || '';
+    const banner = (localMatch as any).bannerUrl || localMatch.banner;
+    return {
+      ...localMatch,
+      published: localMatch.published !== false,
+      poster,
+      posterUrl: poster,
+      banner,
+      bannerUrl: banner,
+    };
+  }
+
+  // 2. Check in memory/cached published animes
+  const cachedList = getCachedPublishedAnimes();
+  const cachedMatch = cachedList.find((a) => {
+    if ((a as any).isDeleted === true) return false;
+    const aSlug = a.slug?.trim()?.toLowerCase();
+    const aId = a.id?.trim()?.toLowerCase();
+    const aTitle = a.title?.trim()?.toLowerCase();
+    return (
+      a.slug === slug ||
+      a.id === slug ||
+      aSlug === lowerSlug ||
+      aId === lowerSlug ||
+      aTitle === lowerSlug ||
+      (slugified && (aSlug === slugified || aId === slugified))
+    );
+  });
+
+  if (cachedMatch) {
+    return {
+      ...cachedMatch,
+      published: cachedMatch.published !== false,
+    };
+  }
+
+  // 3. Check default catalog (if not explicitly deleted)
+  const defaultMatch = DEFAULT_ANIMES.find((a) => {
+    if (isAnimeDeleted(a.id) || (a.slug && isAnimeDeleted(a.slug))) return false;
+    const aSlug = a.slug?.trim()?.toLowerCase();
+    const aId = a.id?.trim()?.toLowerCase();
+    const aTitle = a.title?.trim()?.toLowerCase();
+    return (
+      a.slug === slug ||
+      a.id === slug ||
+      aSlug === lowerSlug ||
+      aId === lowerSlug ||
+      aTitle === lowerSlug ||
+      (slugified && (aSlug === slugified || aId === slugified))
+    );
+  });
 
   try {
-    // 1. Check exact slug match in Firestore
-    const q = query(
-      collection(db, ANIME_COLLECTION),
-      where('slug', '==', slug)
-    );
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      for (const docSnap of snapshot.docs) {
-        const data = docSnap.data() as Anime;
-        if (!(data as any).isDeleted) {
-          return {
-            id: docSnap.id,
-            ...data,
-          };
-        }
-      }
-    }
-
-    // 2. Check lowercased slug match in Firestore
-    if (lowerSlug !== slug) {
-      const qLower = query(
-        collection(db, ANIME_COLLECTION),
-        where('slug', '==', lowerSlug)
-      );
-      const snapLower = await getDocs(qLower);
-      if (!snapLower.empty) {
-        for (const docSnap of snapLower.docs) {
-          const data = docSnap.data() as Anime;
-          if (!(data as any).isDeleted) {
-            return {
-              id: docSnap.id,
-              ...data,
-            };
+    const collectionNames = ['anime', 'Anime', 'animes'];
+    for (const coll of collectionNames) {
+      // 3a. Check exact slug match in Firestore
+      try {
+        const q = query(collection(db, coll), where('slug', '==', slug));
+        const snapshot = await withTimeout(getDocs(q), 2500, null);
+        if (snapshot && !snapshot.empty) {
+          for (const docSnap of snapshot.docs) {
+            const data = docSnap.data() as Anime;
+            if (!(data as any).isDeleted) {
+              const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
+              const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
+              const result: Anime = {
+                id: docSnap.id,
+                ...defaultMatch,
+                ...data,
+                published: data.published !== false,
+                poster,
+                posterUrl: poster,
+                banner,
+                bannerUrl: banner,
+              };
+              saveLocalStoredAnime(result);
+              return result;
+            }
           }
         }
+      } catch {}
+
+      // 3b. Check lowercased slug match in Firestore
+      if (lowerSlug !== slug) {
+        try {
+          const qLower = query(collection(db, coll), where('slug', '==', lowerSlug));
+          const snapLower = await withTimeout(getDocs(qLower), 2000, null);
+          if (snapLower && !snapLower.empty) {
+            for (const docSnap of snapLower.docs) {
+              const data = docSnap.data() as Anime;
+              if (!(data as any).isDeleted) {
+                const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
+                const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
+                const result: Anime = {
+                  id: docSnap.id,
+                  ...defaultMatch,
+                  ...data,
+                  published: data.published !== false,
+                  poster,
+                  posterUrl: poster,
+                  banner,
+                  bannerUrl: banner,
+                };
+                saveLocalStoredAnime(result);
+                return result;
+              }
+            }
+          }
+        } catch {}
       }
+
+      // 3c. Check if slug was actually a Firestore doc ID
+      try {
+        const docRef = doc(db, coll, slug);
+        const docSnap = await withTimeout(getDoc(docRef), 2000, null);
+        if (docSnap && docSnap.exists()) {
+          const data = docSnap.data() as Anime;
+          if (!(data as any).isDeleted) {
+            const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
+            const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
+            const result: Anime = {
+              id: docSnap.id,
+              ...defaultMatch,
+              ...data,
+              published: data.published !== false,
+              poster,
+              posterUrl: poster,
+              banner,
+              bannerUrl: banner,
+            };
+            saveLocalStoredAnime(result);
+            return result;
+          }
+        }
+      } catch {}
     }
 
-    // 3. Check if slug was actually a Firestore doc ID
-    try {
-      const docRef = doc(db, ANIME_COLLECTION, slug);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Anime;
-        if (!(data as any).isDeleted) {
-          return {
-            id: docSnap.id,
-            ...data,
-          };
-        }
-      }
-    } catch {}
-
     // 4. Scan in all published animes (fallback for custom slugs or docIds)
-    const all = await getAllAnimes();
+    const all = await withTimeout(getAllAnimes(), 2500, []);
     const match = all.find(
       (a) =>
         a.slug === slug ||
         a.slug?.toLowerCase() === lowerSlug ||
         a.id === slug ||
-        a.id?.toLowerCase() === lowerSlug
+        a.id?.toLowerCase() === lowerSlug ||
+        a.title?.toLowerCase() === lowerSlug ||
+        (slugified && a.slug?.toLowerCase() === slugified)
     );
-    if (match) return match;
+    if (match && !(match as any).isDeleted) {
+      const fullMatch: Anime = {
+        ...match,
+        published: match.published !== false,
+      };
+      saveLocalStoredAnime(fullMatch);
+      return fullMatch;
+    }
 
-    const found = DEFAULT_ANIMES.find((a) => (a.slug === slug || a.id === slug || a.slug?.toLowerCase() === lowerSlug));
-    return found || null;
+    if (defaultMatch && !isAnimeDeleted(defaultMatch.id) && (!defaultMatch.slug || !isAnimeDeleted(defaultMatch.slug))) {
+      return defaultMatch;
+    }
+
+    return null;
   } catch (err) {
     console.warn(`Failed to get anime by slug ${slug}, checking defaults:`, err);
-    const found = DEFAULT_ANIMES.find((a) => (a.slug === slug || a.id === slug || a.slug?.toLowerCase() === lowerSlug));
-    return found || null;
+    return defaultMatch || null;
   }
 }
 
 export async function getAnimeById(id: string): Promise<Anime | null> {
   if (!id) return null;
   const cleanId = decodeURIComponent(id).trim();
+  const lowerId = cleanId.toLowerCase();
+
+  // 1. Instant check in local storage & memory
+  const localList = getLocalStoredAnimes();
+  const localMatch = localList.find((a) => {
+    if ((a as any).isDeleted === true) return false;
+    return a.id === cleanId || a.id?.toLowerCase() === lowerId || a.slug === cleanId || a.slug?.toLowerCase() === lowerId;
+  });
+  if (localMatch) {
+    return {
+      ...localMatch,
+      published: localMatch.published !== false,
+    };
+  }
+
+  const defaultMatch = DEFAULT_ANIMES.find(
+    (a) =>
+      !isAnimeDeleted(a.id) &&
+      (!a.slug || !isAnimeDeleted(a.slug)) &&
+      (a.id === cleanId || a.slug === cleanId || a.id?.toLowerCase() === lowerId || a.slug?.toLowerCase() === lowerId)
+  );
 
   try {
     const docRef = doc(db, ANIME_COLLECTION, cleanId);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
+    const docSnap = await withTimeout(getDoc(docRef), 2500, null);
+    if (docSnap && docSnap.exists()) {
       const data = docSnap.data() as Anime;
       if (!(data as any).isDeleted) {
-        const poster = (data as any).posterUrl || (data as any).poster || '';
-        const banner = (data as any).bannerUrl || (data as any).banner || undefined;
-        return {
+        const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
+        const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
+        const result: Anime = {
           id: docSnap.id,
+          ...defaultMatch,
           ...data,
+          published: data.published !== false,
           poster,
-          posterUrl: (data as any).posterUrl || poster,
+          posterUrl: poster,
           banner,
-          bannerUrl: (data as any).bannerUrl || banner,
+          bannerUrl: banner,
         };
+        saveLocalStoredAnime(result);
+        return result;
       }
     }
 
@@ -459,32 +665,34 @@ export async function getAnimeById(id: string): Promise<Anime | null> {
         collection(db, ANIME_COLLECTION),
         where('slug', '==', cleanId)
       );
-      const slugSnap = await getDocs(q);
-      if (!slugSnap.empty) {
+      const slugSnap = await withTimeout(getDocs(q), 2000, null);
+      if (slugSnap && !slugSnap.empty) {
         for (const slugDoc of slugSnap.docs) {
           const data = slugDoc.data() as Anime;
           if (!(data as any).isDeleted) {
-            const poster = (data as any).posterUrl || (data as any).poster || '';
-            const banner = (data as any).bannerUrl || (data as any).banner || undefined;
-            return {
+            const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
+            const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
+            const result: Anime = {
               id: slugDoc.id,
+              ...defaultMatch,
               ...data,
+              published: data.published !== false,
               poster,
-              posterUrl: (data as any).posterUrl || poster,
+              posterUrl: poster,
               banner,
-              bannerUrl: (data as any).bannerUrl || banner,
+              bannerUrl: banner,
             };
+            saveLocalStoredAnime(result);
+            return result;
           }
         }
       }
     } catch {}
 
-    const found = DEFAULT_ANIMES.find((a) => a.id === cleanId || a.slug === cleanId);
-    return found || null;
+    return defaultMatch || null;
   } catch (err) {
     console.warn(`Failed to get anime by id ${id}, checking defaults:`, err);
-    const found = DEFAULT_ANIMES.find((a) => a.id === cleanId || a.slug === cleanId);
-    return found || null;
+    return defaultMatch || null;
   }
 }
 
@@ -822,16 +1030,18 @@ export async function getRecentlyAddedAnimes(limitCount: number = 24): Promise<A
 }
 
 export async function createAnime(data: Omit<Anime, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  const posterUrl = data.posterUrl || data.poster;
+  const bannerUrl = data.bannerUrl || data.banner;
+  const payload = {
+    ...data,
+    poster: posterUrl,
+    posterUrl,
+    ...(bannerUrl ? { banner: bannerUrl, bannerUrl } : {}),
+  };
+  const cleaned = sanitizeData(payload);
+  const fallbackId = data.slug ? `anime-${data.slug}` : `anime-${Date.now()}`;
+
   try {
-    const posterUrl = data.posterUrl || data.poster;
-    const bannerUrl = data.bannerUrl || data.banner;
-    const payload = {
-      ...data,
-      poster: posterUrl,
-      posterUrl,
-      ...(bannerUrl ? { banner: bannerUrl, bannerUrl } : {}),
-    };
-    const cleaned = sanitizeData(payload);
     const docRef = await addDoc(collection(db, ANIME_COLLECTION), {
       ...cleaned,
       isDeleted: false,
@@ -845,27 +1055,53 @@ export async function createAnime(data: Omit<Anime, 'id' | 'createdAt' | 'update
     }
     undeleteAnime(docRef.id);
 
+    // Save locally for instant availability
+    saveLocalStoredAnime({
+      ...cleaned,
+      id: docRef.id,
+      published: data.published ?? true,
+      viewsCount: 0,
+    } as Anime);
+
     return docRef.id;
-  } catch (err) {
-    console.error('Failed to create anime:', err);
-    throw err;
+  } catch (err: any) {
+    console.warn('Firestore createAnime encountered an error, saving to persistent local storage:', err);
+    // Graceful offline fallback: if database was deleted in Firebase console or connection failed
+    const localAnime: Anime = {
+      ...cleaned,
+      id: fallbackId,
+      published: data.published ?? true,
+      viewsCount: 0,
+    } as Anime;
+
+    saveLocalStoredAnime(localAnime);
+    if (data.slug) {
+      undeleteAnime(data.slug);
+    }
+    undeleteAnime(fallbackId);
+
+    return fallbackId;
   }
 }
 
 export async function updateAnime(id: string, data: Partial<Anime>): Promise<void> {
+  const payload = { ...data };
+  if (data.poster || data.posterUrl) {
+    const p = data.posterUrl || data.poster;
+    payload.poster = p;
+    payload.posterUrl = p;
+  }
+  if (data.banner !== undefined || data.bannerUrl !== undefined) {
+    const b = data.bannerUrl || data.banner;
+    payload.banner = b;
+    payload.bannerUrl = b;
+  }
+  const cleaned = sanitizeData(payload);
+
+  // Update local storage first so changes are always preserved
+  saveLocalStoredAnime({ id, ...cleaned } as Anime);
+
   try {
-    const payload = { ...data };
-    if (data.poster || data.posterUrl) {
-      const p = data.posterUrl || data.poster;
-      payload.poster = p;
-      payload.posterUrl = p;
-    }
-    if (data.banner !== undefined || data.bannerUrl !== undefined) {
-      const b = data.bannerUrl || data.banner;
-      payload.banner = b;
-      payload.bannerUrl = b;
-    }
-    const cleaned = sanitizeData(payload);
     const docRef = doc(db, ANIME_COLLECTION, id);
 
     // If updating a default catalog anime that was not yet persisted to Firestore, include base metadata
@@ -902,34 +1138,49 @@ export async function updateAnime(id: string, data: Partial<Anime>): Promise<voi
       }
     }
   } catch (err) {
-    console.error(`Failed to update anime ${id}:`, err);
-    throw err;
+    console.warn(`Firestore updateAnime ${id} error, preserved in local storage:`, err);
   }
 }
 
 export async function deleteAnime(id: string): Promise<void> {
   try {
+    const cleanId = id.trim();
+    const lowerId = cleanId.toLowerCase();
     const set = getLocalDeletedAnimeIds();
-    set.add(id);
+    set.add(cleanId);
+    set.add(lowerId);
 
     // 1. Identify all identifier aliases (ID, slug, default match)
     let slug = '';
-    const fsDocRef = doc(db, ANIME_COLLECTION, id);
+    const fsDocRef = doc(db, ANIME_COLLECTION, cleanId);
     try {
       const snap = await getDoc(fsDocRef);
       if (snap.exists()) {
         const data = snap.data();
         if (data.slug) {
-          slug = data.slug;
+          slug = data.slug.trim();
           set.add(slug);
+          set.add(slug.toLowerCase());
         }
       }
     } catch {}
 
-    const defaultMatch = DEFAULT_ANIMES.find((a) => a.id === id || a.slug === id);
+    const defaultMatch = DEFAULT_ANIMES.find(
+      (a) =>
+        a.id === cleanId ||
+        a.slug === cleanId ||
+        a.id?.toLowerCase() === lowerId ||
+        a.slug?.toLowerCase() === lowerId
+    );
     if (defaultMatch) {
-      set.add(defaultMatch.id);
-      if (defaultMatch.slug) set.add(defaultMatch.slug);
+      if (defaultMatch.id) {
+        set.add(defaultMatch.id);
+        set.add(defaultMatch.id.toLowerCase());
+      }
+      if (defaultMatch.slug) {
+        set.add(defaultMatch.slug);
+        set.add(defaultMatch.slug.toLowerCase());
+      }
     }
 
     try {
@@ -938,7 +1189,31 @@ export async function deleteAnime(id: string): Promise<void> {
       }
     } catch {}
 
-    const allIds = Array.from(new Set([id, slug, defaultMatch?.id, defaultMatch?.slug].filter(Boolean) as string[]));
+    const allIds = Array.from(
+      new Set(
+        [
+          cleanId,
+          lowerId,
+          slug,
+          slug ? slug.toLowerCase() : '',
+          defaultMatch?.id,
+          defaultMatch?.id ? defaultMatch.id.toLowerCase() : '',
+          defaultMatch?.slug,
+          defaultMatch?.slug ? defaultMatch.slug.toLowerCase() : '',
+        ].filter(Boolean) as string[]
+      )
+    );
+
+    // Remove from local admin cache immediately
+    for (const targetId of allIds) {
+      deleteLocalStoredAnime(targetId);
+    }
+
+    // Invalidate in-memory and fast-cache
+    memoryPublishedAnimes = null;
+    try {
+      setStoredCache('published_animes', []);
+    } catch {}
 
     // 2. Persist to Firestore siteSettings so all sessions/devices respect this deletion
     try {
@@ -956,12 +1231,20 @@ export async function deleteAnime(id: string): Promise<void> {
     }
 
     // 3. Delete or tombstone Firestore anime doc
-    try {
-      await deleteDoc(fsDocRef);
-    } catch (e) {
-      console.warn(`Failed to deleteDoc for anime ${id}:`, e);
+    for (const targetId of allIds) {
       try {
-        await setDoc(fsDocRef, { isDeleted: true, published: false }, { merge: true });
+        await deleteDoc(doc(db, ANIME_COLLECTION, targetId));
+      } catch (e) {
+        try {
+          await setDoc(doc(db, ANIME_COLLECTION, targetId), { isDeleted: true, published: false }, { merge: true });
+        } catch {}
+      }
+    }
+
+    // Also delete linked hero banners
+    for (const targetId of allIds) {
+      try {
+        await deleteHeroBannersForAnime(targetId);
       } catch {}
     }
 

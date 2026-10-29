@@ -16,7 +16,8 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
   const { episode, animeTitle, animeSlug, animePoster, animeBanner } = item;
   const isEpUpcoming = episode.status === 'upcoming' || Boolean(episode.isUpcoming);
   const sNum = episode.seasonNumber || episode.season || 1;
-  const targetUrl = `/anime/${animeSlug}/episode/${episode.episodeNumber}${sNum > 1 ? `?season=${sNum}` : ''}`;
+  const cleanSlug = animeSlug || episode.animeId || '';
+  const targetUrl = `/anime/${cleanSlug}/episode/${episode.episodeNumber}${sNum > 1 ? `?season=${sNum}` : ''}`;
 
   // Time ago calculation
   const getTimeAgo = () => {

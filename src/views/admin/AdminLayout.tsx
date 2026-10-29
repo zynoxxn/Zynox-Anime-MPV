@@ -150,9 +150,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             onClick={() => navigate('/admin')}
             className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded-xl bg-[#1683FF] flex items-center justify-center text-white shadow-lg shadow-[#1683FF]/30 font-black text-sm">
-              Z
-            </div>
+            <img
+              src="/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png"
+              alt="ZYNOX ANIME"
+              className="w-9 h-9 rounded-xl object-contain shadow-md shadow-[#1683FF]/30 border border-white/10 group-hover:scale-105 transition-transform"
+            />
             <div>
               <div className="text-xs sm:text-sm font-black text-white tracking-wider flex items-center gap-1.5">
                 ZYNOX <span className="hidden xs:inline text-[#1683FF] text-[10px] uppercase font-bold tracking-normal px-1.5 py-0.5 rounded bg-[#1683FF]/15 border border-[#1683FF]/30">Admin</span>

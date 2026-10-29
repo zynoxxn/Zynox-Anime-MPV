@@ -11,6 +11,10 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronUp,
+  Link2,
+  HelpCircle,
+  Sparkles,
+  Info,
 } from 'lucide-react';
 import {
   validateImageFile,
@@ -20,6 +24,7 @@ import {
   POSTER_MAX_SIZE_MB,
   BANNER_MAX_SIZE_MB,
 } from '../../lib/storage';
+import { normalizeImageHostingUrl } from '../../lib/image-hosting';
 
 interface AdminImageUploaderProps {
   label: string;
@@ -50,6 +55,8 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
   const [manualUrlInput, setManualUrlInput] = useState(currentUrl);
 
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
 
   const maxMb = type === 'poster' ? POSTER_MAX_SIZE_MB : BANNER_MAX_SIZE_MB;
   const isPoster = type === 'poster';
@@ -107,7 +114,7 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
       onUrlChange(result.downloadUrl);
       setManualUrlInput(result.downloadUrl);
       setLocalPreview(null);
-      setSuccessMessage('Uploaded to Firebase Storage!');
+      setSuccessMessage('Uploaded to Firebase Storage permanently!');
       setTimeout(() => setSuccessMessage(null), 4000);
 
       // 5. Safely clean up previous file from Firebase Storage if replaced
@@ -146,15 +153,31 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
   };
 
   const handleManualUrlSave = () => {
-    const trimmed = manualUrlInput.trim();
-    onUrlChange(trimmed);
+    const raw = manualUrlInput.trim();
+    if (!raw) {
+      onUrlChange('');
+      setSuccessMessage('URL cleared');
+      setTimeout(() => setSuccessMessage(null), 2500);
+      return;
+    }
+    const { normalizedUrl, provider, note } = normalizeImageHostingUrl(raw);
+    onUrlChange(normalizedUrl);
+    setManualUrlInput(normalizedUrl);
     setErrorMessage(null);
-    setSuccessMessage('URL updated');
-    setTimeout(() => setSuccessMessage(null), 2500);
+
+    if (provider === 'google-drive') {
+      setSuccessMessage('Google Drive link auto-converted to permanent Google CDN image!');
+    } else if (note) {
+      setSuccessMessage(note);
+    } else {
+      setSuccessMessage('Image URL applied successfully!');
+    }
+    setTimeout(() => setSuccessMessage(null), 4000);
   };
 
   const activeDisplayUrl = localPreview || currentUrl;
   const isFromFirebase = currentUrl ? isFirebaseStorageUrl(currentUrl) : false;
+  const isFromGoogleDrive = currentUrl ? currentUrl.includes('googleusercontent.com/d/') || currentUrl.includes('drive.google.com') : false;
 
   return (
     <div className="space-y-2">
@@ -166,20 +189,87 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
           {isFromFirebase && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <ShieldCheck className="w-3 h-3" />
-              Firebase Storage
+              Firebase Storage (Permanent)
             </span>
           )}
-          {currentUrl && !isFromFirebase && (
+          {isFromGoogleDrive && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <Sparkles className="w-3 h-3" />
+              Google Drive CDN (Permanent)
+            </span>
+          )}
+          {currentUrl && !isFromFirebase && !isFromGoogleDrive && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
               External URL
             </span>
           )}
         </label>
 
-        {recommendedText && (
-          <span className="text-[10px] text-[#64748B]">{recommendedText}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {recommendedText && (
+            <span className="text-[10px] text-[#64748B] hidden sm:inline">{recommendedText}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowGuide(!showGuide)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-[#94A3B8] hover:text-[#1683FF] transition-all cursor-pointer"
+            title="Permanent Storage Guide"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-[#1683FF]" />
+            <span>Permanent Storage Tips</span>
+          </button>
+        </div>
       </div>
+
+      {/* Guide Box for permanent hosting (Google Drive, Firebase, Catbox, ImgBB) */}
+      {showGuide && (
+        <div className="bg-[#0B1527] border border-[#1683FF]/30 rounded-2xl p-4 space-y-3 text-xs animate-in fade-in duration-200">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5">
+            <span className="font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#1683FF]" />
+              Permanent Image Hosting (Never Expires in 30 Days)
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowGuide(false)}
+              className="text-[#94A3B8] hover:text-white text-xs px-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] leading-relaxed text-[#94A3B8]">
+            <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+              <div className="font-bold text-emerald-400 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                1. Firebase Storage (Built-in)
+              </div>
+              <p>
+                Click <strong>"Upload from Phone/PC"</strong> directly. Files are stored forever in your Firebase Storage bucket with fast Google CDN. 100% Free.
+              </p>
+            </div>
+            <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+              <div className="font-bold text-amber-400 flex items-center gap-1.5">
+                <ExternalLink className="w-3.5 h-3.5" />
+                2. Google Drive (15GB Free)
+              </div>
+              <p>
+                Upload image to Google Drive, set Share to <strong>"Anyone with the link"</strong>, copy link & paste here. This app automatically converts it to permanent high-speed Google CDN!
+              </p>
+            </div>
+            <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
+              <div className="font-bold text-cyan-400 flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5" />
+                3. Catbox.moe / ImgBB
+              </div>
+              <p>
+                <strong>Catbox.moe:</strong> Free lifetime anime hosting, direct .jpg/.png links without 30-day limits.
+                <br />
+                <strong>ImgBB:</strong> Choose &quot;Don&apos;t autodelete&quot; &amp; copy Direct Link.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden Native File Input (accepts camera/gallery on Android/iOS) */}
       <input
@@ -213,7 +303,6 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 onError={(e) => {
-                  // Fallback placeholder if broken URL
                   (e.target as HTMLImageElement).src =
                     'https://via.placeholder.com/400x250/0b1322/64748b?text=Image+Unavailable';
                 }}
@@ -253,6 +342,11 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
                       Local Preview
                     </span>
                   )}
+                  {isFromGoogleDrive && (
+                    <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-semibold">
+                      Google Drive CDN
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-[#64748B] break-all line-clamp-1 font-mono">
                   {currentUrl || 'Image selected and ready'}
@@ -272,7 +366,21 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
                   ) : (
                     <RefreshCw className="w-3.5 h-3.5" />
                   )}
-                  <span>{isUploading ? 'Uploading...' : `Replace ${isPoster ? 'Poster' : 'Banner'}`}</span>
+                  <span>{isUploading ? 'Uploading...' : `Upload New File`}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowManualUrl(!showManualUrl)}
+                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>{showManualUrl ? 'Hide URL' : 'Edit / Paste URL'}</span>
+                  {showManualUrl ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
                 </button>
 
                 {confirmingRemove ? (
@@ -305,19 +413,6 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
                     <span>Remove</span>
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  onClick={() => setShowManualUrl(!showManualUrl)}
-                  className="px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white font-medium text-[11px] transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Edit URL</span>
-                  {showManualUrl ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
               </div>
 
               {/* Upload Progress Bar if active */}
@@ -325,7 +420,7 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
                 <div className="space-y-1 pt-1">
                   <div className="flex justify-between text-[11px] font-semibold text-[#94A3B8]">
                     <span className="flex items-center gap-1.5 text-cyan-400">
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Uploading to Firebase Storage...
                     </span>
                     <span className="text-white font-bold">{uploadProgress}%</span>
@@ -342,92 +437,153 @@ export const AdminImageUploader: React.FC<AdminImageUploaderProps> = ({
           </div>
         </div>
       ) : (
-        /* Empty State: Direct Tap / Click to Upload */
-        <div
-          onClick={() => {
-            if (!isUploading) fileInputRef.current?.click();
-          }}
-          className={`border-2 border-dashed border-white/15 hover:border-[#1683FF]/60 hover:bg-[#1683FF]/5 bg-[#050A14] rounded-2xl p-5 sm:p-6 text-center cursor-pointer transition-all group ${
-            isUploading ? 'opacity-70 pointer-events-none' : ''
-          }`}
-        >
-          <div className="flex flex-col items-center justify-center space-y-2.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-[#94A3B8] group-hover:text-[#1683FF] group-hover:border-[#1683FF]/40 group-hover:scale-105 transition-all">
-              {isUploading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-[#1683FF]" />
-              ) : isPoster ? (
-                <ImageIcon className="w-6 h-6" />
-              ) : (
-                <UploadCloud className="w-6 h-6" />
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs sm:text-sm font-bold text-white">
-                {isUploading ? (
-                  <span>Uploading to Firebase Storage ({uploadProgress}%)...</span>
-                ) : (
-                  <span>Upload {isPoster ? 'Poster' : 'Banner'}</span>
-                )}
-              </p>
-              <p className="text-[11px] text-[#64748B] max-w-sm">
-                Tap to pick from phone or PC (JPG, PNG, WEBP • Max {maxMb}MB)
-              </p>
-            </div>
-
-            {/* Direct Upload Trigger Button */}
-            {!isUploading && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-                className="mt-1 px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white font-semibold text-xs transition-all flex items-center gap-2 shadow-md shadow-[#1683FF]/20 active:scale-95 cursor-pointer"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>Upload {isPoster ? 'Poster' : 'Banner'}</span>
-              </button>
-            )}
-
-            {/* Live Progress Bar during initial upload */}
-            {isUploading && (
-              <div className="w-full max-w-xs space-y-1 pt-2">
-                <div className="flex justify-between text-[10px] text-[#94A3B8]">
-                  <span>Uploading image...</span>
-                  <span className="font-bold text-white">{uploadProgress}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-[#1683FF] to-cyan-400 rounded-full transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
+        /* Empty State: Choice between Direct Device Upload or Paste Link */
+        <div className="bg-[#050A14] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
+          {/* Tab Selector: Upload File vs Paste URL */}
+          <div className="flex items-center justify-center p-1 rounded-xl bg-white/5 border border-white/5 max-w-sm mx-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('upload')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'upload'
+                  ? 'bg-[#1683FF] text-white shadow-sm'
+                  : 'text-[#94A3B8] hover:text-white'
+              }`}
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              <span>Upload from Phone/PC</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('url')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'url'
+                  ? 'bg-[#1683FF] text-white shadow-sm'
+                  : 'text-[#94A3B8] hover:text-white'
+              }`}
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              <span>Paste Image / Drive Link</span>
+            </button>
           </div>
+
+          {activeTab === 'upload' ? (
+            /* Upload Option (Firebase Storage) */
+            <div
+              onClick={() => {
+                if (!isUploading) fileInputRef.current?.click();
+              }}
+              className={`border-2 border-dashed border-white/15 hover:border-[#1683FF]/60 hover:bg-[#1683FF]/5 rounded-xl p-5 text-center cursor-pointer transition-all group ${
+                isUploading ? 'opacity-70 pointer-events-none' : ''
+              }`}
+            >
+              <div className="flex flex-col items-center justify-center space-y-2.5">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-[#94A3B8] group-hover:text-[#1683FF] group-hover:border-[#1683FF]/40 group-hover:scale-105 transition-all">
+                  {isUploading ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-[#1683FF]" />
+                  ) : isPoster ? (
+                    <ImageIcon className="w-6 h-6" />
+                  ) : (
+                    <UploadCloud className="w-6 h-6" />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs sm:text-sm font-bold text-white">
+                    {isUploading ? (
+                      <span>Uploading to Firebase Storage ({uploadProgress}%)...</span>
+                    ) : (
+                      <span>Upload {isPoster ? 'Poster' : 'Banner'} File</span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-[#64748B] max-w-sm">
+                    Direct permanent upload to your Firebase Storage (JPG, PNG, WEBP • Max {maxMb}MB)
+                  </p>
+                </div>
+
+                {!isUploading && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    className="mt-1 px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white font-semibold text-xs transition-all flex items-center gap-2 shadow-md shadow-[#1683FF]/20 active:scale-95 cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Choose File from Device</span>
+                  </button>
+                )}
+
+                {isUploading && (
+                  <div className="w-full max-w-xs space-y-1 pt-2">
+                    <div className="flex justify-between text-[10px] text-[#94A3B8]">
+                      <span>Uploading...</span>
+                      <span className="font-bold text-white">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#1683FF] to-cyan-400 rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* URL Paste Option (Google Drive, Catbox, ImgBB) */
+            <div className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-[#1683FF]" />
+                  <span>Paste Image URL or Google Drive Link</span>
+                </label>
+                <p className="text-[11px] text-[#64748B]">
+                  Paste any direct image link or Google Drive share link (we auto-convert Google Drive links into permanent Google CDN images!).
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="url"
+                  value={manualUrlInput}
+                  onChange={(e) => setManualUrlInput(e.target.value)}
+                  placeholder="https://drive.google.com/file/d/... OR https://files.catbox.moe/... OR https://i.ibb.co/..."
+                  className="flex-1 bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF] font-mono text-[11px]"
+                />
+                <button
+                  type="button"
+                  onClick={handleManualUrlSave}
+                  className="px-4 py-2.5 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white font-bold text-xs transition-colors shrink-0 shadow-sm cursor-pointer"
+                >
+                  Apply Image
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Manual URL input fallback toggle (Useful for existing legacy URLs or manual inspection) */}
-      {showManualUrl && (
+      {/* Manual URL editor dropdown when image already exists */}
+      {activeDisplayUrl && showManualUrl && (
         <div className="bg-[#050A14] border border-white/10 rounded-xl p-3 space-y-2 animate-in fade-in duration-150">
           <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
-            <span>Direct Image URL / Fallback</span>
-            <span className="text-[10px] text-[#64748B]">Auto-saved when uploading</span>
+            <span>Direct Image URL / Google Drive Link</span>
+            <span className="text-[10px] text-cyan-400">Google Drive auto-converts to permanent link</span>
           </div>
           <div className="flex items-center gap-2">
             <input
               type="url"
               value={manualUrlInput}
               onChange={(e) => setManualUrlInput(e.target.value)}
-              placeholder="https://firebasestorage.googleapis.com/... or external image URL"
+              placeholder="https://drive.google.com/file/d/... or https://..."
               className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-[#1683FF] font-mono text-[11px]"
             />
             <button
               type="button"
               onClick={handleManualUrlSave}
-              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-[#1683FF] hover:bg-[#2196FF] text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer"
             >
               Apply
             </button>
