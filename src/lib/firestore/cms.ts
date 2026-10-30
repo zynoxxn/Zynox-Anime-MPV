@@ -367,7 +367,7 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
     animeTitle: 'Alya Sometimes Hides Her Feelings in Russian',
     animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
     animePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80',
-    animeBanner: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
     episodeNumber: 12,
     seasonNumber: 1,
     dayOfWeek: 'Wednesday',
@@ -378,32 +378,17 @@ export const DEFAULT_SCHEDULE: CmsScheduleItem[] = [
   },
   {
     id: 'sch-angel-next-door',
-    animeId: 'anime-angel-next-door',
+    animeId: 'IK1pYuAdZmU18uYt2W03',
     animeTitle: 'The Angel Next Door Spoils Me Rotten',
     animeSlug: 'the-angel-next-door-spoils-me-rotten',
-    animePoster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80',
-    animeBanner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
+    animePoster: 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
     episodeNumber: 12,
     seasonNumber: 1,
     dayOfWeek: 'Saturday',
     releaseTime: '20:30',
     timezone: 'Asia/Kolkata',
     language: 'Hindi Dub',
-    status: 'upcoming',
-  },
-  {
-    id: 'sch-bleach',
-    animeId: 'anime-bleach',
-    animeTitle: 'Bleach',
-    animeSlug: 'bleach',
-    animePoster: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80',
-    animeBanner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&auto=format&fit=crop&q=80',
-    episodeNumber: 37,
-    seasonNumber: 3,
-    dayOfWeek: 'Monday',
-    releaseTime: '20:00',
-    timezone: 'Asia/Kolkata',
-    language: 'Hindi Dub & Japanese Sub',
     status: 'upcoming',
   },
 ];
@@ -470,12 +455,12 @@ export const DEFAULT_HERO_BANNERS: CmsHeroBanner[] = [
   {
     id: 'hero-alya-russian',
     title: 'Alya Sometimes Hides Her Feelings in Russian',
-    subtitle: 'Summer 2024 • Multi Audio (Hindi Dub + Eng Sub) • 1080p Ultra HD',
+    subtitle: 'Winter 2026 • Multi Audio (Hindi Dub + Japanese Sub) • 1080p Ultra HD',
     description: 'Silver-haired high school beauty Alya whispers affectionate Russian phrases to Masachika Kuze, completely oblivious that he secretly understands every word!',
-    animeId: 'anime-alya-russian',
+    animeId: 'N7GCGm7fqliWjjxG0U0f',
     animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
-    backgroundImage: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=85',
-    posterImage: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
+    backgroundImage: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
+    posterImage: 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1',
     buttonText: 'Watch Episode 1',
     buttonUrl: '/anime/alya-sometimes-hides-her-feelings-in-russian/episode/1',
     secondaryButtonText: 'Series Info',
@@ -486,12 +471,12 @@ export const DEFAULT_HERO_BANNERS: CmsHeroBanner[] = [
   {
     id: 'hero-angel-next-door',
     title: 'The Angel Next Door Spoils Me Rotten',
-    subtitle: 'Winter 2023 • Hindi Dub & Multi Audio • 1080p Ultra HD',
+    subtitle: 'Winter 2026 • Hindi Dub & Multi Audio • 1080p Ultra HD',
     description: 'When Amane hands his umbrella to school angel Mahiru Shiina during a heavy downpour, an adorable domestic bond starts to sweeten their everyday high school life.',
-    animeId: 'anime-angel-next-door',
+    animeId: 'IK1pYuAdZmU18uYt2W03',
     animeSlug: 'the-angel-next-door-spoils-me-rotten',
-    backgroundImage: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=85',
-    posterImage: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=600&auto=format&fit=crop&q=80',
+    backgroundImage: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
+    posterImage: 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n',
     buttonText: 'Watch Episode 1',
     buttonUrl: '/anime/the-angel-next-door-spoils-me-rotten/episode/1',
     secondaryButtonText: 'Details',
@@ -519,7 +504,20 @@ export async function getCmsHeroBanners(): Promise<CmsHeroBanner[]> {
     if (snap && !snap.empty) {
       const list = snap.docs
         .filter((d) => d.id !== CMS_META_DOC_ID && d.id !== '__meta__')
-        .map((d) => ({ ...(d.data() as CmsHeroBanner), id: d.id }));
+        .map((d) => {
+          const banner = { ...(d.data() as CmsHeroBanner), id: d.id };
+          // Sanitize any legacy unsplash URLs to Google Drive CDN
+          if (banner.backgroundImage?.includes('unsplash.com') || banner.posterImage?.includes('unsplash.com')) {
+            const isAngel = (banner.animeSlug || banner.title || '').toLowerCase().includes('angel');
+            banner.backgroundImage = isAngel
+              ? 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U'
+              : 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx';
+            banner.posterImage = isAngel
+              ? 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n'
+              : 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1';
+          }
+          return banner;
+        });
       // If collection only contains meta doc, it means the admin cleared all banners
       if (list.length > 0 || snap.docs.some((d) => d.id === CMS_META_DOC_ID || d.id === '__meta__')) {
         const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));

@@ -47,11 +47,13 @@ interface EpisodeSelectorProps {
   animeBanner?: string;
   seasonsList?: AnimeSeasonEntry[];
   currentEpisodeNumber?: number;
+  currentSeasonNumber?: number;
+  currentEpisodeId?: string;
   watchedEpisodeNumbers?: number[];
   selectedSeason?: number | 'all';
   isAnimeUpcoming?: boolean;
   onSeasonChange?: (seasonNumber: number | 'all') => void;
-  onSelectEpisode: (episodeNumber: number) => void;
+  onSelectEpisode: (episodeNumber: number, seasonNumber?: number, episode?: Episode) => void;
   onDownloadEpisode?: (episode: Episode) => void;
   onNavigateSeasonAnime?: (slug: string) => void;
 }
@@ -63,6 +65,8 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   animeBanner,
   seasonsList = [],
   currentEpisodeNumber,
+  currentSeasonNumber,
+  currentEpisodeId,
   watchedEpisodeNumbers = [],
   selectedSeason: controlledSeason,
   isAnimeUpcoming = false,
@@ -96,9 +100,20 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     return list.length > 0 ? list : [1];
   }, [episodes, seasonsList]);
 
-  // If currentEpisodeNumber is provided, auto-switch to its season if not selected
+  // If current episode or season is provided, auto-switch to its season if not selected
   useEffect(() => {
-    if (currentEpisodeNumber) {
+    if (currentEpisodeId || (currentEpisodeNumber && currentSeasonNumber)) {
+      const activeEp = episodes.find(
+        (e) => (currentEpisodeId && e.id === currentEpisodeId) ||
+               (currentSeasonNumber && Number(e.seasonNumber || e.season || 1) === currentSeasonNumber && e.episodeNumber === currentEpisodeNumber)
+      );
+      if (activeEp) {
+        const epSeason = Number(activeEp.seasonNumber || activeEp.season || 1);
+        if (seasons.includes(epSeason)) {
+          handleSeasonSelect(epSeason);
+        }
+      }
+    } else if (currentEpisodeNumber) {
       const activeEp = episodes.find((e) => e.episodeNumber === currentEpisodeNumber);
       if (activeEp) {
         const epSeason = Number(activeEp.seasonNumber || activeEp.season || 1);
@@ -107,7 +122,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         }
       }
     }
-  }, [currentEpisodeNumber, episodes, seasons]);
+  }, [currentEpisodeNumber, currentSeasonNumber, currentEpisodeId, episodes, seasons]);
 
   const filteredEpisodes = useMemo(() => {
     const q = (searchQuery || '').trim().toLowerCase();
@@ -188,7 +203,11 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         /* 1. HORIZONTAL LIST VIEW */
         <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
           {filteredEpisodes.map((ep) => {
-            const isPlaying = currentEpisodeNumber === ep.episodeNumber;
+            const epSeasonNum = Number(ep.seasonNumber || ep.season || 1);
+            const isPlaying = currentEpisodeId
+              ? ep.id === currentEpisodeId
+              : currentEpisodeNumber === ep.episodeNumber &&
+                (currentSeasonNumber === undefined || epSeasonNum === currentSeasonNumber);
             const isWatched = watchedEpisodeNumbers.includes(ep.episodeNumber);
             const isEpUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming);
             // Every episode thumbnail uses anime title's banner image
@@ -196,9 +215,9 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
             return (
               <div
-                key={ep.id || ep.episodeNumber}
-                id={`ep-row-${ep.episodeNumber}`}
-                onClick={() => onSelectEpisode(ep.episodeNumber)}
+                key={ep.id || `${epSeasonNum}-${ep.episodeNumber}`}
+                id={`ep-row-${epSeasonNum}-${ep.episodeNumber}`}
+                onClick={() => onSelectEpisode(ep.episodeNumber, epSeasonNum, ep)}
                 className={`group relative p-2.5 sm:p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 sm:gap-4 cursor-pointer ${
                   isPlaying
                     ? 'bg-[#1683FF]/20 border-[#1683FF] shadow-lg shadow-[#1683FF]/15 ring-1 ring-[#1683FF]'

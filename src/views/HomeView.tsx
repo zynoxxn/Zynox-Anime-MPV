@@ -13,7 +13,8 @@ import {
   isAnimeDeleted,
   getAnimeUploadTimestamp,
 } from '../lib/firestore/anime';
-import { getCmsHeroBanners, getCachedHeroBanners, getCmsSchedule, getCachedSchedule } from '../lib/firestore/cms';
+import { getCmsHeroBanners, getCachedHeroBanners, getCmsSchedule, getCachedSchedule, DEFAULT_HERO_BANNERS } from '../lib/firestore/cms';
+import { DEFAULT_ANIMES } from '../data/defaultCatalog';
 import { withTimeout } from '../lib/firestore/fast-cache';
 import { getLatestReleasedEpisodes } from '../lib/firestore/episodes';
 import { getContinueWatching } from '../lib/firestore/user-activity';
@@ -42,31 +43,65 @@ const FALLBACK_LATEST_EPISODES: LatestEpisodeItem[] = [
   {
     animeTitle: 'The Angel Next Door Spoils Me Rotten',
     animeSlug: 'the-angel-next-door-spoils-me-rotten',
-    animePoster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800&auto=format&fit=crop&q=80',
-    animeBanner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
+    animePoster: 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
     episode: {
-      id: 'ep-anime-angel-next-door-1',
-      animeId: 'anime-angel-next-door',
-      episodeNumber: 1,
-      title: 'Episode 1: Meeting the Angel',
-      thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1600&auto=format&fit=crop&q=80',
+      id: 'ep-angel-12',
+      animeId: 'IK1pYuAdZmU18uYt2W03',
+      episodeNumber: 12,
+      seasonNumber: 1,
+      title: 'Episode 12: Farewell to My Cowardly Self',
+      thumbnail: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
       duration: 1440,
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
     } as any,
   },
   {
     animeTitle: 'Alya Sometimes Hides Her Feelings in Russian',
     animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
-    animePoster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80',
-    animeBanner: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
+    animePoster: 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
     episode: {
-      id: 'ep-anime-alya-russian-1',
-      animeId: 'anime-alya-russian',
-      episodeNumber: 1,
-      title: 'Episode 1: Secret Whispers in Russian',
-      thumbnail: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80',
+      id: 'ep-alya-12',
+      animeId: 'N7GCGm7fqliWjjxG0U0f',
+      episodeNumber: 12,
+      seasonNumber: 1,
+      title: 'Episode 12: Facing Forward',
+      thumbnail: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
       duration: 1440,
-      createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    } as any,
+  },
+  {
+    animeTitle: 'The Angel Next Door Spoils Me Rotten',
+    animeSlug: 'the-angel-next-door-spoils-me-rotten',
+    animePoster: 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
+    episode: {
+      id: 'ep-angel-11',
+      animeId: 'IK1pYuAdZmU18uYt2W03',
+      episodeNumber: 11,
+      seasonNumber: 1,
+      title: 'Episode 11: The Angel Next Door Spoils Me Rotten',
+      thumbnail: 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U',
+      duration: 1440,
+      createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000),
+    } as any,
+  },
+  {
+    animeTitle: 'Alya Sometimes Hides Her Feelings in Russian',
+    animeSlug: 'alya-sometimes-hides-her-feelings-in-russian',
+    animePoster: 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1',
+    animeBanner: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
+    episode: {
+      id: 'ep-alya-11',
+      animeId: 'N7GCGm7fqliWjjxG0U0f',
+      episodeNumber: 11,
+      seasonNumber: 1,
+      title: 'Episode 11: Unexpected Preliminary Battle',
+      thumbnail: 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx',
+      duration: 1440,
+      createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
     } as any,
   },
 ];
@@ -194,41 +229,49 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
         if (initialAnimes.length === 0) {
           setLoading(true);
         }
+
         const [
-          all,
-          cmsBanners,
-          latestEpList,
-          progressList,
-          scheduleList,
-        ] = await Promise.all([
-          withTimeout(getPublishedAnimes(), 2200, initialAnimes),
-          withTimeout(getCmsHeroBanners(), 1800, initialBanners as any),
-          withTimeout(getLatestReleasedEpisodes(10), 1800, FALLBACK_LATEST_EPISODES),
-          withTimeout(getContinueWatching(user?.uid || null), 1200, []),
-          withTimeout(getCmsSchedule(), 1800, initialSchedule),
+          allRes,
+          cmsBannersRes,
+          latestEpRes,
+          progressRes,
+          scheduleRes,
+        ] = await Promise.allSettled([
+          getPublishedAnimes(),
+          getCmsHeroBanners(),
+          getLatestReleasedEpisodes(12),
+          getContinueWatching(user?.uid || null),
+          getCmsSchedule(),
         ]);
 
-        const featuredList = all.filter((a) => a.featured === true || a.isFeatured === true);
-        const trendingList = [...all]
+        const all = allRes.status === 'fulfilled' && allRes.value.length > 0 ? allRes.value : initialAnimes;
+        const cmsBanners = cmsBannersRes.status === 'fulfilled' ? cmsBannersRes.value : (initialBanners as any);
+        const latestEpList = latestEpRes.status === 'fulfilled' ? latestEpRes.value : [];
+        const progressList = progressRes.status === 'fulfilled' ? progressRes.value : [];
+        const scheduleList = scheduleRes.status === 'fulfilled' ? scheduleRes.value : initialSchedule;
+
+        const validAll = all && all.length > 0 ? all : (initialAnimes && initialAnimes.length > 0 ? initialAnimes : DEFAULT_ANIMES);
+
+        const featuredList = validAll.filter((a) => a.featured === true || a.isFeatured === true);
+        const trendingList = [...validAll]
           .sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0) || (b.rating || 0) - (a.rating || 0))
           .slice(0, 24);
-        const popularList = [...all]
+        const popularList = [...validAll]
           .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (b.viewsCount || 0) - (a.viewsCount || 0))
           .slice(0, 24);
 
         if (isMounted) {
           // Build set of anime IDs and slugs that have been explicitly unfeatured
           const unfeaturedAnimeKeys = new Set<string>();
-          for (const anime of all) {
+          for (const anime of validAll) {
             if (anime.featured === false || anime.isFeatured === false) {
               if (anime.id) unfeaturedAnimeKeys.add(anime.id.toLowerCase());
               if (anime.slug) unfeaturedAnimeKeys.add(anime.slug.toLowerCase());
             }
           }
 
-          // Identify custom CMS hero banners vs hardcoded mock banners, excluding unfeatured or deleted animes
-          const defaultBannerIds = new Set(['hero-alya-russian', 'hero-angel-next-door']);
-          const activeCms = (cmsBanners || []).filter((b) => {
+          // Filter CMS banners
+          const activeCms = (cmsBanners || []).filter((b: any) => {
             if (b.active === false) return false;
             const animeIdKey = (b.animeId || '').toLowerCase();
             const animeSlugKey = (b.animeSlug || '').toLowerCase();
@@ -237,7 +280,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             if (isAnimeDeleted(b.animeId) || isAnimeDeleted(b.animeSlug) || isAnimeDeleted(b.id)) return false;
             return true;
           });
-          const customCms = activeCms.filter((b) => b.id && !defaultBannerIds.has(b.id));
 
           // Combine spotlight items:
           // 1. Any custom hero banners created in Admin Hero Banners CMS
@@ -246,8 +288,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           const combinedSpotlight: any[] = [];
           const seenKeys = new Set<string>();
 
-          // Add custom CMS banners first
-          for (const banner of customCms) {
+          // Add active CMS banners first
+          for (const banner of activeCms) {
             const key = banner.animeId || banner.animeSlug || banner.id;
             if (key && !seenKeys.has(key)) {
               seenKeys.add(key);
@@ -268,15 +310,13 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             }
           }
 
-          // If no custom banners and no user-featured animes, only fall back to non-unfeatured active banners or initialBanners.
           const finalFeatured =
             combinedSpotlight.length > 0
               ? combinedSpotlight
               : activeCms.length > 0
               ? activeCms
-              : (initialBanners && initialBanners.length > 0 ? initialBanners : all.slice(0, 5));
+              : (initialBanners && initialBanners.length > 0 ? initialBanners : DEFAULT_HERO_BANNERS);
 
-          const validAll = all && all.length > 0 ? all : (initialAnimes && initialAnimes.length > 0 ? initialAnimes : []);
           const validTrending = trendingList.length > 0 ? trendingList : validAll.slice(0, 24);
           const validPopular = popularList.length > 0 ? popularList : validAll.slice(0, 24);
 
@@ -293,25 +333,25 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
 
           // Map all animes by ID and slug for fast poster enrichment
           const animeMap = new Map<string, Anime>();
-          all.forEach((a) => {
+          validAll.forEach((a) => {
             if (a.id) animeMap.set(a.id, a);
             if (a.slug) animeMap.set(a.slug, a);
           });
 
           // Filter continue watching: strictly 7 items max & no deleted animes
           const publishedAnimeIds = new Set<string>();
-          all.forEach((a) => {
+          validAll.forEach((a) => {
             if (a.id) publishedAnimeIds.add(a.id);
             if (a.slug) publishedAnimeIds.add(a.slug);
           });
           const validProgress = (progressList || [])
-            .filter((p) => !isAnimeDeleted(p.animeId) && !isAnimeDeleted(p.animeSlug) && (publishedAnimeIds.has(p.animeId) || publishedAnimeIds.has(p.animeSlug)))
+            .filter((p: any) => !isAnimeDeleted(p.animeId) && !isAnimeDeleted(p.animeSlug) && (publishedAnimeIds.has(p.animeId) || publishedAnimeIds.has(p.animeSlug)))
             .slice(0, 7);
           setContinueWatching(validProgress);
 
           // Enrich Scheduled Anime: guaranteed unique anime (no duplicates) & banner thumbnails
           const seenScheduleAnime = new Set<string>();
-          const uniqueScheduleList = (scheduleList || []).filter((item) => {
+          const uniqueScheduleList = (scheduleList || []).filter((item: any) => {
             if (isAnimeDeleted(item.animeId) || isAnimeDeleted(item.animeSlug)) return false;
             const key = item.animeId || item.animeSlug || item.animeTitle;
             if (!key) return true;
@@ -320,11 +360,11 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             return true;
           });
 
-          const enrichedSchedule = uniqueScheduleList.map((item) => {
+          const enrichedSchedule = uniqueScheduleList.map((item: any) => {
             const found =
               animeMap.get(item.animeId) ||
               (item.animeSlug ? animeMap.get(item.animeSlug) : undefined) ||
-              all.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
+              validAll.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
             const banner =
               found?.banner ||
               (found as any)?.bannerUrl ||
@@ -339,24 +379,26 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
           });
           setScheduledAnime(enrichedSchedule);
 
-          // Enrich Latest Episodes: strictly unique anime per card & banner thumbnails
-          const baseLatestEps = (latestEpList.length > 0 ? latestEpList : FALLBACK_LATEST_EPISODES).filter(
+          // Enrich Latest Episodes: deduplicate by episode identity and ensure at least 4 items
+          const candidateLatest = [...(latestEpList || []), ...FALLBACK_LATEST_EPISODES].filter(
             (item) => !isAnimeDeleted(item.episode.animeId) && !isAnimeDeleted(item.animeSlug)
           );
-          const seenLatestAnime = new Set<string>();
-          const uniqueLatestList = baseLatestEps.filter((item) => {
-            const key = item.animeSlug || item.animeTitle || item.episode.animeId;
-            if (!key) return true;
-            if (seenLatestAnime.has(key)) return false;
-            seenLatestAnime.add(key);
-            return true;
-          });
+          const seenEpisodeKeys = new Set<string>();
+          const uniqueLatestList: LatestEpisodeItem[] = [];
+
+          for (const item of candidateLatest) {
+            const epKey = item.episode?.id || `${item.episode?.animeId}-s${item.episode?.seasonNumber || 1}-e${item.episode?.episodeNumber}`;
+            if (!epKey || seenEpisodeKeys.has(epKey)) continue;
+            seenEpisodeKeys.add(epKey);
+            uniqueLatestList.push(item);
+            if (uniqueLatestList.length >= 8) break;
+          }
 
           const enrichedLatestEps = uniqueLatestList.map((item) => {
             const found =
               animeMap.get(item.episode.animeId) ||
               animeMap.get(item.animeSlug) ||
-              all.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
+              validAll.find((a) => a.title.toLowerCase() === item.animeTitle?.toLowerCase());
             const banner =
               found?.banner ||
               (found as any)?.bannerUrl ||

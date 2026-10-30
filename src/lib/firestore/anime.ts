@@ -261,8 +261,16 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
       if (matchingDef.slug) seenSlugs.add(matchingDef.slug);
     }
 
-    const poster = (fsItem as any).posterUrl || (fsItem as any).poster || matchingDef?.poster || '';
-    const banner = (fsItem as any).bannerUrl || (fsItem as any).banner || matchingDef?.banner;
+    let poster = (fsItem as any).posterUrl || (fsItem as any).poster || matchingDef?.poster || '';
+    let banner = (fsItem as any).bannerUrl || (fsItem as any).banner || matchingDef?.banner;
+
+    // Sanitize any legacy unsplash URLs to Google Drive CDN
+    if (poster && poster.includes('unsplash.com')) {
+      poster = matchingDef?.poster || 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n';
+    }
+    if (banner && banner.includes('unsplash.com')) {
+      banner = matchingDef?.banner || 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U';
+    }
 
     const mergedItem: Anime = matchingDef
       ? { ...matchingDef, ...fsItem, id, slug, poster, posterUrl: poster, banner, bannerUrl: banner }
@@ -291,15 +299,41 @@ function mergeWithDefaultAnimes(firestoreList: Anime[], publishedOnly: boolean =
 }
 
 export function getCachedPublishedAnimes(): Anime[] {
-  if (memoryPublishedAnimes) {
+  if (memoryPublishedAnimes && memoryPublishedAnimes.length > 0) {
     return memoryPublishedAnimes;
   }
   const fromStorage = getStoredCache<Anime[]>('published_animes', []);
-  if (fromStorage && Array.isArray(fromStorage)) {
-    const valid = fromStorage.filter((a) => a && (a.id || a.slug) && a.title && !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug)));
-    if (valid.length > 0 || fromStorage.length > 0) {
-      memoryPublishedAnimes = valid;
-      return valid;
+  if (fromStorage && Array.isArray(fromStorage) && fromStorage.length > 0) {
+    const valid = fromStorage.filter(
+      (a) =>
+        a &&
+        (a.id || a.slug) &&
+        a.title &&
+        a.id !== 'anime-bleach' &&
+        a.slug !== 'bleach' &&
+        !isAnimeDeleted(a.id) &&
+        (!a.slug || !isAnimeDeleted(a.slug))
+    );
+    if (valid.length > 0) {
+      // Cleanse any old unsplash URLs
+      const cleaned = valid.map((a) => {
+        const isAngel = (a.slug || a.title || '').toLowerCase().includes('angel');
+        let poster = a.poster;
+        let banner = a.banner;
+        if (poster?.includes('unsplash.com')) {
+          poster = isAngel
+            ? 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n'
+            : 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1';
+        }
+        if (banner?.includes('unsplash.com')) {
+          banner = isAngel
+            ? 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U'
+            : 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx';
+        }
+        return { ...a, poster, posterUrl: poster, banner, bannerUrl: banner };
+      });
+      memoryPublishedAnimes = cleaned;
+      return cleaned;
     }
   }
   const defaults = DEFAULT_ANIMES.filter(
@@ -316,32 +350,45 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
 
   inFlightPublishedPromise = (async () => {
     try {
-      // 1. Fetch deleted IDs with quick 1000ms timeout
-      await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
+      // 1. Fetch deleted IDs with quick 800ms timeout
+      await withTimeout(fetchDeletedAnimeIds(), 800, new Set<string>());
 
-      // 2. Fetch published animes - checks 'anime', and falls back to 'Anime' / 'animes'
-      const collectionNames = ['anime', 'Anime', 'animes'];
+      // 2. Fetch published animes directly from 'anime'
       const allDocs: any[] = [];
       const seenDocIds = new Set<string>();
 
-      for (const coll of collectionNames) {
+      try {
+        const q = query(
+          collection(db, ANIME_COLLECTION),
+          where('published', '==', true)
+        );
+        const snapshot = await withTimeout(getDocs(q), 3500, null);
+        if (snapshot && !snapshot.empty) {
+          for (const docSnap of snapshot.docs) {
+            if (!seenDocIds.has(docSnap.id)) {
+              seenDocIds.add(docSnap.id);
+              allDocs.push(docSnap);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Direct anime query fallback:', err);
+      }
+
+      // If published query was empty, try all docs in 'anime'
+      if (allDocs.length === 0) {
         try {
-          const q = query(
-            collection(db, coll),
-            where('published', '==', true)
-          );
-          const snapshot = await withTimeout(getDocs(q), 1800, null);
+          const snapshot = await withTimeout(getDocs(collection(db, ANIME_COLLECTION)), 3000, null);
           if (snapshot && !snapshot.empty) {
             for (const docSnap of snapshot.docs) {
-              if (!seenDocIds.has(docSnap.id)) {
+              const data = docSnap.data();
+              if (data.published !== false && !seenDocIds.has(docSnap.id)) {
                 seenDocIds.add(docSnap.id);
                 allDocs.push(docSnap);
               }
             }
           }
-        } catch {
-          // ignore error per collection
-        }
+        } catch {}
       }
 
       if (allDocs.length > 0) {
@@ -357,10 +404,9 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
           if (timeB !== timeA) return timeB - timeA;
           return (b.viewsCount || 0) - (a.viewsCount || 0);
         });
-        const finalResult = merged;
-        memoryPublishedAnimes = finalResult;
-        setStoredCache('published_animes', finalResult);
-        return finalResult;
+        memoryPublishedAnimes = merged;
+        setStoredCache('published_animes', merged);
+        return merged;
       } else {
         const merged = mergeWithDefaultAnimes([], true);
         memoryPublishedAnimes = merged;

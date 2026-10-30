@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { securityHeadersMiddleware, createRateLimiter, validateVideoUrlServer } from './server/security';
 import adminRoutes from './server/routes/admin';
 import communityRoutes from './server/routes/community';
+import driveAvatarsRouter from './server/routes/drive-avatars';
 
 async function startServer() {
   const app = express();
@@ -47,6 +48,9 @@ async function startServer() {
 
   // Community Submission API routes (rate-limited and sanitized)
   app.use('/api', communityRoutes);
+
+  // Google Drive Profile Pictures (PFPs) API route
+  app.use('/api/drive-avatars', driveAvatarsRouter);
 
   // 5. Global safe error handling middleware (Never leak technical stack traces to clients)
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

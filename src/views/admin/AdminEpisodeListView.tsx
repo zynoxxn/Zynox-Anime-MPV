@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { Episode } from '../../types/episode';
 import type { Anime } from '../../types/anime';
-import { getAllEpisodesByAnimeId, deleteEpisode, updateEpisode } from '../../lib/firestore/episodes';
+import { getAllEpisodesByAnimeId, deleteEpisode, updateEpisode, deleteEpisodesBySeason } from '../../lib/firestore/episodes';
 import { getAllAnimes, cleanAnimeTitle } from '../../lib/firestore/anime';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
@@ -114,6 +114,28 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
     }
   };
 
+  const handleDeleteSeasonEpisodes = async () => {
+    if (selectedAnimeId === 'all' || selectedSeason === 'all') return;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete all episodes for Season ${selectedSeason}? You can then re-add clean episodes (Ep 1, Ep 2...) via Bulk Add.`
+      )
+    ) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const count = await deleteEpisodesBySeason(selectedAnimeId, selectedSeason);
+      onShowMessage(`Deleted ${count} episodes for Season ${selectedSeason}.`);
+      await fetchInitialData();
+    } catch (err: any) {
+      console.error('Failed to delete season episodes:', err);
+      onShowMessage(err.message || 'Failed to delete season episodes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getAnimeTitle = (animeId: string): string => {
     const found = animes.find((a) => a.id === animeId || a.slug === animeId);
     return found ? found.title : animeId;
@@ -212,6 +234,18 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
               <PlusCircle className="w-4 h-4" />
               <span>Add Episode</span>
             </button>
+
+            {selectedAnimeId !== 'all' && selectedSeason !== 'all' && (
+              <button
+                type="button"
+                onClick={handleDeleteSeasonEpisodes}
+                className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                title={`Delete all Season ${selectedSeason} episodes to start fresh`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete S{selectedSeason} Eps</span>
+              </button>
+            )}
           </div>
         </div>
 

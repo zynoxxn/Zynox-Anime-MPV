@@ -137,8 +137,44 @@ export async function getAllEpisodes(): Promise<Episode[]> {
   return getAllEpisodesByAnimeId();
 }
 
+export function normalizeSeasonEpisodeNumbers(ep: Episode): Episode {
+  if (!ep) return ep;
+  const sNum = ep.seasonNumber || ep.season || 1;
+  // If Season 2 was stored with cumulative numbers (e.g. Ep 13..24 instead of 1..12)
+  if (sNum === 2 && ep.episodeNumber >= 13) {
+    const normalizedEpNum = ep.episodeNumber - 12;
+    if (ep.id) {
+      try {
+        const docRef = doc(db, EPISODES_COLLECTION, ep.id);
+        updateDoc(docRef, { episodeNumber: normalizedEpNum }).catch(() => {});
+      } catch {}
+    }
+    const cleanTitle = ep.title ? ep.title.replace(new RegExp(`Episode\\s*${ep.episodeNumber}`, 'i'), `Episode ${normalizedEpNum}`) : `Episode ${normalizedEpNum}`;
+    return {
+      ...ep,
+      episodeNumber: normalizedEpNum,
+      title: cleanTitle,
+    };
+  }
+  // Generic fallback if Season 3 was stored with >= 25
+  if (sNum === 3 && ep.episodeNumber >= 25) {
+    const normalizedEpNum = ep.episodeNumber - 24;
+    if (ep.id) {
+      try {
+        const docRef = doc(db, EPISODES_COLLECTION, ep.id);
+        updateDoc(docRef, { episodeNumber: normalizedEpNum }).catch(() => {});
+      } catch {}
+    }
+    return {
+      ...ep,
+      episodeNumber: normalizedEpNum,
+    };
+  }
+  return ep;
+}
+
 export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Episode[]> {
-  const defaults = generateFallbackEpisodes(animeId);
+  const defaults = generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
   try {
     const targetIds = new Set<string>([animeId]);
     try {
@@ -163,7 +199,7 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
         list = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<Episode, 'id'>),
-        }));
+        })).map(normalizeSeasonEpisodeNumbers);
       }
     } catch {
       try {
@@ -178,7 +214,8 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
               id: docSnap.id,
               ...(docSnap.data() as Omit<Episode, 'id'>),
             }))
-            .filter((ep) => ep.published !== false);
+            .filter((ep) => ep.published !== false)
+            .map(normalizeSeasonEpisodeNumbers);
         }
       } catch {}
     }
@@ -250,13 +287,14 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
           .filter((ep) => !isAnimeDeleted(ep.animeId));
       }
 
-      const defaults = generateFallbackEpisodes(animeId);
+      const defaults = generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
       if (list.length === 0) return defaults;
       const map = new Map<string, Episode>();
       for (const d of defaults) {
         map.set(`s${d.seasonNumber || d.season || 1}-e${d.episodeNumber}`, d);
       }
-      for (const ep of list) {
+      for (const rawEp of list) {
+        const ep = normalizeSeasonEpisodeNumbers(rawEp);
         map.set(`s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`, ep);
       }
       return Array.from(map.values()).map(sanitizeEpisodeStreamUrls).sort((a, b) => {
@@ -275,12 +313,14 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
         id: docSnap.id,
         ...(docSnap.data() as Omit<Episode, 'id'>),
       }))
-      .filter((ep) => !isAnimeDeleted(ep.animeId));
+      .filter((ep) => !isAnimeDeleted(ep.animeId))
+      .map(normalizeSeasonEpisodeNumbers);
 
     const map = new Map<string, Episode>();
     for (const [aId, epList] of Object.entries(DEFAULT_EPISODES)) {
       if (isAnimeDeleted(aId)) continue;
-      for (const ep of epList) {
+      for (const d of epList) {
+        const ep = normalizeSeasonEpisodeNumbers(d);
         map.set(`${ep.animeId}-s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`, ep);
       }
     }
@@ -296,12 +336,12 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
   } catch (err) {
     console.warn('Failed to get all episodes:', err);
     if (animeId) {
-      return generateFallbackEpisodes(animeId);
+      return generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
     }
     const allDefaults: Episode[] = [];
     for (const [aId, epList] of Object.entries(DEFAULT_EPISODES)) {
       if (isAnimeDeleted(aId)) continue;
-      allDefaults.push(...epList.map(sanitizeEpisodeStreamUrls));
+      allDefaults.push(...epList.map(normalizeSeasonEpisodeNumbers).map(sanitizeEpisodeStreamUrls));
     }
     return allDefaults;
   }
@@ -311,7 +351,7 @@ export async function getEpisodeById(id: string): Promise<Episode | null> {
   if (!id) return null;
   // 1. Quick check default catalog first
   for (const [, epList] of Object.entries(DEFAULT_EPISODES)) {
-    const match = epList.find((e) => e.id === id);
+    const match = epList.map(normalizeSeasonEpisodeNumbers).find((e) => e.id === id);
     if (match) return sanitizeEpisodeStreamUrls(match);
   }
 
@@ -321,10 +361,12 @@ export async function getEpisodeById(id: string): Promise<Episode | null> {
     if (docSnap && docSnap.exists()) {
       const data = docSnap.data() as Episode;
       if (isAnimeDeleted(data.animeId)) return null;
-      return sanitizeEpisodeStreamUrls({
-        id: docSnap.id,
-        ...data,
-      });
+      return sanitizeEpisodeStreamUrls(
+        normalizeSeasonEpisodeNumbers({
+          id: docSnap.id,
+          ...data,
+        })
+      );
     }
     return null;
   } catch (err) {
@@ -333,56 +375,34 @@ export async function getEpisodeById(id: string): Promise<Episode | null> {
   }
 }
 
-export async function getEpisodeByAnimeAndNumber(animeId: string, episodeNumber: number): Promise<Episode | null> {
+export async function getEpisodeByAnimeAndNumber(
+  animeId: string,
+  episodeNumber: number,
+  seasonNumber?: number
+): Promise<Episode | null> {
   if (!animeId || isNaN(episodeNumber)) return null;
 
   // 1. Quick check default catalog first
-  const fallbacks = generateFallbackEpisodes(animeId);
-  const defaultMatch = fallbacks.find((e) => Number(e.episodeNumber) === Number(episodeNumber));
+  const fallbacks = generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
+  const defaultMatch = fallbacks.find((e) => {
+    const sMatch = seasonNumber ? Number(e.seasonNumber || e.season || 1) === Number(seasonNumber) : true;
+    return sMatch && Number(e.episodeNumber) === Number(episodeNumber);
+  });
 
   try {
-    const targetIds = new Set<string>([animeId]);
-    try {
-      const anime = await getAnimeById(animeId);
-      if (anime) {
-        if (anime.id) targetIds.add(anime.id);
-        if (anime.slug) targetIds.add(anime.slug);
+    // 2. Fetch all episodes for this anime and find the exact season + episode
+    const allAnimeEpisodes = await getAllEpisodesByAnimeId(animeId);
+    if (allAnimeEpisodes.length > 0) {
+      const match = allAnimeEpisodes.find((e) => {
+        const sMatch = seasonNumber ? Number(e.seasonNumber || e.season || 1) === Number(seasonNumber) : true;
+        const numMatch =
+          Number(e.episodeNumber) === Number(episodeNumber) ||
+          (seasonNumber === 2 && Number(e.episodeNumber) === Number(episodeNumber) + 12);
+        return sMatch && numMatch;
+      });
+      if (match) {
+        return sanitizeEpisodeStreamUrls(normalizeSeasonEpisodeNumbers(match));
       }
-    } catch {}
-
-    const idList = Array.from(targetIds);
-    try {
-      const q = query(
-        collection(db, EPISODES_COLLECTION),
-        where('animeId', 'in', idList.slice(0, 10)),
-        where('episodeNumber', '==', episodeNumber)
-      );
-      const snapshot = await withTimeout(getDocs(q), 1800, null);
-      if (snapshot && !snapshot.empty) {
-        const firstDoc = snapshot.docs[0];
-        return sanitizeEpisodeStreamUrls({
-          id: firstDoc.id,
-          ...defaultMatch,
-          ...(firstDoc.data() as Omit<Episode, 'id'>),
-        });
-      }
-    } catch {
-      try {
-        const q = query(
-          collection(db, EPISODES_COLLECTION),
-          where('animeId', '==', animeId),
-          where('episodeNumber', '==', episodeNumber)
-        );
-        const snapshot = await withTimeout(getDocs(q), 1500, null);
-        if (snapshot && !snapshot.empty) {
-          const firstDoc = snapshot.docs[0];
-          return sanitizeEpisodeStreamUrls({
-            id: firstDoc.id,
-            ...defaultMatch,
-            ...(firstDoc.data() as Omit<Episode, 'id'>),
-          });
-        }
-      } catch {}
     }
 
     return defaultMatch ? sanitizeEpisodeStreamUrls(defaultMatch) : null;
@@ -530,10 +550,16 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
     }
 
     const result: LatestEpisodeItem[] = [];
-    const seenAnimeKeys = new Set<string>();
+    const seenEpisodeKeys = new Set<string>();
 
     for (const ep of allEpisodes) {
       if (result.length >= limitCount) break;
+
+      const epKey = `${ep.animeId}-s${ep.seasonNumber || (ep as any).season || 1}-e${ep.episodeNumber}`;
+      if (seenEpisodeKeys.has(epKey)) {
+        continue;
+      }
+      seenEpisodeKeys.add(epKey);
 
       let animeInfo = animeLookup.get(ep.animeId);
       if (!animeInfo && (ep as any).animeSlug) {
@@ -557,14 +583,21 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
         } catch {}
       }
 
-      const dedupeKey = animeInfo?.slug || animeInfo?.title || (ep as any).animeSlug || ep.animeId;
-      if (dedupeKey && seenAnimeKeys.has(dedupeKey)) {
-        continue; // Prevent adding the same anime multiple times
-      }
-      if (dedupeKey) seenAnimeKeys.add(dedupeKey);
-
       if (animeInfo) {
-        const episodeBanner = animeInfo.banner || animeInfo.poster || ep.thumbnail || '';
+        let episodeBanner = animeInfo.banner || animeInfo.poster || ep.thumbnail || '';
+        let animePoster = animeInfo.poster || episodeBanner;
+
+        // Sanitize any unsplash URLs to Google Drive CDN
+        if (episodeBanner.includes('unsplash.com') || animePoster.includes('unsplash.com')) {
+          const isAngel = (animeInfo.slug || animeInfo.title).toLowerCase().includes('angel');
+          episodeBanner = isAngel
+            ? 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U'
+            : 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx';
+          animePoster = isAngel
+            ? 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n'
+            : 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1';
+        }
+
         result.push({
           episode: {
             ...ep,
@@ -572,7 +605,7 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
           },
           animeTitle: animeInfo.title,
           animeSlug: animeInfo.slug,
-          animePoster: animeInfo.poster || episodeBanner,
+          animePoster: animePoster,
           animeBanner: episodeBanner,
         });
       } else {
@@ -701,6 +734,25 @@ export async function deleteEpisode(id: string): Promise<void> {
   }
 }
 
+export async function deleteEpisodesBySeason(animeId: string, seasonNumber: number): Promise<number> {
+  if (!animeId) return 0;
+  try {
+    const all = await getAllEpisodesByAnimeId(animeId);
+    const toDelete = all.filter(
+      (ep) => Number(ep.seasonNumber || ep.season || 1) === Number(seasonNumber) && ep.id
+    );
+    for (const ep of toDelete) {
+      if (ep.id) {
+        await deleteDoc(doc(db, EPISODES_COLLECTION, ep.id)).catch(() => {});
+      }
+    }
+    return toDelete.length;
+  } catch (err) {
+    console.error('Failed to delete episodes by season:', err);
+    throw err;
+  }
+}
+
 export interface BulkEpisodeItemInput {
   episodeNumber: number;
   title?: string;
@@ -759,8 +811,8 @@ export async function bulkCreateEpisodes(
       const data = d.data() as Episode;
       if (typeof data.episodeNumber === 'number') {
         const sNum = data.seasonNumber || data.season || 1;
+        // Strictly index by season + episode to prevent cross-season overwrites
         existingMap.set(`${sNum}_${data.episodeNumber}`, d.id);
-        existingMap.set(`single_${data.episodeNumber}`, d.id);
       }
     });
 
@@ -778,8 +830,7 @@ export async function bulkCreateEpisodes(
         try {
           const sNum = item.seasonNumber || item.season || 1;
           const key = `${sNum}_${item.episodeNumber}`;
-          const singleKey = `single_${item.episodeNumber}`;
-          const existingDocId = existingMap.get(key) || existingMap.get(singleKey);
+          const existingDocId = existingMap.get(key);
 
           const episodePayload: Record<string, any> = {
             animeId,
@@ -823,6 +874,23 @@ export async function bulkCreateEpisodes(
 
           if (item.downloadUrl) {
             episodePayload.downloadUrl = item.downloadUrl;
+            if (!item.downloadLinks || item.downloadLinks.length === 0) {
+              const hostName = item.downloadUrl.includes('drive.google')
+                ? 'Google Drive'
+                : item.downloadUrl.includes('mega')
+                ? 'Mega'
+                : item.downloadUrl.includes('mediafire')
+                ? 'MediaFire'
+                : 'Direct Download';
+              episodePayload.downloadLinks = [
+                {
+                  quality: item.downloadQuality || item.quality || '1080p Ultra HD',
+                  size: item.downloadSize || '320 MB',
+                  url: item.downloadUrl,
+                  host: hostName,
+                },
+              ];
+            }
           }
           if (item.downloadLinks && item.downloadLinks.length > 0) {
             episodePayload.downloadLinks = item.downloadLinks;

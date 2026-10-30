@@ -7,6 +7,7 @@ import {
   getEpisodeById,
   updateEpisode,
   getAllEpisodesByAnimeId,
+  normalizeSeasonEpisodeNumbers,
 } from '../../lib/firestore/episodes';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
@@ -138,6 +139,70 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingEpisodes, setExistingEpisodes] = useState<Episode[]>([]);
+  const [seasonNotice, setSeasonNotice] = useState<string | null>(null);
+
+  const detectNextSeasonAndEpisode = (
+    targetAnime: Anime | undefined,
+    allEps: Episode[],
+    requestedSeason?: number
+  ): { season: number; epNum: number; notice: string | null } => {
+    const normalizedEps = allEps.map(normalizeSeasonEpisodeNumbers);
+    if (requestedSeason !== undefined) {
+      const sEps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === requestedSeason);
+      const maxEp = sEps.length > 0 ? Math.max(...sEps.map((e) => e.episodeNumber)) : 0;
+      return { season: requestedSeason, epNum: maxEp + 1, notice: null };
+    }
+
+    // 1. If anime has defined seasonsList
+    if (targetAnime?.seasonsList && targetAnime.seasonsList.length > 0) {
+      const sorted = [...targetAnime.seasonsList].sort((a, b) => a.seasonNumber - b.seasonNumber);
+      for (const s of sorted) {
+        const sNum = s.seasonNumber || 1;
+        const sTotal = Number(s.totalEpisodes) || Number(targetAnime.totalEpisodes) || 12;
+        const sEps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === sNum);
+
+        // If season has room for more episodes
+        if (sEps.length < sTotal) {
+          const maxEp = sEps.length > 0 ? Math.max(...sEps.map((e) => e.episodeNumber)) : 0;
+          return { season: sNum, epNum: maxEp + 1, notice: null };
+        }
+      }
+
+      // If all configured seasons in list are complete (e.g. S1 has 12/12):
+      const lastSeason = sorted[sorted.length - 1];
+      const lastSeasonNum = lastSeason.seasonNumber || 1;
+      const lastSeasonTotal = Number(lastSeason.totalEpisodes) || 12;
+      const lastSeasonEps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === lastSeasonNum);
+
+      if (lastSeasonEps.length >= lastSeasonTotal) {
+        const nextSeasonNum = lastSeasonNum + 1;
+        const nextSeasonEps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === nextSeasonNum);
+        const nextEp = nextSeasonEps.length > 0 ? Math.max(...nextSeasonEps.map((e) => e.episodeNumber)) + 1 : 1;
+        return {
+          season: nextSeasonNum,
+          epNum: nextEp,
+          notice: `Season ${lastSeasonNum} has reached its total episodes (${lastSeasonTotal}/${lastSeasonTotal}). Automatically selected Season ${nextSeasonNum} Episode ${nextEp}.`,
+        };
+      }
+    }
+
+    // 2. Fallback if no seasonsList
+    const total = Number(targetAnime?.totalEpisodes) || 12;
+    const s1Eps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === 1);
+    if (s1Eps.length >= total) {
+      const s2Eps = normalizedEps.filter((e) => (e.seasonNumber || e.season || 1) === 2);
+      const nextEp = s2Eps.length > 0 ? Math.max(...s2Eps.map((e) => e.episodeNumber)) + 1 : 1;
+      return {
+        season: 2,
+        epNum: nextEp,
+        notice: `Season 1 has reached its total episodes (${total}/${total}). Automatically switched to Season 2 Episode ${nextEp}.`,
+      };
+    } else {
+      const maxEp = s1Eps.length > 0 ? Math.max(...s1Eps.map((e) => e.episodeNumber)) : 0;
+      return { season: 1, epNum: maxEp + 1, notice: null };
+    }
+  };
 
   useEffect(() => {
     const initForm = async () => {
@@ -355,11 +420,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           const defaultAnimeId =
             queryAnimeId || (animeList.length > 0 ? (animeList[0].id || animeList[0].slug) : '');
           setSelectedAnimeId(defaultAnimeId);
-          if (querySeason) {
-            setSeasonNumber(parseInt(querySeason, 10) || 1);
-          }
 
-          // Auto-set thumbnail from anime banner
           const foundAnime = animeList.find((a) => a.id === defaultAnimeId || a.slug === defaultAnimeId);
           if (foundAnime) {
             setThumbnail(foundAnime.banner || (foundAnime as any).bannerUrl || foundAnime.poster || '');
@@ -368,9 +429,17 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           if (defaultAnimeId) {
             try {
               const existingEps = await getAllEpisodesByAnimeId(defaultAnimeId);
-              setEpisodeNumber(existingEps.length + 1);
+              setExistingEpisodes(existingEps);
+              const forcedSeason = querySeason ? parseInt(querySeason, 10) : undefined;
+              const next = detectNextSeasonAndEpisode(foundAnime, existingEps, forcedSeason);
+              setSeasonNumber(next.season);
+              setEpisodeNumber(next.epNum);
+              setTitle(`Episode ${next.epNum}`);
+              setSeasonNotice(next.notice);
             } catch {
               setEpisodeNumber(1);
+              setSeasonNumber(1);
+              setTitle('Episode 1');
             }
           }
         }
@@ -393,9 +462,40 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     if (!isEditMode && newAnimeId) {
       try {
         const existingEps = await getAllEpisodesByAnimeId(newAnimeId);
-        setEpisodeNumber(existingEps.length + 1);
+        setExistingEpisodes(existingEps);
+        const next = detectNextSeasonAndEpisode(foundAnime, existingEps);
+        setSeasonNumber(next.season);
+        setEpisodeNumber(next.epNum);
+        setTitle(`Episode ${next.epNum}`);
+        setSeasonNotice(next.notice);
       } catch {
-        // keep current
+        setEpisodeNumber(1);
+        setSeasonNumber(1);
+      }
+    }
+  };
+
+  const handleSeasonChange = (newSeasonNumber: number) => {
+    setSeasonNumber(newSeasonNumber);
+    if (!isEditMode) {
+      const sEps = existingEpisodes
+        .map(normalizeSeasonEpisodeNumbers)
+        .filter((e) => (e.seasonNumber || e.season || 1) === newSeasonNumber);
+      const maxEp = sEps.length > 0 ? Math.max(...sEps.map((e) => e.episodeNumber)) : 0;
+      const nextEp = maxEp + 1;
+      setEpisodeNumber(nextEp);
+      if (!title || title.startsWith('Episode ')) {
+        setTitle(`Episode ${nextEp}`);
+      }
+
+      const sDef = selectedAnime?.seasonsList?.find((s) => s.seasonNumber === newSeasonNumber);
+      const targetTotal = Number(sDef?.totalEpisodes) || Number(selectedAnime?.totalEpisodes) || 12;
+      if (sEps.length >= targetTotal) {
+        setSeasonNotice(
+          `Season ${newSeasonNumber} has all ${sEps.length}/${targetTotal} episodes completed. Adding this will create Episode ${nextEp}.`
+        );
+      } else {
+        setSeasonNotice(null);
       }
     }
   };
@@ -710,6 +810,13 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 sm:p-8 space-y-4">
             <h3 className="text-sm font-bold text-white">General Episode Metadata</h3>
 
+            {seasonNotice && (
+              <div className="p-3.5 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl flex items-center gap-3 text-cyan-300 text-xs">
+                <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>{seasonNotice}</span>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-xs font-bold text-[#94A3B8]">Target Anime Series *</label>
@@ -753,25 +860,37 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
                     type="number"
                     min={1}
                     value={seasonNumber}
-                    onChange={(e) => setSeasonNumber(parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) => handleSeasonChange(parseInt(e.target.value, 10) || 1)}
                     className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
                   />
                   {selectedAnime?.seasonsList && selectedAnime.seasonsList.length > 0 && (
                     <div className="flex items-center gap-1.5 pt-1 overflow-x-auto no-scrollbar">
-                      {selectedAnime.seasonsList.map((s) => (
-                        <button
-                          key={s.seasonNumber}
-                          type="button"
-                          onClick={() => setSeasonNumber(s.seasonNumber)}
-                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all cursor-pointer ${
-                            seasonNumber === s.seasonNumber
-                              ? 'bg-cyan-500 text-black shadow-sm'
-                              : 'bg-white/5 text-[#94A3B8] hover:text-white'
-                          }`}
-                        >
-                          {s.title || `S${s.seasonNumber}`}
-                        </button>
-                      ))}
+                      {selectedAnime.seasonsList.map((s) => {
+                        const sEps = existingEpisodes.filter(
+                          (e) => (e.seasonNumber || e.season || 1) === s.seasonNumber
+                        );
+                        const sTotal = Number(s.totalEpisodes) || Number(selectedAnime?.totalEpisodes) || 12;
+                        const isComplete = sEps.length >= sTotal;
+                        return (
+                          <button
+                            key={s.seasonNumber}
+                            type="button"
+                            onClick={() => handleSeasonChange(s.seasonNumber)}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
+                              seasonNumber === s.seasonNumber
+                                ? 'bg-cyan-500 text-black shadow-sm'
+                                : isComplete
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                : 'bg-white/5 text-[#94A3B8] hover:text-white'
+                            }`}
+                          >
+                            <span>{s.title || `S${s.seasonNumber}`}</span>
+                            <span className="text-[9px] opacity-75">
+                              ({sEps.length}/{sTotal})
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

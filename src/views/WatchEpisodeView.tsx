@@ -172,9 +172,12 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
         let epData: Episode | null = null;
         const parsedEpNum = Number(episodeNumberOrId);
+        const searchParams = new URLSearchParams(window.location.search);
+        const querySeason = searchParams.get('season') || searchParams.get('s');
+        const seasonNum = querySeason ? parseInt(querySeason, 10) : undefined;
 
         if (!isNaN(parsedEpNum) && animeData.id) {
-          epData = await getEpisodeByAnimeAndNumber(animeData.id, parsedEpNum);
+          epData = await getEpisodeByAnimeAndNumber(animeData.id, parsedEpNum, seasonNum);
         }
 
         if (!epData) {
@@ -537,7 +540,12 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     ? validateVideoUrl(currentUrl)
     : { isValid: false, hostname: '', error: validationError || 'No video URL provided.' };
 
-  const currentIndex = allEpisodes.findIndex((e) => e.episodeNumber === episode.episodeNumber);
+  const currentSeason = Number(episode.seasonNumber || episode.season || 1);
+  const currentIndex = allEpisodes.findIndex(
+    (e) =>
+      (episode.id && e.id === episode.id) ||
+      (Number(e.seasonNumber || e.season || 1) === currentSeason && e.episodeNumber === episode.episodeNumber)
+  );
   const prevEpisode = currentIndex > 0 ? allEpisodes[currentIndex - 1] : null;
   const nextEpisode = currentIndex < allEpisodes.length - 1 ? allEpisodes[currentIndex + 1] : null;
 
@@ -605,7 +613,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
   const handlePlayNext = () => {
     if (nextEpisode) {
-      navigate(`/anime/${anime.slug}/episode/${nextEpisode.episodeNumber}`);
+      const nextSeason = nextEpisode.seasonNumber || nextEpisode.season || 1;
+      navigate(`/anime/${anime.slug}/episode/${nextEpisode.episodeNumber}?season=${nextSeason}`);
     }
   };
 
@@ -900,10 +909,11 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               <button
                 type="button"
                 disabled={!prevEpisode}
-                onClick={() =>
-                  prevEpisode &&
-                  navigate(`/anime/${anime.slug}/episode/${prevEpisode.episodeNumber}`)
-                }
+                onClick={() => {
+                  if (!prevEpisode) return;
+                  const prevSeason = prevEpisode.seasonNumber || prevEpisode.season || 1;
+                  navigate(`/anime/${anime.slug}/episode/${prevEpisode.episodeNumber}?season=${prevSeason}`);
+                }}
                 className="px-3 py-1.5 hover:bg-[#081426] disabled:opacity-30 disabled:pointer-events-none text-[#F8FAFC] text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -913,10 +923,11 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               <button
                 type="button"
                 disabled={!nextEpisode}
-                onClick={() =>
-                  nextEpisode &&
-                  navigate(`/anime/${anime.slug}/episode/${nextEpisode.episodeNumber}`)
-                }
+                onClick={() => {
+                  if (!nextEpisode) return;
+                  const nextSeason = nextEpisode.seasonNumber || nextEpisode.season || 1;
+                  navigate(`/anime/${anime.slug}/episode/${nextEpisode.episodeNumber}?season=${nextSeason}`);
+                }}
                 className="px-3.5 py-1.5 bg-[#1683FF] hover:bg-[#2196FF] disabled:opacity-30 disabled:pointer-events-none text-white font-extrabold text-xs rounded-lg transition-all flex items-center gap-1 shadow-md shadow-[#1683FF]/20 cursor-pointer"
               >
                 <span>Next</span>
@@ -1076,8 +1087,10 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
         seasonsList={anime.seasonsList}
         isAnimeUpcoming={isAnimeUpcoming}
         currentEpisodeNumber={episode.episodeNumber}
+        currentSeasonNumber={episode.seasonNumber || episode.season || 1}
+        currentEpisodeId={episode.id}
         watchedEpisodeNumbers={watchedEpNumbers}
-        onSelectEpisode={(epNum) => navigate(`/anime/${anime.slug}/episode/${epNum}`)}
+        onSelectEpisode={(epNum, epSeason) => navigate(`/anime/${anime.slug}/episode/${epNum}?season=${epSeason || 1}`)}
         onNavigateSeasonAnime={(seasonSlug) => navigate(`/anime/${seasonSlug}`)}
         onDownloadEpisode={(ep) => {
           const epSeason = ep.seasonNumber || ep.season || 1;

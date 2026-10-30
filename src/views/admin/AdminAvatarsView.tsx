@@ -8,6 +8,9 @@ import {
   deleteAnimeAvatar,
   deleteBulkAnimeAvatars,
   resetDefaultAnimeAvatars,
+  DEFAULT_DRIVE_FOLDER_ID,
+  DEFAULT_DRIVE_FOLDER_URL,
+  syncDriveAvatarsToFirestore,
 } from '../../lib/firestore/avatars';
 import { compressAvatarImage } from '../../lib/image-compress';
 import {
@@ -23,6 +26,9 @@ import {
   Image as ImageIcon,
   CheckSquare,
   Square,
+  FolderSync,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 interface AdminAvatarsViewProps {
@@ -68,6 +74,7 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
   const bulkFilesRef = useRef<HTMLInputElement>(null);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
 
   const loadData = async (forceRefresh = false) => {
     setLoading(true);
@@ -85,6 +92,33 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleSyncDrive = async () => {
+    setIsSyncingDrive(true);
+    try {
+      await loadData(true);
+      onShowMessage('Google Drive folder synced! Latest PFPs are loaded.');
+    } catch (err) {
+      console.error(err);
+      onShowMessage('Failed to sync Google Drive folder.');
+    } finally {
+      setIsSyncingDrive(false);
+    }
+  };
+
+  const handleSaveDriveToCatalog = async () => {
+    setIsSyncingDrive(true);
+    try {
+      const count = await syncDriveAvatarsToFirestore();
+      await loadData(true);
+      onShowMessage(`Saved ${count} Google Drive avatars permanently to database catalog!`);
+    } catch (err) {
+      console.error(err);
+      onShowMessage('Failed to save to database catalog.');
+    } finally {
+      setIsSyncingDrive(false);
+    }
+  };
 
   // --- Single Upload Handlers ---
   const handleSingleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,6 +396,68 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
               <Plus className="w-4 h-4" />
               <span>Add Avatar</span>
             </button>
+          </div>
+        </div>
+
+        {/* Google Drive PFP Live Integration Banner */}
+        <div className="bg-gradient-to-r from-[#0C1A33] via-[#0E2244] to-[#0A162B] border border-[#1683FF]/30 p-5 rounded-3xl relative overflow-hidden shadow-xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#1683FF]/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center shrink-0 shadow-lg shadow-[#1683FF]/20">
+                <FolderSync className="w-6 h-6 text-[#00CFFF]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-bold text-white tracking-wide">
+                    Google Drive PFP Sync Active
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live Connected
+                  </span>
+                </div>
+                <p className="text-xs text-[#94A3B8] mt-1">
+                  Folder: <span className="text-[#CBD5E1] font-mono">Pfp ({DEFAULT_DRIVE_FOLDER_ID})</span>
+                  <span className="mx-2 text-white/20">•</span>
+                  Jab bhi aap folder me new photos upload karoge, wo automatic yaha &amp; user avatar picker me show hongi.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href={DEFAULT_DRIVE_FOLDER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#CBD5E1] hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Drive</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={handleSyncDrive}
+                disabled={isSyncingDrive}
+                className="px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white text-xs font-bold shadow-lg shadow-[#1683FF]/30 flex items-center gap-2 transition-all hover:scale-105 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingDrive ? 'animate-spin' : ''}`} />
+                <span>{isSyncingDrive ? 'Syncing...' : 'Sync Now'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveDriveToCatalog}
+                disabled={isSyncingDrive}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Permanently copy all drive avatars into Firestore"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Save to Database</span>
+              </button>
+            </div>
           </div>
         </div>
 

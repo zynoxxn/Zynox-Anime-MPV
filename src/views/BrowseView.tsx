@@ -47,6 +47,7 @@ interface BrowseViewProps {
   initialStatus?: string;
   initialYear?: string;
   initialLanguage?: string;
+  initialLetter?: string;
   initialSort?: string;
 }
 
@@ -59,6 +60,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   initialStatus = 'all',
   initialYear = 'all',
   initialLanguage = 'all',
+  initialLetter = 'all',
   initialSort = 'latest',
 }) => {
   const [query, setQuery] = useState(initialQuery);
@@ -67,7 +69,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   const [type, setType] = useState<string>(initialType);
   const [year, setYear] = useState<string>(initialYear);
   const [language, setLanguage] = useState<string>(initialLanguage);
-  const [selectedLetter, setSelectedLetter] = useState<string>('all');
+  const [selectedLetter, setSelectedLetter] = useState<string>(initialLetter || 'all');
   const [sortBy, setSortBy] = useState<any>(initialSort || 'latest');
   const initialCached = getCachedPublishedAnimes();
   const [animes, setAnimes] = useState<Anime[]>(initialCached);
@@ -147,6 +149,12 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     if (initialSort) setSortBy(initialSort);
   }, [initialSort]);
 
+  useEffect(() => {
+    if (initialLetter) {
+      setSelectedLetter(initialLetter);
+    }
+  }, [initialLetter]);
+
   const ALPHABET = ['all', '#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
 
   const fetchFiltered = async () => {
@@ -164,13 +172,26 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
 
       // Filter by starting letter if selected
       let filtered = results;
-      if (selectedLetter !== 'all') {
-        if (selectedLetter === '#') {
-          filtered = results.filter((a) => /^[0-9]/.test((a.title || '').trim()));
+      const cleanLetter = (selectedLetter || '').trim().toUpperCase();
+      if (cleanLetter && cleanLetter !== 'ALL') {
+        const isNum = cleanLetter === '#' || cleanLetter === '0-9';
+        if (isNum) {
+          filtered = results.filter((a) => {
+            const rawTitle = (a.title || '').trim();
+            const cleanTitle = (a.title || '').replace(/^["'\s]+/, '');
+            return /^[0-9#]/.test(cleanTitle) || /^[0-9#]/.test(rawTitle);
+          });
         } else {
-          filtered = results.filter((a) =>
-            (a.title || '').trim().toUpperCase().startsWith(selectedLetter)
-          );
+          filtered = results.filter((a) => {
+            const rawTitle = (a.title || '').trim().toUpperCase();
+            const cleanTitle = (a.title || '').replace(/^["'\s]+/, '').toUpperCase();
+            const jpTitle = (a.japaneseTitle || '').trim().toUpperCase();
+            return (
+              rawTitle.startsWith(cleanLetter) ||
+              cleanTitle.startsWith(cleanLetter) ||
+              jpTitle.startsWith(cleanLetter)
+            );
+          });
         }
       }
 
@@ -574,7 +595,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
 
           {selectedLetter !== 'all' && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-[#00A8FF]/15 text-[#00A8FF] border border-[#00A8FF]/30 font-medium">
-              <span>Letter: {selectedLetter.toUpperCase()}</span>
+              <span>Letter: {selectedLetter === '0-9' ? '#' : selectedLetter.toUpperCase()}</span>
               <button
                 type="button"
                 onClick={() => setSelectedLetter('all')}
@@ -818,20 +839,25 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
               <span className="text-[11px] font-bold text-[#6E7F95] px-1 shrink-0 uppercase">
                 A-Z:
               </span>
-              {ALPHABET.map((char) => (
-                <button
-                  key={char}
-                  type="button"
-                  onClick={() => setSelectedLetter(char)}
-                  className={`min-w-[28px] h-6 px-1.5 rounded text-[11px] font-bold shrink-0 transition-all cursor-pointer ${
-                    selectedLetter === char
-                      ? 'bg-[#00A8FF] text-white shadow-sm'
-                      : 'text-[#A9B8CC] hover:bg-white/5 hover:text-white'
-                  }`}
-                >
-                  {char.toUpperCase()}
-                </button>
-              ))}
+              {ALPHABET.map((char) => {
+                const isSelected =
+                  selectedLetter.toUpperCase() === char.toUpperCase() ||
+                  (char === '#' && (selectedLetter === '0-9' || selectedLetter === '#'));
+                return (
+                  <button
+                    key={char}
+                    type="button"
+                    onClick={() => setSelectedLetter(char)}
+                    className={`min-w-[28px] h-6 px-1.5 rounded text-[11px] font-bold shrink-0 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#00A8FF] text-white shadow-sm'
+                        : 'text-[#A9B8CC] hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    {char.toUpperCase()}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -519,9 +519,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 <button
                   id="btn-watch-first-episode"
                   type="button"
-                  onClick={() =>
-                    navigate(`/anime/${anime.slug}/episode/${firstSeasonEpisode.episodeNumber}`)
-                  }
+                  onClick={() => {
+                    const sNum = firstSeasonEpisode.seasonNumber || firstSeasonEpisode.season || 1;
+                    navigate(`/anime/${anime.slug}/episode/${firstSeasonEpisode.episodeNumber}?season=${sNum}`);
+                  }}
                   className="px-7 py-3 bg-[#1683FF] hover:bg-[#2196FF] text-white font-black text-xs sm:text-sm rounded-xl transition-all inline-flex items-center gap-2 shadow-lg shadow-[#1683FF]/30 hover:scale-105 active:scale-95 cursor-pointer"
                 >
                   <Play className="w-4 h-4 fill-white" />
@@ -605,7 +606,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
         isAnimeUpcoming={isAnimeUpcoming}
         onSeasonChange={(s) => setSelectedSeasonNumber(s)}
         watchedEpisodeNumbers={watchedEpNumbers}
-        onSelectEpisode={(epNum) => navigate(`/anime/${anime.slug}/episode/${epNum}`)}
+        onSelectEpisode={(epNum, epSeason) => navigate(`/anime/${anime.slug}/episode/${epNum}?season=${epSeason || 1}`)}
         onDownloadEpisode={handleDownloadClick}
         onNavigateSeasonAnime={(seasonSlug) => navigate(`/anime/${seasonSlug}`)}
       />

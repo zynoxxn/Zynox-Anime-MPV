@@ -671,7 +671,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setProfileDropdownOpen((prev) => !prev);
                   }
                 }}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#07111F] hover:bg-[#081426] border border-white/10 hover:border-[#1683FF]/50 flex items-center justify-center text-[#CBD5E1] hover:text-white transition-all shadow-md cursor-pointer overflow-hidden p-0.5"
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#07111F] hover:bg-[#081426] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-all cursor-pointer overflow-hidden p-0.5 ${
+                  user
+                    ? 'border-2 border-[#1683FF] hover:border-[#00CFFF] shadow-md shadow-[#1683FF]/30 hover:shadow-[#00CFFF]/50'
+                    : 'border border-white/10 hover:border-[#1683FF]/50 shadow-md'
+                }`}
                 title={user ? displayName : 'Sign In'}
               >
                 {user ? (
@@ -698,7 +702,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               {profileDropdownOpen && user && (
                 <div className="absolute right-0 mt-2 w-56 bg-[#081426] border border-[#1683FF]/30 rounded-2xl shadow-2xl p-2 z-50 backdrop-blur-2xl text-xs space-y-1">
                   <div className="px-3 py-2 border-b border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden border border-[#1683FF]/50 shrink-0 bg-[#050A14]">
+                    <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-[#1683FF] shadow-sm shadow-[#1683FF]/30 shrink-0 bg-[#050A14]">
                       {userProfile?.avatar || user.photoURL ? (
                         <img
                           src={userProfile?.avatar || user.photoURL || ''}

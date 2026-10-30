@@ -14,21 +14,70 @@ export const CMS_AVATARS_COLLECTION = 'cms_avatars';
 const LS_AVATARS_KEY = 'zynox_cms_anime_avatars';
 const META_DOC_ID = 'cms_catalog_meta';
 
-let cachedAvatars: AnimeAvatar[] | null = null;
+export const DEFAULT_DRIVE_FOLDER_ID = '1plDLKivxoAud9ONpLNst36wmZjnNGrLw';
+export const DEFAULT_DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${DEFAULT_DRIVE_FOLDER_ID}`;
 
-// Initial immediate clear of any legacy cached preset avatars
-try {
-  if (typeof localStorage !== 'undefined') {
-    const raw = localStorage.getItem(LS_AVATARS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.some((a: any) => a.id === 'erza-scarlet-1' || a.id === 'sinon-sao-1' || a.id === 'asta-bc')) {
-        localStorage.removeItem(LS_AVATARS_KEY);
-        cachedAvatars = [];
+// Pre-indexed fallback list of 23 Google Drive PFPs (using high-speed direct CDN)
+export const SEED_DRIVE_FILE_IDS: Array<{ fileId: string; name: string }> = [
+  { fileId: '1CxUW6itl6uWm0LNCAgF8TfoVzO9WC7US', name: 'Avatar 1' },
+  { fileId: '1OYDF-jW4E8i7_bTlQOjLNpJ_gRmj0PuQ', name: 'Avatar 2' },
+  { fileId: '1op6J_ihpSDTIZx6-5JWTrHs8pyrHVjfg', name: 'Avatar 3' },
+  { fileId: '1MS-xUbpeydoAoPKFsZHCaMnSSPCojA2t', name: 'Avatar 4' },
+  { fileId: '1CIYFCsOLbvHq9q1qG4zBDAeagm8n4H1_', name: 'Avatar 5' },
+  { fileId: '1D-2qB6i0jeK8EXHlv8WCPWhOYEjKJFDx', name: 'Avatar 6' },
+  { fileId: '16BqsROivfR0FZoohbP_sneWjKiTwJA32', name: 'Avatar 7' },
+  { fileId: '1Gzb2Bi90sD7PkQaI7k85_fmQxYwYmo9v', name: 'Avatar 8' },
+  { fileId: '18BEwociugOaGOAaXqHA1RtwstSWi21gD', name: 'Avatar 9' },
+  { fileId: '1waWMXteXrsnj_5I6z9QijGyAf5bgZjXS', name: 'Avatar 10' },
+  { fileId: '1Vp_qkk3mwF0wOXeAV7Nl6NHkaD0yCrK4', name: 'Avatar 11' },
+  { fileId: '1zmElazCQypdz4CScOoo0NzjYauXt6BM2', name: 'Avatar 12' },
+  { fileId: '1IRJUwTV-ZxuQVHjO1Ok8vlPDKvwN6MX3', name: 'Avatar 13' },
+  { fileId: '1beLVHar_yjHfB0_s3TBe9Kr6GpMvNCul', name: 'Avatar 14' },
+  { fileId: '1jFHMUv-6HiaG0sLbRbHWZw22GGuzADQ_', name: 'Avatar 15' },
+  { fileId: '17-0qYBNQ4UIkRQn9H67WHpbBhAsGQbQa', name: 'Avatar 16' },
+  { fileId: '14XQo442ZPBvFnzGk8yhlxk2wIEZT7eHM', name: 'Avatar 17' },
+  { fileId: '1OnD4Yi6PVuzn17wgVNe4njwHGETIdd1B', name: 'Avatar 18' },
+  { fileId: '1LIA96r01Jz-vCFuvhC2O-q-27qZk1rBB', name: 'Avatar 19' },
+  { fileId: '1o2WMIXnIvhVUui4aYrP3JN_sLjc5kRh1', name: 'Avatar 20' },
+  { fileId: '1kDXX2GQQxQTR3zPqXX_F5N6g3rT4GPAm', name: 'Avatar 21' },
+  { fileId: '14YntEyXgqLQMXcvMPQyF5xfvCjcIwidM', name: 'Avatar 22' },
+  { fileId: '12Uw6vubqpLrWTwQl9BhZgI0vqqQ7K96Q', name: 'Avatar 23' },
+];
+
+export const FALLBACK_DRIVE_AVATARS: AnimeAvatar[] = SEED_DRIVE_FILE_IDS.map((item) => ({
+  id: `gdrive-${item.fileId}`,
+  url: `https://lh3.googleusercontent.com/d/${item.fileId}`,
+  name: item.name,
+  anime: 'Google Drive PFP',
+  category: 'Popular',
+  accentColor: '#1683FF',
+}));
+
+let cachedAvatars: AnimeAvatar[] | null = null;
+let lastDriveFetch = 0;
+
+/**
+ * Fetch avatars dynamically from Google Drive folder via backend API
+ */
+export async function fetchDriveFolderAvatars(
+  folderId = DEFAULT_DRIVE_FOLDER_ID,
+  forceRefresh = false
+): Promise<AnimeAvatar[]> {
+  try {
+    const res = await fetch(`/api/drive-avatars?folderId=${encodeURIComponent(folderId)}${forceRefresh ? '&refresh=true' : ''}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.avatars) && data.avatars.length > 0) {
+        lastDriveFetch = Date.now();
+        return data.avatars;
       }
     }
+  } catch (err) {
+    console.warn('Could not fetch from /api/drive-avatars, using cached fallback:', err);
   }
-} catch {}
+
+  return FALLBACK_DRIVE_AVATARS;
+}
 
 export async function clearAllAnimeAvatars(): Promise<void> {
   cachedAvatars = [];
@@ -42,7 +91,6 @@ export async function clearAllAnimeAvatars(): Promise<void> {
     const snap = await getDocs(collection(db, CMS_AVATARS_COLLECTION));
     const allDocs = snap.docs;
 
-    // Process deletes in chunks of 40 to avoid write-stream exhaustion
     for (let i = 0; i < allDocs.length; i += 40) {
       const batch = writeBatch(db);
       const chunk = allDocs.slice(i, i + 40);
@@ -50,7 +98,6 @@ export async function clearAllAnimeAvatars(): Promise<void> {
       await batch.commit();
     }
 
-    // Mark cleared meta once at the end
     const metaRef = doc(db, CMS_AVATARS_COLLECTION, META_DOC_ID);
     await setDoc(metaRef, { initialized: true, cleared: true, updatedAt: new Date().toISOString() });
   } catch (err) {
@@ -58,8 +105,42 @@ export async function clearAllAnimeAvatars(): Promise<void> {
   }
 }
 
+export async function syncDriveAvatarsToFirestore(folderId = DEFAULT_DRIVE_FOLDER_ID): Promise<number> {
+  const driveAvatars = await fetchDriveFolderAvatars(folderId, true);
+  if (driveAvatars.length === 0) return 0;
+
+  try {
+    for (let i = 0; i < driveAvatars.length; i += 20) {
+      const batch = writeBatch(db);
+      const chunk = driveAvatars.slice(i, i + 20);
+      for (const item of chunk) {
+        const docRef = doc(db, CMS_AVATARS_COLLECTION, item.id);
+        batch.set(
+          docRef,
+          {
+            id: item.id,
+            url: item.url,
+            name: item.name,
+            anime: item.anime || 'Google Drive PFP',
+            category: item.category || 'Popular',
+            accentColor: item.accentColor || '#1683FF',
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    console.error('Failed to sync Drive avatars to Firestore:', err);
+  }
+
+  await getAnimeAvatars(true);
+  return driveAvatars.length;
+}
+
 export async function getAnimeAvatars(forceRefresh = false): Promise<AnimeAvatar[]> {
-  if (!forceRefresh && cachedAvatars !== null) {
+  if (!forceRefresh && cachedAvatars !== null && cachedAvatars.length > 0) {
     return cachedAvatars;
   }
 
@@ -70,7 +151,7 @@ export async function getAnimeAvatars(forceRefresh = false): Promise<AnimeAvatar
         const raw = localStorage.getItem(LS_AVATARS_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             // Check if old demo avatars
             if (!parsed.some((a: any) => a.id === 'erza-scarlet-1' || a.id === 'sinon-sao-1')) {
               cachedAvatars = parsed;
@@ -82,12 +163,15 @@ export async function getAnimeAvatars(forceRefresh = false): Promise<AnimeAvatar
     } catch (e) {}
   }
 
-  // Fetch from Firestore (read-only: strictly avoid write side-effects on reads)
+  // 1. Fetch Drive avatars dynamically
+  const driveAvatars = await fetchDriveFolderAvatars(DEFAULT_DRIVE_FOLDER_ID, forceRefresh);
+
+  // 2. Fetch from Firestore (read-only: strictly avoid write side-effects on reads)
+  const firestoreItems: AnimeAvatar[] = [];
   try {
     const snap = await getDocs(collection(db, CMS_AVATARS_COLLECTION));
 
     if (!snap.empty) {
-      const items: AnimeAvatar[] = [];
       snap.forEach((d) => {
         if (d.id !== META_DOC_ID && d.id !== '__meta__') {
           // If it is one of the old seeded demo IDs, skip it
@@ -105,7 +189,7 @@ export async function getAnimeAvatars(forceRefresh = false): Promise<AnimeAvatar
 
           const data = d.data();
           if (data && data.url) {
-            items.push({
+            firestoreItems.push({
               id: d.id,
               url: data.url,
               name: data.name || '',
@@ -116,21 +200,37 @@ export async function getAnimeAvatars(forceRefresh = false): Promise<AnimeAvatar
           }
         }
       });
-
-      cachedAvatars = items;
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(LS_AVATARS_KEY, JSON.stringify(items));
-        }
-      } catch {}
-      return items;
     }
   } catch (err) {
     console.warn('Failed to load avatars from Firestore:', err);
   }
 
-  cachedAvatars = [];
-  return [];
+  // 3. Merge: Firestore custom avatars + Drive avatars, deduplicating by URL
+  const seenUrls = new Set<string>();
+  const combined: AnimeAvatar[] = [];
+
+  for (const item of firestoreItems) {
+    if (!seenUrls.has(item.url)) {
+      seenUrls.add(item.url);
+      combined.push(item);
+    }
+  }
+
+  for (const item of driveAvatars) {
+    if (!seenUrls.has(item.url)) {
+      seenUrls.add(item.url);
+      combined.push(item);
+    }
+  }
+
+  cachedAvatars = combined;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LS_AVATARS_KEY, JSON.stringify(combined));
+    }
+  } catch {}
+
+  return combined;
 }
 
 export async function saveAnimeAvatar(avatar: Partial<AnimeAvatar> & { url: string }): Promise<AnimeAvatar> {

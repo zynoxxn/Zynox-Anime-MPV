@@ -290,6 +290,7 @@ const AppContent: React.FC = () => {
           initialStatus={searchParams.get('status') || 'all'}
           initialYear={searchParams.get('year') || 'all'}
           initialLanguage={searchParams.get('language') || 'all'}
+          initialLetter={searchParams.get('letter') || 'all'}
           initialSort={searchParams.get('sort') || 'latest'}
         />
       );
