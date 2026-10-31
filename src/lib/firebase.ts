@@ -2,7 +2,12 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, initializeFirestore, setLogLevel, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
-import rawConfig from '../../firebase-applet-config.json';
+// Safely load local firebase config file if present in development, or fallback to environment variables in production
+const localConfigModules = import.meta.glob('../../firebase-applet-config.json', { eager: true });
+const rawConfig: Record<string, any> =
+  (localConfigModules['../../firebase-applet-config.json'] as any)?.default ||
+  localConfigModules['../../firebase-applet-config.json'] ||
+  {};
 
 // Configure Firestore SDK logging to silent to suppress transient connection retry notices
 try {
