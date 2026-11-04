@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, Clock } from 'lucide-react';
 import type { LatestEpisodeItem } from '../lib/firestore/episodes';
+import { getOptimizedImageUrl, FALLBACK_ANIME_BANNER } from '../lib/image-optimizer';
 
 interface EpisodeCardProps {
   item: LatestEpisodeItem;
@@ -41,14 +42,16 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
 
   const epLabel = sNum > 1 ? `S${sNum} · EP ${episode.episodeNumber}` : `EP ${episode.episodeNumber}`;
   // Prioritize anime banner for 16:9 episode thumbnail
-  const thumbnail =
+  const rawThumbnail =
     animeBanner ||
     (item as any).animeBanner ||
     (episode as any).animeBanner ||
     (episode as any).banner ||
     episode.thumbnail ||
     animePoster ||
-    '';
+    FALLBACK_ANIME_BANNER;
+
+  const thumbnail = getOptimizedImageUrl(rawThumbnail, { width: 480, fallbackType: 'banner' });
 
   if (variant === 'mobile-row') {
     return (

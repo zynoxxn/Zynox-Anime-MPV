@@ -78,7 +78,8 @@ export function transformStreamUrl(rawUrl?: string | null): {
     /\.(mp4|webm|ogg|mov|mkv)($|\?)/i.test(url) ||
     url.includes('blob:') ||
     url.includes('media.w3.org') ||
-    url.includes('vjs.zencdn.net');
+    url.includes('vjs.zencdn.net') ||
+    url.includes('mdn.mozilla.net');
 
   if (isDirectVideo) {
     return {
@@ -87,6 +88,39 @@ export function transformStreamUrl(rawUrl?: string | null): {
       isIframe: false,
       provider: 'Direct Stream',
     };
+  }
+
+  // Abyss CDN & Short.ink Player Embeds (Direct URL or extracted src)
+  // e.g. https://short.ink/abc123xyz or https://abysscdn.com/?v=abc123xyz or https://abyss.to/abc123xyz
+  const lowerUrl = url.toLowerCase();
+  if (
+    lowerUrl.includes('short.ink') ||
+    lowerUrl.includes('abysscdn.com') ||
+    lowerUrl.includes('abyss.to')
+  ) {
+    return {
+      url,
+      isDirect: false,
+      isIframe: true,
+      provider: 'Abyss HD Server',
+    };
+  }
+
+  // Popular Anime Video Hosts
+  if (lowerUrl.includes('streamtape')) {
+    return { url, isDirect: false, isIframe: true, provider: 'Streamtape HD' };
+  }
+  if (lowerUrl.includes('dood') || lowerUrl.includes('doodstream') || lowerUrl.includes('dood.to')) {
+    return { url, isDirect: false, isIframe: true, provider: 'DoodStream' };
+  }
+  if (lowerUrl.includes('filemoon')) {
+    return { url, isDirect: false, isIframe: true, provider: 'Filemoon HD' };
+  }
+  if (lowerUrl.includes('mp4upload')) {
+    return { url, isDirect: false, isIframe: true, provider: 'Mp4Upload' };
+  }
+  if (lowerUrl.includes('vidstreaming') || lowerUrl.includes('megacloud')) {
+    return { url, isDirect: false, isIframe: true, provider: 'MegaCloud' };
   }
 
   // 1. YouTube Watch or Shorts or Shortened (youtu.be)
@@ -203,7 +237,7 @@ export function extractIframeSrc(frameCode?: string | null): string | null {
   }
 
   // 1. If user passed a direct HTTPS URL instead of a full <iframe> tag
-  if (trimmed.startsWith('https://') && !trimmed.includes('<') && !trimmed.includes('>')) {
+  if ((trimmed.startsWith('https://') || trimmed.startsWith('http://')) && !trimmed.includes('<') && !trimmed.includes('>')) {
     return trimmed;
   }
 
@@ -216,7 +250,7 @@ export function extractIframeSrc(frameCode?: string | null): string | null {
       if (iframe) {
         const rawSrc = iframe.getAttribute('src');
         if (rawSrc && rawSrc.trim()) {
-          return rawSrc.trim();
+          return rawSrc.replace(/&amp;/g, '&').trim();
         }
       }
     } catch {
@@ -224,10 +258,13 @@ export function extractIframeSrc(frameCode?: string | null): string | null {
     }
   }
 
-  // 3. Robust Regex fallback for src="..." or src='...'
-  const match = trimmed.match(/<iframe[^>]*\ssrc=["']([^"']+)["'][^>]*>/i);
+  // 3. Robust Regex fallback for src="..." or src='...' or unquoted src=...
+  const match = trimmed.match(/src=["']?([^"'>\s]+)["']?/i);
   if (match && match[1]) {
-    return match[1].trim();
+    const src = match[1].replace(/&amp;/g, '&').trim();
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      return src;
+    }
   }
 
   return null;

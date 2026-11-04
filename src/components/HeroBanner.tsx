@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Anime } from '../types/anime';
 import type { CmsHeroBanner } from '../types/cms';
 import { Play, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { getOptimizedImageUrl, FALLBACK_ANIME_BANNER } from '../lib/image-optimizer';
 
 export type HeroItem = Anime | CmsHeroBanner | Record<string, any>;
 
@@ -76,12 +77,18 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
   const rawItem = activeItem as any;
 
   // Normalize image and links for either Anime or CmsHeroBanner
-  const bannerImage =
+  const rawBannerUrl =
     rawItem.backgroundImage ||
     rawItem.banner ||
     rawItem.posterImage ||
     rawItem.poster ||
-    'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=85';
+    FALLBACK_ANIME_BANNER;
+
+  const bannerImage = getOptimizedImageUrl(rawBannerUrl, {
+    width: 1400,
+    quality: 85,
+    fallbackType: 'banner',
+  });
 
   const title = activeItem.title || 'Featured Anime Spotlight';
   const subtitle =
@@ -148,10 +155,14 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({ featuredAnimes, navigate
           key={rawItem.id || rawItem.slug || bannerImage}
           src={bannerImage}
           alt={title}
+          decoding="async"
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover object-center md:object-top transition-transform duration-700 group-hover:scale-[1.03] brightness-[1.02] contrast-[1.05]"
           onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
+            const target = e.target as HTMLImageElement;
+            if (target.src !== FALLBACK_ANIME_BANNER) {
+              target.src = FALLBACK_ANIME_BANNER;
+            }
           }}
         />
 

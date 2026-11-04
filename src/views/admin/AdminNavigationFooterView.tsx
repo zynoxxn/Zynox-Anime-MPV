@@ -151,7 +151,7 @@ export const AdminNavigationFooterView: React.FC<AdminNavigationFooterViewProps>
   };
 
   return (
-    <AdminLayout currentTab="navigation-footer" navigate={navigate} onShowMessage={onShowMessage}>
+    <AdminLayout currentTab="navigation" navigate={navigate} onShowMessage={onShowMessage}>
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">

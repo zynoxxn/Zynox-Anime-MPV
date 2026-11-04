@@ -2,6 +2,7 @@ import React from 'react';
 import type { Anime } from '../types/anime';
 import { Star, ChevronRight, MessageSquare } from 'lucide-react';
 import { RightSidebarTopAnimeSkeleton } from './SkeletonLoader';
+import { getOptimizedImageUrl } from '../lib/image-optimizer';
 
 interface RightSidebarProps {
   topAnimes?: Anime[];
@@ -127,7 +128,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 {/* Poster Thumbnail */}
                 <div className="w-9 h-12 rounded-lg bg-[#050A14] overflow-hidden shrink-0 border border-white/10 group-hover:border-[#1683FF]/40 transition-colors">
                   <img
-                    src={item.poster}
+                    src={getOptimizedImageUrl(item.poster, { width: 100, fallbackType: 'poster' })}
                     alt={item.title}
                     loading="lazy"
                     decoding="async"

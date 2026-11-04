@@ -29,6 +29,7 @@ import {
 } from '../lib/downloadRedirect';
 import { generateAnimeSeoMetadata } from '../lib/seo';
 import { usePageSeo } from '../hooks/usePageSeo';
+import { getOptimizedImageUrl } from '../lib/image-optimizer';
 import {
   ArrowLeft,
   Play,
@@ -323,8 +324,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
       : anime.japaneseTitle || '';
 
   // Dynamic visual assets and metadata
-  const currentPoster = activeSeasonEntry?.poster || anime.poster;
-  const currentBanner = activeSeasonEntry?.banner || anime.banner || currentPoster;
+  const rawPoster = activeSeasonEntry?.poster || anime.poster;
+  const rawBanner = activeSeasonEntry?.banner || anime.banner || rawPoster;
+  const currentPoster = getOptimizedImageUrl(rawPoster, { width: 600, fallbackType: 'poster' });
+  const currentBanner = getOptimizedImageUrl(rawBanner, { width: 1400, fallbackType: 'banner' });
   const currentDescription = activeSeasonEntry?.description || anime.description;
   const currentSeasonNumber =
     activeSeasonEntry?.seasonNumber ||
@@ -385,8 +388,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 key={currentPoster}
                 src={currentPoster}
                 alt={anime.title}
+                fetchPriority="high"
+                decoding="async"
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-all duration-500 animate-in fade-in"
+                className="w-full h-full object-cover transition-all duration-300 animate-in fade-in"
               />
             ) : (
               <div className="w-full h-full bg-[#050A14] flex items-center justify-center text-[#64748B]">

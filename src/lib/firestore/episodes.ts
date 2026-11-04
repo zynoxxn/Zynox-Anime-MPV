@@ -70,35 +70,57 @@ function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any
   return cleaned;
 }
 
+export function isMockVideoUrl(url?: string): boolean {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes('interactive-examples.mdn.mozilla.net') ||
+    lower.includes('flower.mp4') ||
+    lower.includes('oceans.mp4') ||
+    lower.includes('vjs.zencdn.net') ||
+    lower.includes('gtv-videos-bucket') ||
+    lower.includes('bigbuckbunny') ||
+    lower.includes('commondatastorage.googleapis.com') ||
+    lower.includes('media.w3.org') ||
+    lower.includes('5-l7j3v_gl8') ||
+    lower.includes('n4kzr-25p7s') ||
+    lower.includes('d3hl4ez9nn4') ||
+    lower.includes('rv57e937d38')
+  );
+}
+
 export function sanitizeEpisodeStreamUrls(ep: Episode): Episode {
   if (!ep) return ep;
   if (ep.status === 'upcoming' || ep.isUpcoming) {
     return ep;
   }
-  const fixUrl = (u?: string) => {
-    if (!u) return u;
-    if (u.includes('commondatastorage.googleapis.com/gtv-videos-bucket/sample/')) {
-      if (u.includes('Bunny')) return 'https://media.w3.org/2010/05/bunny/trailer.mp4';
-      if (u.includes('Blazes')) return 'https://vjs.zencdn.net/v/oceans.mp4';
-      if (u.includes('TearsOfSteel')) return 'https://media.w3.org/2010/05/video/movie_300.mp4';
-      return 'https://media.w3.org/2010/05/sintel/trailer.mp4';
+
+  const cleanUrl = (u?: string) => {
+    if (!u) return '';
+    if (isMockVideoUrl(u)) {
+      return '';
     }
     return u;
   };
 
-  const newVideoUrl = fixUrl(ep.videoUrl);
-  const newSources = (ep.sources || []).map((s) => ({
-    ...s,
-    embedUrl: fixUrl(s.embedUrl),
-  }));
-  const newVideoSources = (ep.videoSources || []).map((s) => ({
-    ...s,
-    embedUrl: fixUrl(s.embedUrl),
-  }));
+  const newVideoUrl = cleanUrl(ep.videoUrl);
+  const newSources = (ep.sources || [])
+    .map((s) => ({
+      ...s,
+      embedUrl: cleanUrl(s.embedUrl),
+    }))
+    .filter((s) => Boolean(s.embedUrl || (s as any).frameCode));
+
+  const newVideoSources = (ep.videoSources || [])
+    .map((s) => ({
+      ...s,
+      embedUrl: cleanUrl(s.embedUrl),
+    }))
+    .filter((s) => Boolean(s.embedUrl || (s as any).frameCode));
 
   return {
     ...ep,
-    videoUrl: newVideoUrl || newSources[0]?.embedUrl || 'https://media.w3.org/2010/05/sintel/trailer.mp4',
+    videoUrl: newVideoUrl || newSources[0]?.embedUrl || '',
     sources: newSources.length > 0 ? newSources : undefined,
     videoSources: newVideoSources.length > 0 ? newVideoSources : undefined,
   };
@@ -194,7 +216,7 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
         where('animeId', 'in', idList.slice(0, 10)),
         where('published', '==', true)
       );
-      const snapshot = await withTimeout(getDocs(q), 1800, null);
+      const snapshot = await withTimeout(getDocs(q), 6000, null);
       if (snapshot && !snapshot.empty) {
         list = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
@@ -207,7 +229,7 @@ export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Ep
           collection(db, EPISODES_COLLECTION),
           where('animeId', '==', animeId)
         );
-        const snapshot = await withTimeout(getDocs(q), 1500, null);
+        const snapshot = await withTimeout(getDocs(q), 5000, null);
         if (snapshot && !snapshot.empty) {
           list = snapshot.docs
             .map((docSnap) => ({
@@ -306,15 +328,16 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
     }
 
     // If no animeId specified, combine all Firestore and default catalog episodes
-    const snapshot = await withTimeout(getDocs(collection(db, EPISODES_COLLECTION)), 1800, null);
-      if (!snapshot) throw new Error('Timeout fetching fallback episodes');
-    list = snapshot.docs
-      .map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<Episode, 'id'>),
-      }))
-      .filter((ep) => !isAnimeDeleted(ep.animeId))
-      .map(normalizeSeasonEpisodeNumbers);
+    const snapshot = await withTimeout(getDocs(collection(db, EPISODES_COLLECTION)), 7000, null);
+    if (snapshot && snapshot.docs) {
+      list = snapshot.docs
+        .map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<Episode, 'id'>),
+        }))
+        .filter((ep) => !isAnimeDeleted(ep.animeId))
+        .map(normalizeSeasonEpisodeNumbers);
+    }
 
     const map = new Map<string, Episode>();
     for (const [aId, epList] of Object.entries(DEFAULT_EPISODES)) {

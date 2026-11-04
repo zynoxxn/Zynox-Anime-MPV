@@ -4,7 +4,7 @@
  * to ensure the website loads instantaneously (under 100ms) with zero skeleton freezing.
  */
 
-export function withTimeout<T>(promise: Promise<T>, ms: number = 2000, fallback: T): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, ms: number = 7000, fallback: T): Promise<T> {
   let timerId: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<T>((resolve) => {
     timerId = setTimeout(() => {
@@ -16,8 +16,9 @@ export function withTimeout<T>(promise: Promise<T>, ms: number = 2000, fallback:
     promise.then((res) => {
       if (timerId) clearTimeout(timerId);
       return res;
-    }).catch(() => {
+    }).catch((err) => {
       if (timerId) clearTimeout(timerId);
+      console.warn('[Cache/Network fallback]:', err);
       return fallback;
     }),
     timeoutPromise,

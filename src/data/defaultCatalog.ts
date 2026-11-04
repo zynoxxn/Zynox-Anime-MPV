@@ -148,14 +148,6 @@ export const DEFAULT_ANIMES: Anime[] = [
   },
 ];
 
-const sampleVideoUrls = [
-  'https://media.w3.org/2010/05/sintel/trailer.mp4',
-  'https://media.w3.org/2010/05/bunny/trailer.mp4',
-  'https://vjs.zencdn.net/v/oceans.mp4',
-  'https://media.w3.org/2010/05/video/movie_300.mp4',
-  'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-];
-
 function generateEpisodes(
   animeId: string,
   animeTitle: string,
@@ -167,7 +159,6 @@ function generateEpisodes(
   return Array.from({ length: epCount }, (_, i) => {
     const epNum = i + 1;
     const titleStr = episodeTitles[i] || `Episode ${epNum}`;
-    const videoUrl = sampleVideoUrls[i % sampleVideoUrls.length];
     const seasonInfo = seasonAssigner ? seasonAssigner(epNum) : { seasonNumber: 1, thumbnail: thumbUrl };
     const epSeasonNum = seasonInfo.seasonNumber || 1;
     const epThumbnail = seasonInfo.thumbnail || thumbUrl;
@@ -186,22 +177,11 @@ function generateEpisodes(
       viewsCount: 15000 + (epCount - epNum) * 2300,
       published: true,
       duration: '24:00',
-      videoUrl: videoUrl,
+      videoUrl: '',
       downloadUrl: `https://mega.nz/file/${animeId}-ep${epNum}`,
       downloadQuality: '1080p Ultra HD',
       downloadSize: '320 MB',
-      sources: [
-        {
-          id: `src-${epNum}-1`,
-          provider: 'Fast Stream 1 [Hindi Dub]',
-          sourceName: 'Server 1 (Direct HD)',
-          type: 'mp4',
-          quality: '1080p Ultra HD',
-          language: 'DUB',
-          embedUrl: videoUrl,
-          active: true,
-        },
-      ],
+      sources: [],
     };
   });
 }

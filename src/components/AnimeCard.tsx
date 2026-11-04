@@ -11,6 +11,12 @@ import {
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
 import { cleanAnimeTitle } from '../lib/firestore/anime';
+import {
+  getOptimizedImageUrl,
+  FALLBACK_ANIME_POSTER,
+  isImagePreloaded,
+  markImagePreloaded,
+} from '../lib/image-optimizer';
 
 interface AnimeCardProps {
   anime: Anime;
@@ -27,12 +33,23 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
   progressPercentage,
 }) => {
   const { user } = useAuth();
+  const optimizedPoster = getOptimizedImageUrl(anime.poster, { width: 320, fallbackType: 'poster' });
+  const [imageLoaded, setImageLoaded] = useState(() => isImagePreloaded(optimizedPoster));
   const [fav, setFav] = useState<boolean>(() => {
     return isFavoriteCached(anime.id || anime.slug);
   });
   const [watchlistStatus, setWatchlistStatusState] = useState<WatchlistStatus | null>(() => {
     return getAnimeWatchlistStatusCached(anime.id || anime.slug);
   });
+
+  // Reset image loaded on poster change
+  useEffect(() => {
+    if (isImagePreloaded(optimizedPoster)) {
+      setImageLoaded(true);
+    } else {
+      setImageLoaded(false);
+    }
+  }, [optimizedPoster]);
 
   // Sync state if user changes
   useEffect(() => {
@@ -121,22 +138,35 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
       className="group relative cursor-pointer flex flex-col transition-transform duration-200 hover:-translate-y-1 will-change-transform select-none"
     >
       {/* Poster Image Container - 2:3 Aspect Ratio with rounded corners */}
-      <div className="relative aspect-[2/3] bg-[#081426] rounded-xl sm:rounded-2xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/50 transition-all duration-300 shadow-md group-hover:shadow-xl group-hover:shadow-[#1683FF]/10">
+      <div className="relative aspect-[2/3] bg-[#0c1322] rounded-xl sm:rounded-2xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/50 transition-all duration-300 shadow-md group-hover:shadow-xl group-hover:shadow-[#1683FF]/10">
+        {/* Loading shimmer skeleton */}
+        {!imageLoaded && (
+          <div className="absolute inset-0 bg-[#0c1322] animate-pulse flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-[#1683FF] animate-spin opacity-40" />
+          </div>
+        )}
+
         {anime.poster ? (
           <img
-            src={anime.poster}
+            src={optimizedPoster}
             alt={anime.title}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out select-none pointer-events-none"
+            onLoad={() => {
+              markImagePreloaded(optimizedPoster);
+              setImageLoaded(true);
+            }}
+            className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-300 ease-out select-none pointer-events-none ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
-              const fallbackUrl = 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80';
-              if (target.src !== fallbackUrl) {
-                target.src = fallbackUrl;
+              if (target.src !== FALLBACK_ANIME_POSTER) {
+                target.src = FALLBACK_ANIME_POSTER;
+                setImageLoaded(true);
               }
             }}
           />

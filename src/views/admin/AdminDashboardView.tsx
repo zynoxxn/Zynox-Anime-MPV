@@ -14,15 +14,15 @@ import {
   Tv,
   Download,
   PlusCircle,
-  AlertTriangle,
   ArrowRight,
-  HelpCircle,
   Eye,
   RefreshCw,
   Megaphone,
+  HelpCircle,
+  Shield,
+  ShieldCheck,
   Lock,
-  Mail,
-  LogIn,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -34,7 +34,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
-  const { user, isAdmin, loading, signIn, logout } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState({
     totalAnime: 0,
     ongoingAnime: 0,
@@ -114,173 +114,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     isAdmin || (user?.email && user.email.toLowerCase().trim() === 'zairoxmax2.0@gmail.com')
   );
 
-  const [adminEmail, setAdminEmail] = useState('zairoxmax2.0@gmail.com');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [authTimedOut, setAuthTimedOut] = useState(false);
-
-  useEffect(() => {
-    // 1500ms fallback so "Verifying administrator credentials..." never hangs
-    const timer = setTimeout(() => {
-      setAuthTimedOut(true);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
-
   useEffect(() => {
     if (isSuperAdmin) {
       loadAllData();
     }
   }, [isSuperAdmin]);
-
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminPassword) {
-      setLoginError('Please enter your password.');
-      return;
-    }
-    setLoginSubmitting(true);
-    setLoginError(null);
-    try {
-      const res = await signIn(adminEmail.trim(), adminPassword);
-      if (!res.success) {
-        setLoginError(res.error || 'Failed to sign in. Please verify your password.');
-      } else {
-        onShowMessage('Welcome to Admin Dashboard!');
-        loadAllData();
-      }
-    } catch (err: any) {
-      setLoginError(err.message || 'Login failed.');
-    } finally {
-      setLoginSubmitting(false);
-    }
-  };
-
-  // 1. Loading state with fast timeout
-  if (loading && !authTimedOut && !isSuperAdmin) {
-    return (
-      <div className="min-h-screen bg-[#050A14] flex flex-col items-center justify-center p-4 space-y-3">
-        <RefreshCw className="w-5 h-5 text-[#1683FF] animate-spin" />
-        <div className="text-xs text-[#94A3B8] font-medium tracking-wide">
-          Verifying administrator credentials...
-        </div>
-      </div>
-    );
-  }
-
-  // 2. Unauthenticated or non-admin state: sleek inline login portal
-  if (!user || !isSuperAdmin) {
-    return (
-      <div className="min-h-screen bg-[#050A14] flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-[#0B1322] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-[#1683FF]/15 border border-[#1683FF]/30 flex items-center justify-center mx-auto text-[#1683FF]">
-              <Lock className="w-6 h-6" />
-            </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              ZYNOX Admin Portal
-            </h2>
-            <p className="text-xs text-[#94A3B8]">
-              {user ? (
-                <span>
-                  Signed in as <strong className="text-white">{user.email}</strong> (Non-admin). Switch to the admin account below.
-                </span>
-              ) : (
-                'Sign in with your verified administrator account to manage anime and episodes.'
-              )}
-            </p>
-          </div>
-
-          {loginError && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{loginError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleAdminLogin} className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
-                Admin Email
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  placeholder="zairoxmax2.0@gmail.com"
-                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="Enter administrator password"
-                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loginSubmitting}
-              className="w-full py-3 bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-[#1683FF]/25 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-            >
-              {loginSubmitting ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-4 h-4" />
-                  <span>Sign In as Administrator</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-[#94A3B8]">
-            {user ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  await logout();
-                  onShowMessage('Logged out.');
-                }}
-                className="hover:text-white transition-colors cursor-pointer"
-              >
-                Sign out current user
-              </button>
-            ) : (
-              <span className="text-[11px] text-[#64748B]">Admin email: zairoxmax2.0@gmail.com</span>
-            )}
-
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="text-[#1683FF] hover:underline font-semibold cursor-pointer"
-            >
-              Back to Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <AdminLayout currentTab="dashboard" navigate={navigate} onShowMessage={onShowMessage}>
@@ -395,6 +233,41 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
             <div className="text-2xl sm:text-3xl font-black text-white mt-2">
               {stats.pendingRequests}
+            </div>
+          </div>
+        </div>
+
+        {/* ZYNOX Top-Level Security Engine Banner */}
+        <div className="bg-gradient-to-r from-[#0B1322] via-[#051329] to-[#0B1322] border border-emerald-500/20 rounded-2xl p-4 sm:p-5 shadow-lg">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs sm:text-sm font-black text-white tracking-wide">
+                    Top-Level Security Shield Active
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    PROTECTED
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#94A3B8] mt-0.5">
+                  Firestore rules deployed • Super Admin pinned to <span className="text-white font-medium">zairoxmax2.0@gmail.com</span> • Anti-Brute Force active • 30m idle session lock
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => navigate('/admin/logs')}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Audit Trail</span>
+              </button>
             </div>
           </div>
         </div>

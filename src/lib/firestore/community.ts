@@ -81,9 +81,12 @@ export async function getAllAnimeRequests(): Promise<AnimeRequest[]> {
       const timeB = b.createdAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
-  } catch (err) {
-    console.error('Failed to get anime requests:', err);
-    throw err;
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      return [];
+    }
+    console.warn('Could not fetch anime requests:', err);
+    return [];
   }
 }
 
@@ -170,9 +173,12 @@ export async function getAllEpisodeReports(): Promise<EpisodeReport[]> {
       const timeB = b.createdAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
-  } catch (err) {
-    console.error('Failed to get episode reports:', err);
-    throw err;
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      return [];
+    }
+    console.warn('Could not fetch episode reports:', err);
+    return [];
   }
 }
 

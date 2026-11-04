@@ -30,7 +30,22 @@ import {
   Megaphone,
   ListPlus,
   Compass,
+  Lock,
+  Mail,
+  AlertTriangle,
+  RefreshCw,
+  Clock,
+  KeyRound,
+  ShieldAlert,
 } from 'lucide-react';
+import {
+  checkBruteForceLockout,
+  recordFailedAuthAttempt,
+  resetAuthAttempts,
+  logSecurityThreat,
+  INACTIVITY_TIMEOUT_MS,
+  BruteForceStatus,
+} from '../../lib/security';
 
 interface AdminLayoutProps {
   currentTab: string;
@@ -58,9 +73,122 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   onShowMessage,
   children,
 }) => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, loading, logout, signIn } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const isSuperAdmin = Boolean(
+    isAdmin || (user?.email && user.email.toLowerCase().trim() === 'zairoxmax2.0@gmail.com')
+  );
+
+  const [adminEmail, setAdminEmail] = useState('zairoxmax2.0@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  const [lockoutStatus, setLockoutStatus] = useState<BruteForceStatus>(checkBruteForceLockout());
+  const [countdownSeconds, setCountdownSeconds] = useState(0);
+
+  // Sync lockout countdown
+  useEffect(() => {
+    const status = checkBruteForceLockout();
+    setLockoutStatus(status);
+    if (status.isLocked) {
+      setCountdownSeconds(Math.ceil(status.remainingMs / 1000));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (countdownSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setCountdownSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setLockoutStatus(checkBruteForceLockout());
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [countdownSeconds]);
+
+  // Session Inactivity Auto-Lock for authenticated admins
+  useEffect(() => {
+    if (!user || !isSuperAdmin) return;
+
+    let timeoutId: any;
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        logSecurityThreat('ADMIN_INACTIVITY_LOCK', {
+          userEmail: user.email,
+          uid: user.uid,
+          reason: 'Auto-locked after 30 minutes of inactivity',
+        });
+        logout();
+        onShowMessage('Session locked due to 30 minutes of inactivity.');
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer));
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [user, isSuperAdmin]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAuthTimedOut(true);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const currentLock = checkBruteForceLockout();
+    if (currentLock.isLocked) {
+      setLockoutStatus(currentLock);
+      setCountdownSeconds(Math.ceil(currentLock.remainingMs / 1000));
+      setLoginError(`Security lockout in effect. Please wait ${Math.ceil(currentLock.remainingMs / 1000)}s.`);
+      return;
+    }
+
+    if (!adminPassword) {
+      setLoginError('Please enter your administrator password.');
+      return;
+    }
+    setLoginSubmitting(true);
+    setLoginError(null);
+    try {
+      const res = await signIn(adminEmail.trim(), adminPassword);
+      if (!res.success) {
+        const failStatus = recordFailedAuthAttempt();
+        setLockoutStatus(failStatus);
+        if (failStatus.isLocked) {
+          setCountdownSeconds(Math.ceil(failStatus.remainingMs / 1000));
+          setLoginError(`Maximum attempts exceeded. Gateway locked for 5 minutes.`);
+        } else {
+          setLoginError(
+            `${res.error || 'Authentication failed.'} (${failStatus.remainingAttempts} attempts remaining)`
+          );
+        }
+      } else {
+        resetAuthAttempts();
+        onShowMessage('Administrator authenticated successfully.');
+      }
+    } catch (err: any) {
+      const failStatus = recordFailedAuthAttempt();
+      setLockoutStatus(failStatus);
+      setLoginError(err.message || 'Login failed.');
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
 
   // Global Ctrl + K listener
   useEffect(() => {
@@ -83,6 +211,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
 
+  const isTabActive = (itemId: string, tab: string) => {
+    if (itemId === tab) return true;
+    if (itemId === 'hero' && (tab === 'hero-banners' || tab === 'hero')) return true;
+    if (itemId === 'navigation' && (tab === 'navigation-footer' || tab === 'navigation' || tab === 'footer')) return true;
+    if (itemId === 'bulk-episodes' && (tab === 'episodes/bulk' || tab === 'bulk-episodes')) return true;
+    if (itemId === 'legal' && (tab === 'legal-pages' || tab === 'legal')) return true;
+    if (itemId === 'notice' && (tab === 'popup-notice' || tab === 'notice')) return true;
+    return false;
+  };
+
   const navGroups: NavGroup[] = [
     {
       groupTitle: 'Overview',
@@ -95,17 +233,22 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       items: [
         { id: 'anime', title: 'Anime Library', path: '/admin/anime', icon: Film },
         { id: 'episodes', title: 'Episodes', path: '/admin/episodes', icon: Tv },
-        { id: 'bulk-episodes', title: 'Bulk Episodes', path: '/admin/episodes/bulk', icon: ListPlus },
+        { id: 'bulk-episodes', title: 'Bulk Episodes', path: '/admin/episodes/bulk', icon: ListPlus, badge: 'Fast' },
+        { id: 'seasons', title: 'Seasons & Sequels', path: '/admin/seasons', icon: Layers },
         { id: 'downloads', title: 'Downloads', path: '/admin/downloads', icon: Download },
         { id: 'schedule', title: 'Schedule', path: '/admin/schedule', icon: Calendar },
+        { id: 'taxonomy', title: 'Genres & Taxonomy', path: '/admin/taxonomy', icon: Tag },
       ],
     },
     {
       groupTitle: 'Display & Curation',
       items: [
-        { id: 'notice', title: 'Site Pop-up Notice', path: '/admin/notice', icon: Megaphone },
+        { id: 'homepage', title: 'Homepage Sections', path: '/admin/homepage', icon: Sliders },
         { id: 'hero', title: 'Hero Banners', path: '/admin/hero', icon: Sparkles },
+        { id: 'notice', title: 'Site Pop-up Notice', path: '/admin/notice', icon: Megaphone },
         { id: 'announcements', title: 'Announcements', path: '/admin/announcements', icon: Bell },
+        { id: 'navigation', title: 'Navigation & Footer', path: '/admin/navigation', icon: Compass },
+        { id: 'avatars', title: 'Avatar Library', path: '/admin/avatars', icon: Users },
       ],
     },
     {
@@ -121,6 +264,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       items: [
         { id: 'settings', title: 'Site Settings', path: '/admin/settings', icon: Settings },
         { id: 'seo', title: 'SEO & Metadata', path: '/admin/seo', icon: Globe },
+        { id: 'legal', title: 'Legal & Policies', path: '/admin/legal', icon: FileText },
         { id: 'logs', title: 'Activity Logs', path: '/admin/logs', icon: Activity },
       ],
     },
@@ -131,6 +275,145 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     onShowMessage('Logged out from admin panel.');
     navigate('/');
   };
+
+  if (loading && !authTimedOut && !isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-[#050A14] flex flex-col items-center justify-center p-4 space-y-3">
+        <RefreshCw className="w-6 h-6 text-[#1683FF] animate-spin" />
+        <div className="text-xs text-[#94A3B8] font-bold tracking-wide uppercase">
+          Verifying Security Clearance...
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-[#050A14] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-[#0B1322] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 rounded-2xl bg-[#1683FF]/15 border border-[#1683FF]/30 flex items-center justify-center mx-auto text-[#1683FF] shadow-lg shadow-[#1683FF]/20">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h2 className="text-2xl font-black text-white tracking-tight">
+              ZYNOX Security Gateway
+            </h2>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] font-bold">
+              <Shield className="w-3.5 h-3.5" />
+              <span>Restricted Administrator Console</span>
+            </div>
+            <p className="text-xs text-[#94A3B8] pt-1">
+              {user ? (
+                <span>
+                  Currently signed in as <strong className="text-white">{user.email}</strong> (Unauthorized). Switch to the verified Super Administrator account.
+                </span>
+              ) : (
+                'Sign in with your verified administrator credentials to access management controls.'
+              )}
+            </p>
+          </div>
+
+          {loginError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
+                Administrator Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="zairoxmax2.0@gmail.com"
+                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-colors"
+                  required
+                />
+              </div>
+            </div>
+
+            {lockoutStatus.isLocked && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 shrink-0 text-amber-400" />
+                <div>
+                  <span className="font-bold">Security Lockout Active: </span>
+                  <span>Too many failed attempts. Try again in {countdownSeconds}s.</span>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loginSubmitting || lockoutStatus.isLocked}
+              className="w-full py-3 bg-[#1683FF] hover:bg-[#1683FF]/90 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#1683FF]/25 cursor-pointer disabled:opacity-50"
+            >
+              {loginSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : lockoutStatus.isLocked ? (
+                <>
+                  <Clock className="w-4 h-4" />
+                  <span>Locked ({countdownSeconds}s)</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Unlock Admin Console</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+            {user ? (
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="text-rose-400 hover:text-rose-300 font-semibold transition cursor-pointer"
+              >
+                Sign out current account
+              </button>
+            ) : (
+              <span className="text-slate-500 text-[11px]">Authorized personnel only</span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-[#94A3B8] hover:text-white font-semibold transition cursor-pointer flex items-center gap-1"
+            >
+              <span>Back to Site</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-[#050A14] text-white flex flex-col antialiased selection:bg-[#1683FF] selection:text-white overflow-hidden">
@@ -237,7 +520,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                 </div>
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const isActive = currentTab === item.id;
+                  const isActive = isTabActive(item.id, currentTab);
                   return (
                     <button
                       key={item.id}
@@ -314,7 +597,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     </div>
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const isActive = currentTab === item.id;
+                      const isActive = isTabActive(item.id, currentTab);
                       return (
                         <button
                           key={item.id}

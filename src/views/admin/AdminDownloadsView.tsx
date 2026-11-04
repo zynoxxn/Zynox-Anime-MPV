@@ -442,8 +442,8 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
     }
   };
 
-  // Bulk Apply URLs line-by-line
-  const handleApplyBulkUrls = () => {
+  // Bulk Apply URLs line-by-line (with optional immediate save)
+  const handleApplyBulkUrls = (andSaveNow: boolean = false) => {
     const lines = bulkLinksText
       .split('\n')
       .map((l) => l.trim())
@@ -474,9 +474,18 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
       return updated;
     });
 
-    onShowMessage(`Applied ${lines.length} ${bulkTargetQuality} links! Click "Save All" to save.`);
-    setBulkModalOpen(false);
-    setBulkLinksText('');
+    if (andSaveNow) {
+      onShowMessage(`Applied ${lines.length} ${bulkTargetQuality} links! Saving now...`);
+      setBulkModalOpen(false);
+      setBulkLinksText('');
+      setTimeout(() => {
+        handleSaveAllSeasonEpisodes();
+      }, 100);
+    } else {
+      onShowMessage(`Applied ${lines.length} ${bulkTargetQuality} links! Click "Save All" to save.`);
+      setBulkModalOpen(false);
+      setBulkLinksText('');
+    }
   };
 
   return (
@@ -877,7 +886,7 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setBulkModalOpen(false)}
@@ -887,10 +896,18 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={handleApplyBulkUrls}
-                  className="px-4 py-1.5 rounded-xl text-xs font-extrabold text-black bg-cyan-500 hover:bg-cyan-400 cursor-pointer"
+                  onClick={() => handleApplyBulkUrls(false)}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 cursor-pointer"
                 >
                   Apply Links
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyBulkUrls(true)}
+                  className="px-4 py-1.5 rounded-xl text-xs font-extrabold text-black bg-cyan-500 hover:bg-cyan-400 shadow-md shadow-cyan-500/20 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Apply & Save All</span>
                 </button>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { getOptimizedImageUrl, FALLBACK_ANIME_POSTER } from '../../lib/image-optimizer';
 import {
   PlusCircle,
   Edit,
@@ -207,9 +208,17 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                   {/* Left: Thumbnail & Title Info */}
                   <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                     <img
-                      src={anime.poster}
+                      src={getOptimizedImageUrl(anime.poster, { width: 120, fallbackType: 'poster' })}
                       alt={anime.title}
+                      loading="lazy"
+                      decoding="async"
                       className="w-12 h-16 object-cover rounded-xl shrink-0 border border-white/10"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (target.src !== FALLBACK_ANIME_POSTER) {
+                          target.src = FALLBACK_ANIME_POSTER;
+                        }
+                      }}
                     />
 
                     <div className="min-w-0 space-y-1">

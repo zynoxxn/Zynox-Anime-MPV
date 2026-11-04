@@ -9,6 +9,7 @@ import {
   getEpisodeByAnimeAndNumber,
   getPublishedEpisodesByAnimeId,
   incrementEpisodeViews,
+  isMockVideoUrl,
 } from '../lib/firestore/episodes';
 import {
   saveWatchProgress,
@@ -65,6 +66,9 @@ import {
   Sparkles,
   Check,
   Heart,
+  Play,
+  RotateCcw,
+  Plus,
 } from 'lucide-react';
 
 interface WatchEpisodeViewProps {
@@ -82,7 +86,10 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const isSuperAdmin = Boolean(
+    isAdmin || (user?.email && user.email.toLowerCase().trim() === 'zairoxmax2.0@gmail.com')
+  );
   const [anime, setAnime] = useState<Anime | null>(null);
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [allEpisodes, setAllEpisodes] = useState<Episode[]>([]);
@@ -96,6 +103,9 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [iframeError, setIframeError] = useState<boolean>(false);
   const [videoError, setVideoError] = useState<boolean>(false);
   const [, setIframeLoaded] = useState<boolean>(false);
+  const [isPlayingDirect, setIsPlayingDirect] = useState<boolean>(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const handleSelectStream = (category: 'sub' | 'dub', serverIndex: number) => {
     setSelectedCategory(category);
@@ -104,6 +114,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setIframeError(false);
     setVideoError(false);
     setIframeLoaded(false);
+    setIsPlayingDirect(false);
   };
 
   // Modals & AutoNext state
@@ -147,8 +158,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   }, [anime, episode]);
 
   usePageSeo(seoMetadata);
-
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -250,18 +259,12 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     };
   }, [animeSlug, episodeNumberOrId, user?.uid]);
 
-  // Fallback high-speed streaming links
-  const FALLBACK_DIRECT_STREAMS = [
-    'https://media.w3.org/2010/05/sintel/trailer.mp4',
-    'https://media.w3.org/2010/05/bunny/trailer.mp4',
-    'https://vjs.zencdn.net/v/oceans.mp4',
-  ];
-
   // Helper to test if a source has a non-empty embed URL or frame code
   const hasValidStreamUrl = (s: Partial<VideoSource> | null | undefined): boolean => {
     if (!s) return false;
     const url = (s.embedUrl || '').trim();
     const frame = (s.frameCode || (s as any).frameEmbedUrl || '').trim();
+    if (isMockVideoUrl(url) || isMockVideoUrl(frame)) return false;
     return Boolean(url || frame);
   };
 
@@ -317,35 +320,18 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     }
 
     // 3. If no sources found with URLs, but episode has videoUrl
-    if (rawSourcesList.length === 0 && episode.videoUrl && episode.videoUrl.trim()) {
+    if (rawSourcesList.length === 0 && episode.videoUrl && episode.videoUrl.trim() && !isMockVideoUrl(episode.videoUrl)) {
       addSourceDeduplicated({
         id: 'default-source',
-        name: 'server 1',
-        provider: 'server 1',
-        sourceName: 'server 1',
+        name: 'Abyss Server 1',
+        provider: 'Abyss HD Server',
+        sourceName: 'Abyss Server 1',
         embedUrl: episode.videoUrl.trim(),
         active: true,
         type: episode.videoUrl.endsWith('.m3u8') ? 'hls' : episode.videoUrl.endsWith('.mp4') ? 'mp4' : 'embed',
         category: episode.defaultCategory || 'sub',
         isDefault: true,
       }, 'default');
-    }
-
-    // 4. Fallback streams ONLY if absolutely no valid source was found in the episode at all
-    if (rawSourcesList.length === 0) {
-      FALLBACK_DIRECT_STREAMS.forEach((url, idx) => {
-        addSourceDeduplicated({
-          id: `fallback-srv-${idx + 1}`,
-          name: `server ${idx + 1}`,
-          provider: `server ${idx + 1}`,
-          sourceName: `server ${idx + 1}`,
-          embedUrl: url,
-          active: true,
-          type: 'mp4',
-          category: idx === 0 ? 'sub' : 'dub',
-          isDefault: idx === 0,
-        }, `fallback-${idx + 1}`);
-      });
     }
 
     // Separate into Sub and Dub candidate lists
@@ -529,6 +515,11 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   // Fallback to episode.videoUrl if rawUrl is still empty
   if (!rawUrl && episode.videoUrl) {
     rawUrl = episode.videoUrl;
+  }
+
+  // Strictly filter out any placeholder mock video URLs (flower.mp4, oceans.mp4, etc.)
+  if (isMockVideoUrl(rawUrl)) {
+    rawUrl = '';
   }
 
   // Transform stream URL (converts YouTube watch links to embed, Google Drive to preview, direct video detection)
@@ -735,12 +726,26 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               </div>
             </div>
           ) : !currentSource || !currentUrl ? (
-            <div className="text-center p-8 text-[#A9B8CC]">
-              <Film className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p className="text-base font-bold text-[#F5F9FF]">Video source is currently offline.</p>
-              <p className="text-xs text-[#A9B8CC] mt-1">
-                {validationError || 'No active embed URL configured for this episode.'}
+            <div className="text-center p-8 text-[#A9B8CC] max-w-md mx-auto space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#00A8FF]/10 border border-[#00A8FF]/20 flex items-center justify-center mx-auto text-[#00A8FF]">
+                <Film className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-[#F5F9FF]">Anime Episode Stream Being Prepared</h3>
+              <p className="text-xs text-[#A9B8CC] leading-relaxed">
+                The video stream for this episode has not been uploaded yet. You can use the Download button below or check other episodes.
               </p>
+              {isSuperAdmin && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/episodes/bulk')}
+                    className="px-4 py-2 bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold rounded-xl shadow-lg transition inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Paste Anime Video Links (Bulk Add)</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : !validation.isValid ? (
             <div className="text-center max-w-md p-6 bg-red-950/40 border border-red-500/30 rounded-2xl m-4 text-red-300 space-y-3">
@@ -758,45 +763,90 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               )}
             </div>
           ) : isDirectVideo ? (
-            <div className="relative w-full h-full">
+            <div className="relative w-full h-full bg-black">
               <video
+                ref={videoRef}
                 key={currentUrl}
                 src={currentUrl}
+                poster={anime.banner || anime.poster || episode.thumbnail || ''}
                 controls
                 playsInline
                 preload="metadata"
                 className="w-full h-full bg-black object-contain"
+                onPlay={() => {
+                  setIsPlayingDirect(true);
+                  setVideoError(false);
+                }}
+                onPause={() => setIsPlayingDirect(false)}
+                onError={() => {
+                  setVideoError(true);
+                  setIsPlayingDirect(false);
+                }}
               >
                 <source src={currentUrl} type="video/mp4" />
                 Your browser does not support HTML5 video streaming.
               </video>
+
+              {/* Big Tap to Play Overlay when not playing */}
+              {!isPlayingDirect && !videoError && (
+                <div
+                  onClick={() => {
+                    if (videoRef.current) {
+                      videoRef.current
+                        .play()
+                        .then(() => setIsPlayingDirect(true))
+                        .catch((e) => {
+                          console.warn('Playback error:', e);
+                          setVideoError(true);
+                        });
+                    }
+                  }}
+                  className="absolute inset-0 bg-black/60 hover:bg-black/50 backdrop-blur-[1px] transition-all flex flex-col items-center justify-center cursor-pointer group z-10 p-4 text-center"
+                >
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#1683FF] hover:bg-[#2563EB] text-white flex items-center justify-center shadow-2xl shadow-[#1683FF]/50 group-hover:scale-110 active:scale-95 transition-all">
+                    <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
+                  </div>
+                  <div className="mt-3.5 space-y-1">
+                    <p className="text-white font-extrabold text-sm sm:text-base tracking-wide drop-shadow-md">
+                      Tap to Play Episode {episode.episodeNumber}
+                    </p>
+                    <p className="text-xs text-[#00CFFF] font-semibold">
+                      {selectedCategory.toUpperCase()} • {currentSource?.name || `Server ${selectedServerIndex + 1}`}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {videoError && (
                 <div className="absolute inset-0 bg-[#030712]/95 flex flex-col items-center justify-center p-6 text-center space-y-3 z-20">
                   <AlertTriangle className="w-10 h-10 text-amber-400" />
                   <h3 className="text-base font-bold text-[#F5F9FF]">Stream Playback Notice</h3>
                   <p className="text-xs text-[#A9B8CC] max-w-md">
-                    This video stream encountered a playback error in your browser. Switch to an alternate server or open the stream in a new tab.
+                    This video stream encountered a playback error or was blocked by browser shields. Tap below to retry, switch server, or open in a direct tab.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
-                        handleSelectStream(selectedCategory, selectedServerIndex === 0 ? 1 : 0);
+                        setVideoError(false);
+                        if (videoRef.current) {
+                          videoRef.current.load();
+                          videoRef.current.play().catch(() => setVideoError(true));
+                        }
                       }}
-                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>Switch to Alternate Server</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Retry Play</span>
                     </button>
                     <a
                       href={currentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Open Stream in New Tab</span>
+                      <span>Open Stream Directly</span>
                     </a>
                   </div>
                 </div>
@@ -812,7 +862,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                 allowFullScreen
-                referrerPolicy="origin-when-cross-origin"
+                referrerPolicy="no-referrer"
                 loading="eager"
                 onLoad={() => setIframeLoaded(true)}
                 onError={() => setIframeError(true)}
@@ -823,28 +873,30 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                   <AlertTriangle className="w-10 h-10 text-amber-400" />
                   <h3 className="text-base font-bold text-[#F5F9FF]">Streaming Host Notice</h3>
                   <p className="text-xs text-[#A9B8CC] max-w-md">
-                    This video host restricts direct embedding or requires opening in a dedicated stream tab.
+                    If this stream is blocked by Brave Shields or browser tracking protection, tap below to open and watch directly in high quality.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleSelectStream(selectedCategory, selectedServerIndex === 0 ? 1 : 0);
-                      }}
-                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>Switch to Alternate Server</span>
-                    </button>
                     <a
                       href={currentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                      className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#2563EB] text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Open Stream in New Tab</span>
+                      <span>Open Abyss Stream in New Tab</span>
                     </a>
+                    {activeServerList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleSelectStream(selectedCategory, selectedServerIndex === 0 ? 1 : 0);
+                        }}
+                        className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Switch Server</span>
+                      </button>
+                    )}
                     {hasAlternate && selectedSourceType === 'primary' && (
                       <button
                         type="button"
@@ -853,7 +905,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                           setIframeError(false);
                           setVideoError(false);
                         }}
-                        className="px-5 py-2.5 bg-[#0066FF] hover:bg-[#0052cc] text-white text-xs font-bold rounded-xl transition-all shadow-lg"
+                        className="px-5 py-2.5 bg-[#0066FF] hover:bg-[#0052cc] text-white text-xs font-bold rounded-xl transition-all shadow-lg cursor-pointer"
                       >
                         Try Alternate Source
                       </button>
@@ -1015,6 +1067,18 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
             <Shield className="w-4 h-4 text-[#1683FF]" />
             <span>Authorized Streams</span>
           </div>
+          {currentUrl && (
+            <a
+              href={currentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0A1628] hover:bg-[#11243C] text-[#00CFFF] hover:text-white border border-[#00A8FF]/30 transition-all font-semibold"
+              title="Open direct streaming link in a new browser tab"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>Direct Link</span>
+            </a>
+          )}
         </div>
 
         <div className="space-y-3 pt-1">

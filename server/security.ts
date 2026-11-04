@@ -84,9 +84,8 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   // 4. Permissions Policy
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
-  // 5. Clickjacking Defense (Governed additionally by frame-ancestors in CSP)
-  // For standard browsers, allow AI Studio preview iframe while preventing arbitrary embedding
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // 5. Clickjacking Defense is governed by frame-ancestors in CSP directive above
+  // (allows AI Studio preview environment while preventing arbitrary malicious framing)
 
   // 6. XSS Filter
   res.setHeader('X-XSS-Protection', '1; mode=block');

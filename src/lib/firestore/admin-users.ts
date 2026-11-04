@@ -34,9 +34,12 @@ export async function getAllUsers(): Promise<UserProfile[]> {
       ...(d.data() as Omit<UserProfile, 'uid'>),
     }));
     return list;
-  } catch (err) {
-    console.error('Failed to get all users:', err);
-    throw err;
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      return [];
+    }
+    console.warn('Could not fetch all users:', err);
+    return [];
   }
 }
 

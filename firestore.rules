@@ -41,9 +41,9 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // User profile documents
+    // User profile documents (readable for public profiles, comment authors, and avatars)
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create: if isAuthenticated() &&
         request.auth.uid == userId &&
         request.resource.data.uid == userId &&
@@ -177,9 +177,9 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // Community Anime Requests - Size Capped and Controlled
+    // Community Anime Requests - Size Capped and Controlled (Publicly readable community board)
     match /animeRequests/{requestId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if true;
       allow create: if request.resource.data.keys().hasAny(['title', 'animeTitle']) &&
         (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
         (!('status' in request.resource.data) || request.resource.data.status == 'pending');
@@ -188,7 +188,7 @@ service cloud.firestore {
 
     // Video Episode Problem Reports
     match /episodeReports/{reportId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if request.resource.data.keys().hasAny(['issueType', 'reason']) &&
         (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
         (!('status' in request.resource.data) || request.resource.data.status == 'open');
@@ -326,6 +326,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    match /cmsRatings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     match /cms_types/{docId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -416,6 +420,11 @@ service cloud.firestore {
     match /cmsAdminLogs/{logId} {
       allow read: if isAdmin() || isModeratorOrAdmin();
       allow create: if isAdmin() || isModeratorOrAdmin();
+      allow update, delete: if false;
+    }
+    match /security_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if true;
       allow update, delete: if false;
     }
   }

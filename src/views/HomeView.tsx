@@ -28,6 +28,7 @@ import { AnimeGrid } from '../components/AnimeGrid';
 import { EpisodeCard } from '../components/EpisodeCard';
 import { ScheduledCard } from '../components/ScheduledCard';
 import { usePageSeo } from '../hooks/usePageSeo';
+import { preloadImages } from '../lib/image-optimizer';
 import { ChevronLeft, ChevronRight, Play, Calendar, Clock, Compass, Sparkles } from 'lucide-react';
 
 interface HomeViewProps {
@@ -330,6 +331,10 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
             return getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a);
           });
           setRecentlyAdded(sortedRecentlyAdded.slice(0, 24));
+
+          // Proactively warm browser image cache for top posters so cards appear in <150ms
+          const topPosters = validAll.slice(0, 16).map((a) => a.poster).filter(Boolean);
+          preloadImages(topPosters, { width: 320, fallbackType: 'poster' });
 
           // Map all animes by ID and slug for fast poster enrichment
           const animeMap = new Map<string, Anime>();

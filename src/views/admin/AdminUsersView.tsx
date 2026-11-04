@@ -28,7 +28,7 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
       const items = await getAllUsers();
       setUsers(items);
     } catch (err) {
-      console.error('Failed to load users:', err);
+      console.warn('Could not load users:', err);
     } finally {
       setLoading(false);
     }
@@ -36,7 +36,7 @@ export const AdminUsersView: React.FC<AdminUsersViewProps> = ({ navigate, onShow
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [user, isAdmin]);
 
   const handleRoleChange = async (uid: string, userEmail: string, newRole: UserRole) => {
     try {

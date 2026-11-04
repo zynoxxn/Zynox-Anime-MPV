@@ -80,6 +80,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     updated: number;
     total: number;
   } | null>(null);
+  const [savingRowIdx, setSavingRowIdx] = useState<number | null>(null);
 
   // Load all animes on mount
   useEffect(() => {
@@ -354,8 +355,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     }
   };
 
-  // Quick Multi-Paste applicator
-  const handleApplyMultiPaste = () => {
+  // Quick Multi-Paste applicator (optionally save immediately)
+  const handleApplyMultiPaste = (andSaveNow: boolean = false) => {
     const embedLines = pasteEmbedUrls
       .split('\n')
       .map((l) => l.trim())
@@ -374,50 +375,55 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
       return;
     }
 
-    setEpisodeRows((prev) => {
-      const maxCount = Math.max(
-        prev.length,
-        embedLines.length,
-        downloadLines.length,
-        titleLines.length
-      );
+    const maxCount = Math.max(
+      episodeRows.length,
+      embedLines.length,
+      downloadLines.length,
+      titleLines.length
+    );
 
-      const nextRows: SeasonEpisodeRow[] = [];
-      for (let i = 0; i < maxCount; i++) {
-        const epNum = i + 1;
-        const existing = prev[i];
+    const nextRows: SeasonEpisodeRow[] = [];
+    for (let i = 0; i < maxCount; i++) {
+      const epNum = i + 1;
+      const existing = episodeRows[i];
 
-        const title =
-          titleLines[i] ||
-          existing?.title ||
-          `Episode ${epNum}`;
+      const title =
+        titleLines[i] ||
+        existing?.title ||
+        `Episode ${epNum}`;
 
-        const embedUrl =
-          embedLines[i] !== undefined
-            ? embedLines[i]
-            : existing?.embedUrl || '';
+      const embedUrl =
+        embedLines[i] !== undefined
+          ? embedLines[i]
+          : existing?.embedUrl || '';
 
-        const downloadUrl =
-          downloadLines[i] !== undefined
-            ? downloadLines[i]
-            : existing?.downloadUrl || '';
+      const downloadUrl =
+        downloadLines[i] !== undefined
+          ? downloadLines[i]
+          : existing?.downloadUrl || '';
 
-        nextRows.push({
-          episodeNumber: epNum,
-          title,
-          embedUrl,
-          downloadUrl,
-          isExistingInDb: existing?.isExistingInDb || false,
-          existingId: existing?.existingId,
-        });
-      }
+      nextRows.push({
+        episodeNumber: epNum,
+        title,
+        embedUrl,
+        downloadUrl,
+        isExistingInDb: existing?.isExistingInDb || false,
+        existingId: existing?.existingId,
+      });
+    }
 
-      setTotalEpisodesCount(nextRows.length);
-      return nextRows;
-    });
-
+    setEpisodeRows(nextRows);
+    setTotalEpisodesCount(nextRows.length);
     setShowMultiPaste(false);
-    onShowMessage(`Applied pasted links to ${Math.max(embedLines.length, downloadLines.length, titleLines.length)} episodes!`);
+
+    if (andSaveNow) {
+      onShowMessage(`Applied links to ${nextRows.length} episodes. Saving now...`);
+      setTimeout(() => {
+        handleSaveAllWithRows(nextRows);
+      }, 50);
+    } else {
+      onShowMessage(`Applied pasted links to ${Math.max(embedLines.length, downloadLines.length, titleLines.length)} episodes! Click Save to confirm.`);
+    }
   };
 
   // Helper to detect download host
@@ -437,20 +443,22 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     }
   };
 
-  // Save all episodes to Firestore
-  const handleSaveAll = async () => {
+  // Core save routine for bulk episodes
+  const handleSaveAllWithRows = async (rowsToSave?: SeasonEpisodeRow[]) => {
     if (!selectedAnimeId || !selectedAnime) {
       onShowMessage('Please select an anime title first');
       return;
     }
 
-    if (episodeRows.length === 0) {
+    const targetRows = rowsToSave || episodeRows;
+
+    if (targetRows.length === 0) {
       onShowMessage('No episodes to save');
       return;
     }
 
     // Filter rows that have at least title, embedUrl or downloadUrl
-    const validRows = episodeRows.filter((r) => r.title || r.embedUrl || r.downloadUrl);
+    const validRows = targetRows.filter((r) => r.title || r.embedUrl || r.downloadUrl);
     if (validRows.length === 0) {
       onShowMessage('Please enter at least one episode with Title or URL');
       return;
@@ -467,7 +475,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         const videoSources = streamUrl
           ? [
               {
-                id: 's1',
+                id: 'srv-1',
                 serverName: 'Server 1 (Embed)',
                 embedUrl: streamUrl,
                 quality: defaultQuality,
@@ -478,7 +486,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         const sources = streamUrl
           ? [
               {
-                id: 's1',
+                id: 'srv-1',
                 name: 'Server 1',
                 embedUrl: streamUrl,
                 quality: defaultQuality,
@@ -532,14 +540,14 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         if (seasonIdx >= 0) {
           currentSeasonsList[seasonIdx] = {
             ...currentSeasonsList[seasonIdx],
-            totalEpisodes: Math.max(currentSeasonsList[seasonIdx].totalEpisodes || 0, episodeRows.length),
+            totalEpisodes: Math.max(currentSeasonsList[seasonIdx].totalEpisodes || 0, targetRows.length),
           };
         } else {
           currentSeasonsList.push({
             id: `s${seasonNumber}`,
             seasonNumber,
             title: `Season ${seasonNumber}`,
-            totalEpisodes: episodeRows.length,
+            totalEpisodes: targetRows.length,
             status: 'ongoing',
           });
         }
@@ -591,6 +599,134 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     }
   };
 
+  // Trigger Save All
+  const handleSaveAll = () => {
+    handleSaveAllWithRows(episodeRows);
+  };
+
+  // Save an individual episode row directly
+  const handleSaveSingleRow = async (index: number) => {
+    if (!selectedAnimeId || !selectedAnime) {
+      onShowMessage('Please select an anime title first');
+      return;
+    }
+
+    const row = episodeRows[index];
+    if (!row) return;
+
+    if (!row.title.trim() && !row.embedUrl.trim() && !row.downloadUrl.trim()) {
+      onShowMessage(`Episode ${row.episodeNumber} has no title or links to save`);
+      return;
+    }
+
+    try {
+      setSavingRowIdx(index);
+      const streamUrl = row.embedUrl.trim();
+      const downloadUrl = row.downloadUrl.trim();
+
+      const videoSources = streamUrl
+        ? [
+            {
+              id: 'srv-1',
+              serverName: 'Server 1 (Embed)',
+              embedUrl: streamUrl,
+              quality: defaultQuality,
+            },
+          ]
+        : undefined;
+
+      const sources = streamUrl
+        ? [
+            {
+              id: 'srv-1',
+              name: 'Server 1',
+              embedUrl: streamUrl,
+              quality: defaultQuality,
+            },
+          ]
+        : undefined;
+
+      const downloadLinks = downloadUrl
+        ? [
+            {
+              quality: defaultQuality,
+              url: downloadUrl,
+              host: detectHost(downloadUrl),
+              size: 'HD',
+            },
+          ]
+        : undefined;
+
+      const payload: BulkEpisodeItemInput[] = [
+        {
+          episodeNumber: row.episodeNumber,
+          seasonNumber: seasonNumber,
+          season: seasonNumber,
+          title: row.title.trim() || `Episode ${row.episodeNumber}`,
+          videoUrl: streamUrl || 'https://media.w3.org/2010/05/sintel/trailer.mp4',
+          downloadUrl: downloadUrl || undefined,
+          videoSources,
+          sources,
+          downloadLinks,
+          language: defaultLanguage,
+          quality: defaultQuality,
+          published: defaultPublished,
+        },
+      ];
+
+      await bulkCreateEpisodes(selectedAnimeId, payload, {
+        overwriteExisting: true,
+        updateAnimeStats: true,
+        animeTitle: selectedAnime.title,
+        animeSlug: selectedAnime.slug,
+        animePoster: selectedAnime.poster || selectedAnime.posterUrl,
+        animeBanner: selectedAnime.banner || selectedAnime.bannerUrl,
+      });
+
+      // Update row as existing in DB
+      setEpisodeRows((prev) => {
+        const next = [...prev];
+        if (next[index]) {
+          next[index] = { ...next[index], isExistingInDb: true };
+        }
+        return next;
+      });
+
+      // Log admin activity
+      if (user?.email) {
+        logAdminActivity(
+          user.uid || 'admin',
+          user.email,
+          'CREATE_EPISODE',
+          'episode',
+          selectedAnimeId,
+          `Saved Episode ${row.episodeNumber} for "${selectedAnime.title}" (Season ${seasonNumber}) via Bulk Add`
+        ).catch(() => {});
+      }
+
+      onShowMessage(`Episode ${row.episodeNumber} saved successfully!`);
+    } catch (err: any) {
+      console.error('Failed to save episode:', err);
+      onShowMessage(err.message || `Failed to save Episode ${row.episodeNumber}`);
+    } finally {
+      setSavingRowIdx(null);
+    }
+  };
+
+  // Keyboard shortcut Ctrl+S / Cmd+S to Save All Episodes
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (!isSaving && episodeRows.length > 0) {
+          handleSaveAll();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSaving, episodeRows, selectedAnimeId, seasonNumber, defaultLanguage, defaultQuality, defaultPublished]);
+
   // Filled count statistics
   const filledCount = useMemo(() => {
     return episodeRows.filter((r) => r.embedUrl.trim() || r.downloadUrl.trim()).length;
@@ -625,20 +761,39 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => navigate('/admin/episodes')}
-                className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm font-semibold transition"
+                className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm font-semibold transition cursor-pointer"
               >
                 Back to Episodes
               </button>
               <button
                 type="button"
                 onClick={() => navigate('/admin/episodes/new')}
-                className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm font-semibold transition flex items-center gap-1.5"
+                className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-4 h-4 text-blue-400" /> Single Form
+              </button>
+              <button
+                type="button"
+                disabled={isSaving || episodeRows.length === 0}
+                onClick={handleSaveAll}
+                className="px-5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-500/25 flex items-center gap-2 transition disabled:opacity-50 text-sm cursor-pointer"
+                title="Save all episodes in this season (Ctrl+S)"
+              >
+                {isSaving ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Save All Episodes</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -831,11 +986,26 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
 
           {/* Quick Helper Tools Bar */}
           <div className="pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={isSaving || episodeRows.length === 0}
+                onClick={handleSaveAll}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-600/30 transition disabled:opacity-50 cursor-pointer"
+                title="Save all changes to database"
+              >
+                {isSaving ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                <span>Save Season Changes</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowMultiPaste(!showMultiPaste)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                   showMultiPaste
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
@@ -848,7 +1018,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               <button
                 type="button"
                 onClick={handleClearUrls}
-                className="px-3 py-2 bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/60 rounded-xl text-xs font-semibold transition flex items-center gap-1"
+                className="px-3 py-2 bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/60 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
                 title="Clear all URLs in cards"
               >
                 Clear URLs
@@ -857,7 +1027,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               <button
                 type="button"
                 onClick={handleDeleteSeasonFromDb}
-                className="px-3 py-2 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition flex items-center gap-1"
+                className="px-3 py-2 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
                 title={`Delete Season ${seasonNumber} episodes from database to start fresh`}
               >
                 <Trash2 className="w-3.5 h-3.5 text-rose-400" /> Delete S{seasonNumber} From DB
@@ -920,20 +1090,27 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowMultiPaste(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleApplyMultiPaste}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5"
+                  onClick={() => handleApplyMultiPaste(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Check className="w-4 h-4" /> Apply to All Episode Cards
+                  <Check className="w-4 h-4" /> Apply to Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyMultiPaste(true)}
+                  className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-extrabold shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" /> Apply & Save All Now
                 </button>
               </div>
             </div>
@@ -953,18 +1130,34 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         {/* The Exact Episode Cards Format Requested by User */}
         {!loadingEpisodes && episodeRows.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Film className="w-4 h-4 text-blue-400" />
                 Episodes List (Season {seasonNumber}) — {episodeRows.length} Episodes
               </h3>
-              <button
-                type="button"
-                onClick={handleAddEpisodeSlot}
-                className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Ep {episodeRows.length + 1} Slot
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddEpisodeSlot}
+                  className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Ep {episodeRows.length + 1} Slot
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving || episodeRows.length === 0}
+                  onClick={handleSaveAll}
+                  className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/30 transition disabled:opacity-50 cursor-pointer"
+                  title="Save all episodes (Ctrl+S)"
+                >
+                  {isSaving ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  Save All Episodes
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -974,7 +1167,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                   className="bg-slate-900/95 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 shadow-lg transition space-y-3 relative group"
                 >
                   {/* Card Header: Ep number & DB Status */}
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
                     <div className="flex items-center gap-2.5">
                       <span className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold text-sm rounded-lg shadow-sm">
                         Ep {row.episodeNumber}
@@ -1016,11 +1209,30 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                           <Download className="w-3 h-3" /> Test Download
                         </a>
                       )}
+                      <button
+                        type="button"
+                        disabled={savingRowIdx === idx || isSaving}
+                        onClick={() => handleSaveSingleRow(idx)}
+                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow transition disabled:opacity-50 cursor-pointer"
+                        title={`Save Episode ${row.episodeNumber} directly`}
+                      >
+                        {savingRowIdx === idx ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3 h-3" />
+                            <span>Save Ep {row.episodeNumber}</span>
+                          </>
+                        )}
+                      </button>
                       {episodeRows.length > 1 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveRow(idx)}
-                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
                           title="Remove this slot"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1092,6 +1304,26 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                         )}
                       </div>
                     </div>
+
+                    {/* Bottom Card Footer with quick save */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                      <span className="text-[11px] text-slate-500">
+                        {row.isExistingInDb ? 'Saved in database.' : 'Draft episode (click Save to persist)'}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={savingRowIdx === idx || isSaving}
+                        onClick={() => handleSaveSingleRow(idx)}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white border border-slate-700 hover:border-emerald-500 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingRowIdx === idx ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Save className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>Save Ep {row.episodeNumber}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1102,7 +1334,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               <button
                 type="button"
                 onClick={handleAddEpisodeSlot}
-                className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 border border-slate-700 rounded-xl text-sm font-bold inline-flex items-center gap-2 transition shadow-md"
+                className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 border border-slate-700 rounded-xl text-sm font-bold inline-flex items-center gap-2 transition shadow-md cursor-pointer"
               >
                 <Plus className="w-4 h-4" /> Add Episode {episodeRows.length + 1} Slot
               </button>
@@ -1124,7 +1356,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
 
       {/* Sticky Bottom Save Action Bar */}
       {episodeRows.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/90 py-3.5 px-4 shadow-2xl">
+        <div className="fixed bottom-14 md:bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/90 py-3 px-4 shadow-2xl">
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3 w-full sm:w-auto">
               {selectedAnime && (
@@ -1147,7 +1379,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                 type="button"
                 disabled={isSaving}
                 onClick={handleSaveAll}
-                className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm cursor-pointer"
               >
                 {isSaving ? (
                   <>
@@ -1164,6 +1396,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
             </div>
           </div>
 
+          {/* Real-time saving progress message */}
           {/* Real-time saving progress message */}
           {saveProgress && (
             <div className="max-w-6xl mx-auto pt-2 text-center text-xs text-blue-400 font-medium animate-pulse">

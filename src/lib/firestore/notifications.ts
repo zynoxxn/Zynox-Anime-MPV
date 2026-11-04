@@ -9,7 +9,7 @@ import {
   where,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import type { AppNotification } from '../../types/library';
 import { getCmsAnnouncements } from './cms';
 
@@ -56,6 +56,10 @@ function saveDismissedAnnouncement(userId: string, annId: string) {
 }
 
 export async function getUserNotifications(userId: string): Promise<AppNotification[]> {
+  if (!userId || !auth.currentUser) {
+    return [];
+  }
+
   try {
     const q = query(
       collection(db, NOTIFICATIONS_COLLECTION),
@@ -98,8 +102,11 @@ export async function getUserNotifications(userId: string): Promise<AppNotificat
       const timeB = b.createdAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
-  } catch (err) {
-    console.error('Failed to get notifications:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      return [];
+    }
+    console.warn('Failed to get notifications:', err);
     return [];
   }
 }

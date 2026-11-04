@@ -8,6 +8,7 @@ import {
 } from '../lib/firestore/notifications';
 import type { Anime } from '../types/anime';
 import type { AppNotification } from '../types/library';
+import { getOptimizedImageUrl } from '../lib/image-optimizer';
 import {
   Search,
   Bookmark,
@@ -480,8 +481,10 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                             <div className="relative w-14 sm:w-16 h-20 sm:h-22 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 group-hover:border-[#1683FF]/60 shadow-md transition-all">
                               {anime.poster ? (
                                 <img
-                                  src={anime.poster}
+                                  src={getOptimizedImageUrl(anime.poster, { width: 150, fallbackType: 'poster' })}
                                   alt={anime.title}
+                                  loading="lazy"
+                                  decoding="async"
                                   referrerPolicy="no-referrer"
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                 />
@@ -846,7 +849,14 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           {/* Large Mobile Poster */}
                           <div className="relative w-14 h-20 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 shadow-md">
                             {anime.poster ? (
-                              <img src={anime.poster} alt={anime.title} className="w-full h-full object-cover" />
+                              <img
+                                src={getOptimizedImageUrl(anime.poster, { width: 150, fallbackType: 'poster' })}
+                                alt={anime.title}
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center bg-[#050A14] text-[#64748B]">
                                 <Film className="w-5 h-5" />

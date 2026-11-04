@@ -2,6 +2,7 @@ import React from 'react';
 import { Play } from 'lucide-react';
 import type { CmsScheduleItem } from '../types/cms';
 import { cleanAnimeTitle } from '../lib/firestore/anime';
+import { getOptimizedImageUrl, FALLBACK_ANIME_BANNER } from '../lib/image-optimizer';
 
 interface ScheduledCardProps {
   item: CmsScheduleItem;
@@ -36,11 +37,13 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
   };
 
   // Prioritize anime banner for 16:9 schedule card thumbnail
-  const posterImage =
+  const rawPoster =
     (item as any).animeBanner ||
     (item as any).banner ||
     item.animePoster ||
-    'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=1600&auto=format&fit=crop&q=80';
+    FALLBACK_ANIME_BANNER;
+
+  const posterImage = getOptimizedImageUrl(rawPoster, { width: 480, fallbackType: 'banner' });
 
   if (variant === 'mobile-row') {
     return (

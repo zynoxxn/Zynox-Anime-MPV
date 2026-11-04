@@ -54,7 +54,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       const items = await getAllEpisodeReports();
       setEpisodeReports(items);
     } catch (err) {
-      console.error('Failed to load episode reports:', err);
+      console.warn('Could not load episode reports:', err);
     } finally {
       setLoadingEpisodes(false);
     }
@@ -66,7 +66,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       const items = await getAllCommentReports();
       setCommentReports(items);
     } catch (err) {
-      console.error('Failed to load comment reports:', err);
+      console.warn('Could not load comment reports:', err);
     } finally {
       setLoadingComments(false);
     }
@@ -75,7 +75,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   useEffect(() => {
     fetchEpisodeReports();
     fetchCommentReports();
-  }, []);
+  }, [user, isAdmin]);
 
   const handleUpdateEpisodeReportStatus = async (id: string, newStatus: ReportStatus) => {
     await updateReportStatus(id, newStatus);
