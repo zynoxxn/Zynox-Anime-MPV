@@ -9,6 +9,7 @@ import {
   logAdminActivity,
 } from '../../lib/firestore/cms';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { AdminSelect } from '../../components/admin';
 import {
   Calendar,
   Plus,
@@ -245,22 +246,22 @@ export const AdminSeasonsView: React.FC<AdminSeasonsViewProps> = ({
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Status</label>
-                    <select
+                  <div>
+                    <AdminSelect
+                      label="Status"
                       value={editingSeason.status || 'current'}
-                      onChange={(e) =>
+                      options={[
+                        { value: 'upcoming', label: 'Upcoming' },
+                        { value: 'current', label: 'Current Season' },
+                        { value: 'completed', label: 'Completed' },
+                      ]}
+                      onChange={(val) =>
                         setEditingSeason({
                           ...editingSeason,
-                          status: e.target.value as any,
+                          status: val as any,
                         })
                       }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                    >
-                      <option value="upcoming">Upcoming</option>
-                      <option value="current">Current Season</option>
-                      <option value="completed">Completed</option>
-                    </select>
+                    />
                   </div>
                 </div>
 

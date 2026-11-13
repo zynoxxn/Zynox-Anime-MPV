@@ -20,6 +20,7 @@ import type {
   WatchlistStatus,
 } from '../../types/library';
 import { isAnimeDeleted, fetchDeletedAnimeIds } from './anime';
+import { withTimeout } from './fast-cache';
 
 const PROGRESS_COLLECTION = 'watchProgress';
 const HISTORY_COLLECTION = 'watchHistory';
@@ -98,7 +99,7 @@ export async function saveWatchProgress(
 
 export async function getContinueWatching(userId: string | null): Promise<WatchProgress[]> {
   try {
-    await fetchDeletedAnimeIds();
+    await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
   } catch {}
 
   if (userId) {
@@ -107,8 +108,8 @@ export async function getContinueWatching(userId: string | null): Promise<WatchP
         collection(db, PROGRESS_COLLECTION),
         where('userId', '==', userId)
       );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
+      const snapshot = await withTimeout(getDocs(q), 3500, null);
+      if (snapshot && !snapshot.empty) {
         const list: WatchProgress[] = snapshot.docs
           .map((d) => ({
             id: d.id,
@@ -208,7 +209,7 @@ export async function recordWatchHistory(
 
 export async function getWatchHistory(userId: string | null): Promise<WatchHistoryItem[]> {
   try {
-    await fetchDeletedAnimeIds();
+    await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
   } catch {}
 
   if (userId) {
@@ -217,19 +218,21 @@ export async function getWatchHistory(userId: string | null): Promise<WatchHisto
         collection(db, HISTORY_COLLECTION),
         where('userId', '==', userId)
       );
-      const snapshot = await getDocs(q);
-      const list: WatchHistoryItem[] = snapshot.docs
-        .map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<WatchHistoryItem, 'id'>),
-        }))
-        .filter((h) => !isAnimeDeleted(h.animeId) && !isAnimeDeleted(h.animeSlug));
+      const snapshot = await withTimeout(getDocs(q), 3500, null);
+      if (snapshot && !snapshot.empty) {
+        const list: WatchHistoryItem[] = snapshot.docs
+          .map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<WatchHistoryItem, 'id'>),
+          }))
+          .filter((h) => !isAnimeDeleted(h.animeId) && !isAnimeDeleted(h.animeSlug));
 
-      return list.sort((a, b) => {
-        const timeA = typeof a.watchedAt === 'string' ? new Date(a.watchedAt).getTime() : a.watchedAt?.toMillis?.() || 0;
-        const timeB = typeof b.watchedAt === 'string' ? new Date(b.watchedAt).getTime() : b.watchedAt?.toMillis?.() || 0;
-        return timeB - timeA;
-      });
+        return list.sort((a, b) => {
+          const timeA = typeof a.watchedAt === 'string' ? new Date(a.watchedAt).getTime() : a.watchedAt?.toMillis?.() || 0;
+          const timeB = typeof b.watchedAt === 'string' ? new Date(b.watchedAt).getTime() : b.watchedAt?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+      }
     } catch (e) {
       console.warn('Firestore getWatchHistory failed, checking localStorage fallback:', e);
     }
@@ -482,7 +485,7 @@ export async function removeFromWatchlist(userId: string | null, animeId: string
 
 export async function getWatchlist(userId: string | null): Promise<WatchlistItem[]> {
   try {
-    await fetchDeletedAnimeIds();
+    await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
   } catch {}
 
   if (userId) {
@@ -491,8 +494,8 @@ export async function getWatchlist(userId: string | null): Promise<WatchlistItem
         collection(db, WATCHLIST_COLLECTION),
         where('userId', '==', userId)
       );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
+      const snapshot = await withTimeout(getDocs(q), 3500, null);
+      if (snapshot && !snapshot.empty) {
         const list: WatchlistItem[] = snapshot.docs
           .map((d) => ({
             id: d.id,
@@ -558,8 +561,8 @@ export async function getAnimeWatchlistStatus(
   if (userId) {
     try {
       const docRef = doc(db, WATCHLIST_COLLECTION, `${userId}_${animeId}`);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
+      const snap = await withTimeout(getDoc(docRef), 2500, null);
+      if (snap && snap.exists()) {
         return snap.data().status as WatchlistStatus;
       }
     } catch (e) {}
@@ -654,8 +657,8 @@ export async function isFavorite(userId: string | null, animeId: string): Promis
   if (userId) {
     try {
       const docRef = doc(db, FAVORITES_COLLECTION, `${userId}_${animeId}`);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) return true;
+      const snap = await withTimeout(getDoc(docRef), 2500, null);
+      if (snap && snap.exists()) return true;
     } catch (e) {}
   }
 
@@ -740,7 +743,7 @@ export async function getEpisodeProgress(
 
 export async function getFavorites(userId: string | null): Promise<FavoriteItem[]> {
   try {
-    await fetchDeletedAnimeIds();
+    await withTimeout(fetchDeletedAnimeIds(), 1000, new Set<string>());
   } catch {}
 
   if (userId) {
@@ -749,8 +752,8 @@ export async function getFavorites(userId: string | null): Promise<FavoriteItem[
         collection(db, FAVORITES_COLLECTION),
         where('userId', '==', userId)
       );
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
+      const snapshot = await withTimeout(getDocs(q), 3500, null);
+      if (snapshot && !snapshot.empty) {
         const list: FavoriteItem[] = snapshot.docs
           .map((d) => ({
             id: d.id,

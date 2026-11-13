@@ -1,256 +1,204 @@
-import React from 'react';
-import { ShieldAlert, FileText, Info, Send, Mail, Check, Copy, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldAlert, FileText, Info, Mail, Check, Copy, ArrowLeft, Lock, ScrollText } from 'lucide-react';
+import { getCmsLegalPages, DEFAULT_LEGAL_PAGES } from '../lib/firestore/cms';
+import type { CmsLegalPages } from '../types/cms';
+import { isValidSafeUrl } from '../lib/security';
+import { usePageSeo } from '../hooks/usePageSeo';
+
+export type LegalTabKey = 'about' | 'dmca' | 'disclaimer' | 'terms' | 'privacy' | 'contact';
 
 interface LegalViewProps {
-  tab: 'about' | 'dmca' | 'disclaimer';
+  tab: LegalTabKey;
   navigate: (path: string) => void;
   onShowMessage?: (msg: string) => void;
 }
 
+const TAB_TITLES: Record<LegalTabKey, string> = {
+  about: 'About Us | ZYNOX ANIME',
+  dmca: 'DMCA Policy | ZYNOX ANIME',
+  disclaimer: 'Disclaimer | ZYNOX ANIME',
+  terms: 'Terms of Service | ZYNOX ANIME',
+  privacy: 'Privacy Policy | ZYNOX ANIME',
+  contact: 'Contact Us | ZYNOX ANIME',
+};
+
+const renderInlineSafeText = (line: string): React.ReactNode => {
+  const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(line)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push(line.slice(lastIdx, match.index));
+    }
+    const label = match[1];
+    const href = match[2].trim();
+    const isSafeMailto = href.toLowerCase().startsWith('mailto:') && !href.includes('<');
+    if (isValidSafeUrl(href) || isSafeMailto) {
+      parts.push(
+        <a
+          key={`${match.index}-${href}`}
+          href={href}
+          target={href.startsWith('/') || isSafeMailto ? undefined : '_blank'}
+          rel={href.startsWith('/') || isSafeMailto ? undefined : 'noopener noreferrer'}
+          className="text-[#1E88FF] hover:text-[#3B9BFF] underline"
+        >
+          {label}
+        </a>
+      );
+    } else {
+      parts.push(label);
+    }
+    lastIdx = regex.lastIndex;
+  }
+
+  if (lastIdx < line.length) {
+    parts.push(line.slice(lastIdx));
+  }
+  return parts.length > 0 ? parts : line;
+};
+
 export const LegalView: React.FC<LegalViewProps> = ({ tab, navigate, onShowMessage }) => {
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
+  const [legalPages, setLegalPages] = useState<CmsLegalPages>(DEFAULT_LEGAL_PAGES);
+
+  usePageSeo({
+    title: TAB_TITLES[tab] || 'Legal Information | ZYNOX ANIME',
+    description: `Official ${tab.toUpperCase()} information and platform policies for ZYNOX ANIME.`,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    getCmsLegalPages().then((pages) => {
+      if (isMounted && pages) {
+        setLegalPages(pages);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleCopyEmail = (email: string) => {
-    navigator.clipboard.writeText(email);
+    navigator.clipboard?.writeText(email);
     setCopied(true);
     onShowMessage?.('Email copied to clipboard!');
     setTimeout(() => setCopied(false), 3000);
   };
 
+  const currentContent =
+    legalPages[tab as keyof CmsLegalPages] || DEFAULT_LEGAL_PAGES[tab as keyof CmsLegalPages] || '';
+
+  const renderContent = (text: string) => {
+    const lines = text.split('\n');
+    return (
+      <div className="space-y-3.5 leading-relaxed text-sm text-[#CBD5E1]">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return <div key={idx} className="h-1" />;
+          if (trimmed.startsWith('### ')) {
+            return (
+              <h3 key={idx} className="text-sm sm:text-base font-bold text-[#1E88FF] pt-2">
+                {renderInlineSafeText(trimmed.slice(4))}
+              </h3>
+            );
+          }
+          if (trimmed.startsWith('## ')) {
+            return (
+              <h2
+                key={idx}
+                className="text-base sm:text-lg font-bold text-white pt-3 border-b border-white/10 pb-1.5"
+              >
+                {renderInlineSafeText(trimmed.slice(3))}
+              </h2>
+            );
+          }
+          if (trimmed.startsWith('# ')) {
+            return (
+              <h1 key={idx} className="text-xl sm:text-2xl font-black text-white pt-1">
+                {renderInlineSafeText(trimmed.slice(2))}
+              </h1>
+            );
+          }
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            return (
+              <li key={idx} className="list-disc ml-5 text-[#94A3B8]">
+                {renderInlineSafeText(trimmed.slice(2))}
+              </li>
+            );
+          }
+          return (
+            <p key={idx} className="text-[#94A3B8] break-words">
+              {renderInlineSafeText(trimmed)}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const tabs: { id: LegalTabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: 'about', label: 'About', icon: Info },
+    { id: 'dmca', label: 'DMCA', icon: FileText },
+    { id: 'disclaimer', label: 'Disclaimer', icon: ShieldAlert },
+    { id: 'terms', label: 'Terms', icon: ScrollText },
+    { id: 'privacy', label: 'Privacy', icon: Lock },
+    { id: 'contact', label: 'Contact', icon: Mail },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      {/* Top Breadcrumb */}
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
+      {/* Top Breadcrumb & Tab Navigation */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => navigate('/')}
-          className="inline-flex items-center gap-1.5 text-xs text-[#A9B8CC] hover:text-[#00D9FF] font-bold transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-[#94A3B8] hover:text-[#1E88FF] font-semibold transition-colors cursor-pointer self-start"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
         </button>
 
-        {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-[#0A1628] p-1 rounded-xl border border-white/10">
-          <button
-            type="button"
-            onClick={() => navigate('/about')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              tab === 'about' ? 'bg-[#00A8FF] text-black' : 'text-[#A9B8CC] hover:text-white'
-            }`}
-          >
-            About Us
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/dmca')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              tab === 'dmca' ? 'bg-[#00A8FF] text-black' : 'text-[#A9B8CC] hover:text-white'
-            }`}
-          >
-            DMCA
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/disclaimer')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              tab === 'disclaimer' ? 'bg-[#00A8FF] text-black' : 'text-[#A9B8CC] hover:text-white'
-            }`}
-          >
-            Disclaimer
-          </button>
+        <div className="flex items-center gap-1 bg-[#0B1324] p-1 rounded-xl border border-white/10 overflow-x-auto no-scrollbar max-w-full">
+          {tabs.map((t) => {
+            const isActive = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => navigate(`/${t.id}`)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
+                  isActive
+                    ? 'bg-[#1E88FF] text-white'
+                    : 'text-[#94A3B8] hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="bg-[#0A1628] border border-[#00A8FF]/30 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-6 text-[#A9B8CC]">
-        {tab === 'about' && (
-          <div className="space-y-6 leading-relaxed">
-            <div className="border-b border-white/10 pb-4">
-              <h1 className="text-2xl sm:text-3xl font-black text-[#F5F9FF] flex items-center gap-3">
-                <Info className="w-7 h-7 text-[#00A8FF]" />
-                <span>About Us — About ZYNOX ANIME</span>
-              </h1>
-              <p className="text-sm text-[#00D9FF] font-semibold mt-1">
-                Welcome to ZYNOX ANIME — Your #1 destination for free anime in Hindi, English, Tamil,
-                Telugu, and Multi Audio.
-              </p>
-            </div>
+      <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-5 sm:p-8 shadow-2xl space-y-6 text-[#94A3B8]">
+        {renderContent(currentContent)}
 
-            <p className="text-sm sm:text-base text-[#F5F9FF]">
-              Welcome to ZYNOX ANIME — Your #1 destination for free anime downloads in Hindi, English,
-              Tamil, Telugu, and Japanese (Multi Audio).
-            </p>
-
-            <p className="text-sm">
-              ZYNOX ANIME is an Indian anime fan site dedicated to bringing you the latest and best
-              anime series, movies, and OVAs — completely free of charge.
-            </p>
-
-            <p className="text-sm">
-              We provide download links for anime in multiple audio tracks including Hindi Dubbed,
-              English Dubbed, Japanese with subtitles, and Multi Audio versions in 480p, 720p, and
-              1080p quality.
-            </p>
-
-            <div className="space-y-3 bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-white/5">
-              <h2 className="text-lg font-black text-[#F5F9FF]">Our Mission</h2>
-              <p className="text-sm">
-                We believe every anime fan in India deserves access to high-quality anime content in
-                their preferred language. Our mission is to make anime accessible to everyone.
-              </p>
-            </div>
-
-            <div className="space-y-3 bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-white/5">
-              <h2 className="text-lg font-black text-[#F5F9FF]">What We Offer</h2>
-              <ul className="list-disc list-inside space-y-1.5 text-sm">
-                <li>Hindi Dubbed Anime Episodes &amp; Movies</li>
-                <li>Multi Audio Anime (Hindi + English + Japanese)</li>
-                <li>Quality Downloads (480p | 720p | 1080p Options)</li>
-                <li>Latest Seasonal Anime Updates</li>
-                <li>Regular Upload Schedule</li>
-              </ul>
-            </div>
-
-            <div className="space-y-4 bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-[#00A8FF]/20">
-              <h2 className="text-lg font-black text-[#F5F9FF] flex items-center gap-2">
-                <Send className="w-5 h-5 text-[#00A8FF]" />
-                <span>Join Our Community &amp; Follow Us</span>
-              </h2>
-              <p className="text-sm">
-                Stay updated with latest anime releases by joining our Telegram and Instagram.
-              </p>
-
-              <div className="flex flex-wrap gap-3 pt-1">
-                <a
-                  href="https://t.me/ZynoxAnime"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-5 py-2.5 bg-[#00A8FF] hover:bg-[#0092dd] text-black font-black text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-lg shadow-[#00A8FF]/20 transition-all hover:scale-105"
-                >
-                  <Send className="w-4 h-4 fill-black" />
-                  <span>Telegram</span>
-                </a>
-
-                <a
-                  href="https://www.instagram.com/zairo_xn_7?igsi=cjhpeGF3Mnl0Njhl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-5 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-black text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20 transition-all hover:scale-105"
-                >
-                  <span>Instagram</span>
-                </a>
-
-                <button
-                  type="button"
-                  onClick={() => handleCopyEmail('zairoxmax2.0@gmail.com')}
-                  className="px-5 py-2.5 bg-[#0D1B2E] hover:bg-[#11243C] text-[#F5F9FF] border border-white/10 text-xs sm:text-sm font-bold rounded-xl inline-flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Mail className="w-4 h-4 text-[#00A8FF]" />
-                  <span>{copied ? 'Copied Email!' : 'zairoxmax2.0@gmail.com'}</span>
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-[#6E7F95]" />}
-                </button>
-              </div>
-            </div>
+        <div className="bg-[#101A30] p-4 sm:p-5 rounded-xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-6">
+          <div className="space-y-0.5 min-w-0">
+            <div className="text-xs font-bold text-white">Direct Webmaster Support</div>
+            <div className="text-xs text-[#94A3B8] truncate">zairoxmax2.0@gmail.com</div>
           </div>
-        )}
-
-        {tab === 'dmca' && (
-          <div className="space-y-6 leading-relaxed">
-            <div className="border-b border-white/10 pb-4">
-              <h1 className="text-2xl sm:text-3xl font-black text-[#F5F9FF] flex items-center gap-3">
-                <FileText className="w-7 h-7 text-[#00A8FF]" />
-                <span>DMCA Policy &amp; Copyright Notice</span>
-              </h1>
-              <p className="text-sm text-amber-300 font-semibold mt-1">
-                ZYNOX ANIME respects the intellectual property rights of all content creators and
-                copyright holders.
-              </p>
-            </div>
-
-            <div className="space-y-3 bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-white/5">
-              <h2 className="text-lg font-black text-[#F5F9FF]">Our Policy</h2>
-              <p className="text-sm">
-                ZYNOX ANIME does NOT host any video files, anime episodes, or movie files on its
-                own servers. We only index and link to content that is already publicly available on
-                third-party file hosting websites on the internet.
-              </p>
-              <p className="text-sm">
-                We act as a search engine / index for content available online. All copyright
-                belongs to their respective owners including anime studios, distributors, and
-                licensors.
-              </p>
-            </div>
-
-            <div className="space-y-3 bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-white/5">
-              <h2 className="text-lg font-black text-[#F5F9FF]">DMCA Takedown Request</h2>
-              <p className="text-sm">
-                If you are a copyright owner or authorized representative and believe that any
-                content linked on ZYNOX ANIME infringes your copyright, please send us a DMCA
-                takedown notice with the following details:
-              </p>
-
-              <ol className="list-decimal list-inside space-y-1.5 text-sm bg-[#0A1628] p-4 rounded-xl border border-white/5">
-                <li>Your full name and contact information</li>
-                <li>Description of the copyrighted work</li>
-                <li>The specific URL on ZYNOX ANIME that links to the infringing content</li>
-                <li>A statement that you have a good faith belief that the use is not authorized</li>
-                <li>Your digital signature</li>
-              </ol>
-            </div>
-
-            <div className="bg-[#06101F] p-5 sm:p-6 rounded-2xl border border-[#00A8FF]/30 space-y-3">
-              <div className="text-xs text-[#A9B8CC]">Send DMCA requests to:</div>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <span className="font-bold text-[#00D9FF] text-base font-mono">
-                  Email: zairoxmax2.0@gmail.com
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleCopyEmail('zairoxmax2.0@gmail.com')}
-                  className="px-4 py-2 bg-[#00A8FF] text-black font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-[#00A8FF]/20"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied' : 'Copy Email Address'}</span>
-                </button>
-              </div>
-              <p className="text-xs text-[#6E7F95]">
-                We will review and process all valid DMCA requests within 48-72 hours and remove the
-                relevant links if required.
-              </p>
-            </div>
-
-            <p className="text-xs text-[#6E7F95] italic">
-              Note: We are not responsible for content hosted on third-party servers. Please also
-              contact the respective hosting platform directly for faster removal.
-            </p>
-          </div>
-        )}
-
-        {tab === 'disclaimer' && (
-          <div className="space-y-6 leading-relaxed">
-            <div className="border-b border-white/10 pb-4">
-              <h1 className="text-2xl sm:text-3xl font-black text-[#F5F9FF] flex items-center gap-3">
-                <ShieldAlert className="w-7 h-7 text-[#00A8FF]" />
-                <span>Disclaimer</span>
-              </h1>
-            </div>
-
-            <div className="bg-[#06101F] border border-[#00A8FF]/30 p-6 rounded-2xl space-y-3 shadow-lg">
-              <p className="text-base sm:text-lg font-bold text-[#F5F9FF] leading-relaxed">
-                ZYNOX ANIME does not store any files on own server, We only index links from
-                internet which are hosted on third-party services. We Index Links Just Like Google.
-              </p>
-            </div>
-
-            <div className="space-y-3 text-sm text-[#A9B8CC]">
-              <p>
-                For copyright queries or removal requests, please refer to our DMCA policy or email{' '}
-                <strong className="text-[#00D9FF]">zairoxmax2.0@gmail.com</strong>.
-              </p>
-            </div>
-          </div>
-        )}
+          <button
+            type="button"
+            onClick={() => handleCopyEmail('zairoxmax2.0@gmail.com')}
+            className="h-9 px-4 bg-[#1E88FF] hover:bg-[#3B9BFF] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? 'Copied' : 'Copy Email'}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

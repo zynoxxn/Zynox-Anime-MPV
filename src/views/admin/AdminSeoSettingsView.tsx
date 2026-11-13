@@ -1,41 +1,34 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { AdminLayout } from './AdminLayout';
 import { useAuth } from '../../lib/auth';
 import type { CmsSeoConfig } from '../../types/cms';
-import type { Anime } from '../../types/anime';
 import {
   getCmsSeoConfig,
   saveCmsSeoConfig,
   logAdminActivity,
   DEFAULT_SEO_SETTINGS,
 } from '../../lib/firestore/cms';
-import { getPublishedAnimes, updateAnime } from '../../lib/firestore/anime';
 import {
-  generateAnimeSeoMetadata,
-  generateAnimeGoogleTags,
-  generateSitemapXml,
-  generateRobotsTxt,
-} from '../../lib/seo';
+  AdminPageHeader,
+  AdminSegmentedTabs,
+  AdminImageUploader,
+  AdminStickySaveBar,
+  AdminSkeleton,
+  AdminCopyInput,
+} from '../../components/admin';
 import {
   Globe,
-  Save,
-  Search,
-  CheckCircle2,
-  Share2,
-  Code,
   Tag,
-  Copy,
-  Check,
-  FileCode,
+  Share2,
+  ShieldCheck,
+  Search,
+  ExternalLink,
   Sparkles,
-  Download,
+  Info,
+  CheckCircle2,
+  AlertCircle,
   Smartphone,
   Monitor,
-  ExternalLink,
-  Layers,
-  FileText,
-  AlertCircle,
-  RefreshCw,
 } from 'lucide-react';
 
 interface AdminSeoSettingsViewProps {
@@ -43,63 +36,47 @@ interface AdminSeoSettingsViewProps {
   onShowMessage: (msg: string) => void;
 }
 
-type SeoTab = 'settings' | 'simulator' | 'auto_tags' | 'sitemap';
+type SeoTabId = 'general' | 'templates' | 'social' | 'verification' | 'preview';
+
+const SEO_TABS = [
+  { id: 'general' as const, label: 'General & Meta', icon: Globe },
+  { id: 'templates' as const, label: 'Title Templates', icon: Tag },
+  { id: 'social' as const, label: 'Open Graph & Social', icon: Share2 },
+  { id: 'verification' as const, label: 'Search Verification', icon: ShieldCheck },
+  { id: 'preview' as const, label: 'Google SERP Preview', icon: Search },
+];
 
 export const AdminSeoSettingsView: React.FC<AdminSeoSettingsViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<SeoTab>('settings');
-  const [seo, setSeo] = useState<CmsSeoConfig | null>(null);
-  const [animes, setAnimes] = useState<Anime[]>([]);
+  const [activeTab, setActiveTab] = useState<SeoTabId>('general');
+  const [seo, setSeo] = useState<CmsSeoConfig>(DEFAULT_SEO_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
-  // Auto Tags Generator State
-  const [selectedAnimeId, setSelectedAnimeId] = useState<string>('');
-  const [generatorMode, setGeneratorMode] = useState<'download' | 'detail' | 'episode'>('download');
-  const [generatorEpisodeNum, setGeneratorEpisodeNum] = useState<number>(1);
-  const [copiedTags, setCopiedTags] = useState(false);
-  const [copiedSchema, setCopiedSchema] = useState(false);
-  const [applyingToAnime, setApplyingToAnime] = useState(false);
+  // Preview device mode
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
 
-  // SERP Simulator State
-  const [serpDevice, setSerpDevice] = useState<'desktop' | 'mobile'>('desktop');
-  const [customSerpTitle, setCustomSerpTitle] = useState('');
-  const [customSerpDesc, setCustomSerpDesc] = useState('');
-
-  // Sitemap state
-  const [generatedSitemap, setGeneratedSitemap] = useState<string>('');
-  const [copiedSitemap, setCopiedSitemap] = useState(false);
+  // Input refs for cursor-based variable chip insertion
+  const animeTitleRef = useRef<HTMLTextAreaElement>(null);
+  const epTitleRef = useRef<HTMLTextAreaElement>(null);
+  const dlTitleRef = useRef<HTMLTextAreaElement>(null);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [data, animeList] = await Promise.all([
-        getCmsSeoConfig(),
-        getPublishedAnimes(),
-      ]);
-
-      const mergedSeo = {
+      const data = await getCmsSeoConfig();
+      setSeo({
         ...DEFAULT_SEO_SETTINGS,
         ...data,
-      };
-      setSeo(mergedSeo);
-      setAnimes(animeList);
-
-      if (animeList.length > 0 && !selectedAnimeId) {
-        setSelectedAnimeId(animeList[0].id || '');
-      }
-
-      setCustomSerpTitle(mergedSeo.homepageTitle || DEFAULT_SEO_SETTINGS.homepageTitle);
-      setCustomSerpDesc(mergedSeo.homepageDescription || DEFAULT_SEO_SETTINGS.homepageDescription);
-
-      // Generate initial sitemap preview
-      const sitemap = generateSitemapXml(animeList);
-      setGeneratedSitemap(sitemap);
+      });
+      setIsDirty(false);
     } catch (err) {
-      console.error('Failed to load SEO config:', err);
+      console.error('Failed to load SEO configuration:', err);
+      onShowMessage('Failed to load SEO configuration.');
     } finally {
       setLoading(false);
     }
@@ -109,806 +86,528 @@ export const AdminSeoSettingsView: React.FC<AdminSeoSettingsViewProps> = ({
     loadData();
   }, []);
 
-  const handleSave = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!seo) return;
+  const updateSeoField = (field: keyof CmsSeoConfig, value: any) => {
+    setSeo((prev) => ({ ...prev, [field]: value }));
+    setIsDirty(true);
+  };
 
+  const insertVariable = (
+    ref: React.RefObject<HTMLTextAreaElement | null>,
+    field: keyof CmsSeoConfig,
+    token: string
+  ) => {
+    const el = ref.current;
+    const currentVal = (seo[field] as string) || '';
+    if (!el) {
+      updateSeoField(field, `${currentVal} ${token}`.trim());
+      return;
+    }
+    const start = el.selectionStart || currentVal.length;
+    const end = el.selectionEnd || currentVal.length;
+    const nextVal = currentVal.substring(0, start) + token + currentVal.substring(end);
+    updateSeoField(field, nextVal);
+    setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    }, 0);
+  };
+
+  const handleSave = async () => {
     try {
       setSaving(true);
       await saveCmsSeoConfig(seo);
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
-        'Updated Global SEO & Meta Configuration',
-        'SEO_CMS',
-        'seo-config',
-        seo.homepageTitle || seo.defaultTitle
+        'Updated SEO & Metadata Configuration',
+        'SEO',
+        'global',
+        seo.homepageTitle
       );
-      onShowMessage('SEO and Meta tags saved successfully!');
+      onShowMessage('SEO configuration saved successfully.');
+      setIsDirty(false);
     } catch (err: any) {
-      onShowMessage(`Error: ${err.message}`);
+      console.error('Failed to save SEO config:', err);
+      onShowMessage(`Error saving SEO: ${err.message}`);
     } finally {
       setSaving(false);
     }
   };
 
-  // Selected Anime for Auto Tag generation
-  const selectedAnime = useMemo(() => {
-    return animes.find((a) => a.id === selectedAnimeId) || animes[0] || null;
-  }, [animes, selectedAnimeId]);
-
-  // Dynamic tags generated for selected anime
-  const generatedSeo = useMemo(() => {
-    if (!selectedAnime) return null;
-    return generateAnimeSeoMetadata(selectedAnime, {
-      isDownload: generatorMode === 'download',
-      episodeNumber: generatorMode === 'episode' ? generatorEpisodeNum : undefined,
-      siteName: 'ZYNOX ANIME',
-    });
-  }, [selectedAnime, generatorMode, generatorEpisodeNum]);
-
-  const generatedGoogleTags = useMemo(() => {
-    if (!selectedAnime) return [];
-    return generateAnimeGoogleTags(selectedAnime, {
-      isDownload: generatorMode === 'download',
-      episodeNumber: generatorMode === 'episode' ? generatorEpisodeNum : undefined,
-    });
-  }, [selectedAnime, generatorMode, generatorEpisodeNum]);
-
-  const handleCopyTags = () => {
-    if (generatedGoogleTags.length === 0) return;
-    navigator.clipboard.writeText(generatedGoogleTags.join(', '));
-    setCopiedTags(true);
-    onShowMessage('Google Search tags copied to clipboard!');
-    setTimeout(() => setCopiedTags(false), 2000);
+  // Character counter helpers
+  const titleLen = (seo.homepageTitle || '').length;
+  const getTitleStatus = (len: number) => {
+    if (len === 0) return { color: 'text-[#94A3B8]', hint: 'Empty' };
+    if (len <= 60) return { color: 'text-emerald-400', hint: 'Optimal (≤ 60 chars)' };
+    if (len <= 70) return { color: 'text-amber-400', hint: 'Slightly long (61–70 chars)' };
+    return { color: 'text-rose-400', hint: 'Too long (> 70 chars, will be truncated)' };
   };
 
-  const handleCopySchema = () => {
-    if (!generatedSeo?.schemaJson) return;
-    navigator.clipboard.writeText(JSON.stringify(generatedSeo.schemaJson, null, 2));
-    setCopiedSchema(true);
-    onShowMessage('Schema.org JSON-LD copied to clipboard!');
-    setTimeout(() => setCopiedSchema(false), 2000);
-  };
-
-  const handleApplyToAnime = async () => {
-    if (!selectedAnime?.id || !generatedSeo) return;
-    try {
-      setApplyingToAnime(true);
-      await updateAnime(selectedAnime.id, {
-        seoTitle: generatedSeo.title,
-        seoDescription: generatedSeo.description,
-        seoKeywords: generatedGoogleTags.join(', '),
-        keywords: generatedGoogleTags,
-      });
-      onShowMessage(`SEO tags successfully written to "${selectedAnime.title}"!`);
-      await loadData();
-    } catch (err: any) {
-      onShowMessage(`Failed to apply tags: ${err.message}`);
-    } finally {
-      setApplyingToAnime(false);
+  const descLen = (seo.homepageDescription || '').length;
+  const getDescStatus = (len: number) => {
+    if (len === 0) return { color: 'text-[#94A3B8]', hint: 'Empty' };
+    if (len >= 140 && len <= 160) return { color: 'text-emerald-400', hint: 'Optimal (140–160 chars)' };
+    if ((len >= 120 && len < 140) || (len > 160 && len <= 180)) {
+      return { color: 'text-amber-400', hint: 'Acceptable (120–180 chars)' };
     }
+    return { color: 'text-rose-400', hint: len < 120 ? 'Too short (< 120 chars)' : 'Too long (> 180 chars)' };
   };
 
-  const handleCopySitemap = () => {
-    if (!generatedSitemap) return;
-    navigator.clipboard.writeText(generatedSitemap);
-    setCopiedSitemap(true);
-    onShowMessage('Sitemap XML copied to clipboard!');
-    setTimeout(() => setCopiedSitemap(false), 2000);
-  };
+  const titleStatus = getTitleStatus(titleLen);
+  const descStatus = getDescStatus(descLen);
 
-  const handleDownloadSitemap = () => {
-    if (!generatedSitemap) return;
-    const blob = new Blob([generatedSitemap], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sitemap.xml';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    onShowMessage('Downloaded sitemap.xml successfully!');
-  };
+  // Live evaluated examples for templates
+  const sampleAnimeTitle = (seo.animeTitleTemplate || 'Watch {title} in Hindi Dub & English Sub HD — {siteName}')
+    .replace('{title}', 'Solo Leveling Season 2')
+    .replace('{siteName}', 'ZYNOX')
+    .replace('{epNumber}', '1');
 
-  if (loading || !seo) {
-    return (
-      <AdminLayout currentTab="seo" navigate={navigate} onShowMessage={onShowMessage}>
-        <div className="py-20 text-center text-xs text-[#94A3B8]">Loading SEO parameters...</div>
-      </AdminLayout>
-    );
-  }
+  const sampleEpTitle = (seo.episodeTitleTemplate || 'Watch {title} Episode {epNumber} [Hindi Dub] 1080p — {siteName}')
+    .replace('{title}', 'Solo Leveling')
+    .replace('{epNumber}', '12')
+    .replace('{siteName}', 'ZYNOX');
+
+  const sampleDlTitle = (seo.downloadTitleTemplate || 'Download {title} [Hindi Dub] All Episodes 720p 1080p HD Zip — {siteName}')
+    .replace('{title}', 'Attack on Titan Final Season')
+    .replace('{siteName}', 'ZYNOX')
+    .replace('{epNumber}', '1');
 
   return (
     <AdminLayout currentTab="seo" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-rose-400 uppercase tracking-wider">
-              <Globe className="w-4 h-4" />
-              <span>Search Engine Optimization & Google Traffic</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              SEO & Auto Google Search Tags
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Boost organic traffic with dynamic Hindi Dubbed titles, rich snippets, Google Search Console tags, and automated anime keyword tags.
-            </p>
+      <div className="space-y-6 min-w-0 pb-24">
+        {/* Page Header (Save is in the Sticky Save Bar) */}
+        <AdminPageHeader
+          title="SEO & Metadata Configuration"
+          description="Manage Google search engine indexing, social share preview cards, and title templates"
+        />
+
+        {/* Segmented Tabs */}
+        <AdminSegmentedTabs
+          tabs={SEO_TABS}
+          activeTab={activeTab}
+          onChange={(tab) => setActiveTab(tab)}
+        />
+
+        {loading ? (
+          <div className="space-y-4">
+            <AdminSkeleton variant="card" count={2} />
           </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => handleSave()}
-              disabled={saving}
-              className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white shadow-lg shadow-rose-500/30 rounded-xl transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <Save className="w-4 h-4" />
-              <span>{saving ? 'Saving...' : 'Save Configuration'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-white/10 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setActiveTab('settings')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'settings'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'bg-[#0B1322] text-[#94A3B8] hover:text-white border border-white/5'
-            }`}
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span>General SEO & Templates</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('simulator')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'simulator'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'bg-[#0B1322] text-[#94A3B8] hover:text-white border border-white/5'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>Google SERP Simulator</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('auto_tags')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'auto_tags'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'bg-[#0B1322] text-[#94A3B8] hover:text-white border border-white/5'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Auto Google Tags Tool</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('sitemap')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              activeTab === 'sitemap'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'bg-[#0B1322] text-[#94A3B8] hover:text-white border border-white/5'
-            }`}
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>Sitemap.xml & Robots.txt</span>
-          </button>
-        </div>
-
-        {/* TAB 1: GENERAL SETTINGS & TEMPLATES */}
-        {activeTab === 'settings' && (
+        ) : (
           <div className="space-y-6">
-            {/* Dynamic Title Templates */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#1683FF]/10 border border-[#1683FF]/20 flex items-center justify-center text-[#1683FF]">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Dynamic Page Title Templates</h3>
-                  <p className="text-xs text-[#94A3B8]">
-                    Variables: <code className="text-rose-400 font-mono">{"{title}"}</code>, <code className="text-rose-400 font-mono">{"{siteName}"}</code>, <code className="text-rose-400 font-mono">{"{epNumber}"}</code>
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">
-                    Anime Download Page Title Format
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      seo.downloadTitleTemplate ||
-                      'Download {title} [Hindi Dubbed] All Episodes 720p 1080p HD Batch Zip — {siteName}'
-                    }
-                    onChange={(e) =>
-                      setSeo({ ...seo, downloadTitleTemplate: e.target.value })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                  <span className="text-[10px] text-emerald-400 block">
-                    Example: Download Naruto Shippuden [Hindi Dubbed] All Episodes 720p 1080p HD Batch Zip — ZYNOX ANIME
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">
-                    Anime Details Streaming Page Title Format
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      seo.animeTitleTemplate ||
-                      'Watch {title} in Hindi Dub & English Sub (All Episodes HD) — {siteName}'
-                    }
-                    onChange={(e) =>
-                      setSeo({ ...seo, animeTitleTemplate: e.target.value })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">
-                    Watch Episode Page Title Format
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      seo.episodeTitleTemplate ||
-                      'Watch {title} Episode {epNumber} [Hindi Dub & Sub] 1080p HD Online — {siteName}'
-                    }
-                    onChange={(e) =>
-                      setSeo({ ...seo, episodeTitleTemplate: e.target.value })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Main Homepage SEO */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Search className="w-4 h-4 text-[#1683FF]" />
-                <span>Homepage Search Defaults</span>
-              </h3>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Homepage SEO Title</label>
-                  <input
-                    type="text"
-                    value={seo.homepageTitle || seo.defaultTitle || ''}
-                    onChange={(e) =>
-                      setSeo({
-                        ...seo,
-                        homepageTitle: e.target.value,
-                        defaultTitle: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Title Suffix</label>
-                  <input
-                    type="text"
-                    value={seo.titleSuffix || '— ZYNOX ANIME'}
-                    onChange={(e) => setSeo({ ...seo, titleSuffix: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Homepage Meta Description</label>
-                  <textarea
-                    rows={3}
-                    value={seo.homepageDescription || seo.defaultDescription || ''}
-                    onChange={(e) =>
-                      setSeo({
-                        ...seo,
-                        homepageDescription: e.target.value,
-                        defaultDescription: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF] resize-none"
-                  />
-                  <div className="flex justify-between text-[10px] text-[#94A3B8]">
-                    <span>Recommended: 140 - 160 characters for optimal Google display</span>
-                    <span className={(seo.homepageDescription?.length || 0) > 160 ? 'text-amber-400' : 'text-emerald-400'}>
-                      {seo.homepageDescription?.length || 0} / 160 chars
-                    </span>
+            {/* ================= TAB 1: GENERAL & META ================= */}
+            {activeTab === 'general' && (
+              <div className="space-y-5">
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center gap-2 pb-3 border-b border-white/5">
+                    <Globe className="w-4 h-4 text-[#1E88FF]" />
+                    <h3 className="text-sm font-semibold text-white">Homepage Meta Tags</h3>
                   </div>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Target Keywords (Comma separated)</label>
-                  <input
-                    type="text"
-                    value={
-                      Array.isArray(seo.keywords)
-                        ? seo.keywords.join(', ')
-                        : seo.homepageKeywords || ''
-                    }
-                    onChange={(e) => {
-                      const list = e.target.value.split(',').map((s) => s.trim());
-                      setSeo({
-                        ...seo,
-                        keywords: list,
-                        homepageKeywords: e.target.value,
-                      });
-                    }}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Social Share / Open Graph */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Share2 className="w-4 h-4 text-purple-400" />
-                <span>Open Graph & Social Previews</span>
-              </h3>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Default Social Share Banner URL</label>
-                  <input
-                    type="url"
-                    value={seo.defaultOgImage || seo.ogImage || ''}
-                    onChange={(e) =>
-                      setSeo({
-                        ...seo,
-                        defaultOgImage: e.target.value,
-                        ogImage: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Twitter / X Handle</label>
-                  <input
-                    type="text"
-                    placeholder="@zynoxanimes"
-                    value={seo.twitterHandle || ''}
-                    onChange={(e) => setSeo({ ...seo, twitterHandle: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Webmaster Verification */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Code className="w-4 h-4 text-emerald-400" />
-                <span>Google Search Console Verification</span>
-              </h3>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">
-                    Google Site Verification Token
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. google-site-verification=abc123xyz"
-                    value={seo.googleSiteVerification || ''}
-                    onChange={(e) => setSeo({ ...seo, googleSiteVerification: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-[#1683FF] font-mono"
-                  />
-                  <span className="text-[10px] text-[#94A3B8]">
-                    Paste the verification code from Google Search Console HTML tag method. It will automatically be injected into all pages.
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: LIVE GOOGLE SERP SIMULATOR */}
-        {activeTab === 'simulator' && (
-          <div className="space-y-6">
-            {/* Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-4 rounded-2xl">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white">Device Mode:</span>
-                <button
-                  type="button"
-                  onClick={() => setSerpDevice('desktop')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    serpDevice === 'desktop'
-                      ? 'bg-[#1683FF] text-white'
-                      : 'bg-white/5 text-[#94A3B8] hover:text-white'
-                  }`}
-                >
-                  <Monitor className="w-3.5 h-3.5" />
-                  <span>Desktop</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSerpDevice('mobile')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    serpDevice === 'mobile'
-                      ? 'bg-[#1683FF] text-white'
-                      : 'bg-white/5 text-[#94A3B8] hover:text-white'
-                  }`}
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>Mobile</span>
-                </button>
-              </div>
-
-              <span className="text-xs text-[#94A3B8]">
-                Simulates real Google Search click card appearance
-              </span>
-            </div>
-
-            {/* Test Input Fields */}
-            <div className="bg-[#0B1322] border border-white/5 p-5 rounded-2xl space-y-3">
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold text-[#94A3B8]">
-                  <span>Test Snippet Title</span>
-                  <span className={customSerpTitle.length > 60 ? 'text-amber-400' : 'text-emerald-400'}>
-                    {customSerpTitle.length} / 60 characters
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  value={customSerpTitle}
-                  onChange={(e) => setCustomSerpTitle(e.target.value)}
-                  className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold text-[#94A3B8]">
-                  <span>Test Snippet Meta Description</span>
-                  <span className={customSerpDesc.length > 160 ? 'text-amber-400' : 'text-emerald-400'}>
-                    {customSerpDesc.length} / 160 characters
-                  </span>
-                </div>
-                <textarea
-                  rows={2}
-                  value={customSerpDesc}
-                  onChange={(e) => setCustomSerpDesc(e.target.value)}
-                  className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF] resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Realistic Google SERP Card Preview */}
-            <div className="bg-[#202124] border border-white/10 p-6 rounded-3xl space-y-4">
-              <div className="flex items-center gap-2 text-xs text-[#9AA0A6] border-b border-white/10 pb-3">
-                <Search className="w-3.5 h-3.5 text-[#8AB4F8]" />
-                <span>Google Search Preview (Dark Mode)</span>
-              </div>
-
-              <div className={`space-y-2 ${serpDevice === 'mobile' ? 'max-w-md mx-auto bg-[#171717] p-4 rounded-2xl' : ''}`}>
-                {/* Google URL Header */}
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-[#1683FF] flex items-center justify-center text-[10px] font-black text-white">
-                    Z
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs text-[#E8EAED] font-medium leading-none">
-                      ZYNOX ANIME
-                    </span>
-                    <span className="text-[11px] text-[#9AA0A6] truncate">
-                      https://zynoxanime.com &gt; anime &gt; download
-                    </span>
-                  </div>
-                </div>
-
-                {/* SERP Click Title */}
-                <h3 className="text-base sm:text-lg text-[#8AB4F8] hover:underline cursor-pointer font-medium leading-snug">
-                  {customSerpTitle || 'Watch Anime in Hindi Dub & English Sub in 1080p HD — ZYNOX ANIME'}
-                </h3>
-
-                {/* Rating Rich Snippet */}
-                <div className="flex items-center gap-2 text-xs text-[#BDC1C6]">
-                  <span className="text-amber-400">★★★★★</span>
-                  <span className="font-bold">4.9</span>
-                  <span className="text-[#9AA0A6]">(2,419 reviews)</span>
-                  <span className="text-[#9AA0A6]">· Free · 1080p Full HD</span>
-                </div>
-
-                {/* Snippet Description */}
-                <p className="text-xs sm:text-sm text-[#BDC1C6] leading-relaxed">
-                  {customSerpDesc ||
-                    'Stream and download your favorite anime series online in Multi Audio (Hindi Dub, English Sub) in crystal clear 1080p HD. Zero buffering and batch zip links.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: AUTO GOOGLE TAGS GENERATOR & TOOL */}
-        {activeTab === 'auto_tags' && (
-          <div className="space-y-6">
-            {/* Selector Bar */}
-            <div className="bg-[#0B1322] border border-white/5 p-6 rounded-3xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>Auto Google Search Tags Engine</span>
-                  </h3>
-                  <p className="text-xs text-[#94A3B8]">
-                    Select an anime to generate optimized Google organic search tags, download titles, and Schema.org metadata.
-                  </p>
-                </div>
-
-                {/* Apply Directly Button */}
-                <button
-                  type="button"
-                  onClick={handleApplyToAnime}
-                  disabled={applyingToAnime || !selectedAnime}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/30 self-start sm:self-auto"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{applyingToAnime ? 'Applying...' : 'Apply Directly to Anime'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                {/* Anime Dropdown */}
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-bold text-[#94A3B8]">Choose Anime:</label>
-                  <select
-                    value={selectedAnimeId}
-                    onChange={(e) => setSelectedAnimeId(e.target.value)}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  >
-                    {animes.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.title} {a.audioLanguage ? `(${a.audioLanguage})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Mode Selector */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Page Intent:</label>
-                  <select
-                    value={generatorMode}
-                    onChange={(e) => setGeneratorMode(e.target.value as any)}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#1683FF]"
-                  >
-                    <option value="download">Download Page (Batch Zip / Mega)</option>
-                    <option value="detail">Anime Detail / Streaming Page</option>
-                    <option value="episode">Episode Watch Page</option>
-                  </select>
-                </div>
-              </div>
-
-              {generatorMode === 'episode' && (
-                <div className="space-y-1 max-w-xs">
-                  <label className="text-xs font-bold text-[#94A3B8]">Episode Number:</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={generatorEpisodeNum}
-                    onChange={(e) => setGeneratorEpisodeNum(parseInt(e.target.value, 10) || 1)}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Generated Results Preview */}
-            {generatedSeo && (
-              <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-5">
-                {/* Generated Title & Copy */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#94A3B8]">Generated Google Search Title:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedSeo.title);
-                        onShowMessage('Title copied!');
-                      }}
-                      className="text-[11px] text-[#1683FF] hover:underline cursor-pointer"
-                    >
-                      Copy Title
-                    </button>
-                  </div>
-                  <div className="p-3 bg-[#050A14] border border-white/5 rounded-xl text-xs font-bold text-white select-all">
-                    {generatedSeo.title}
-                  </div>
-                </div>
-
-                {/* Generated Description */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#94A3B8]">Generated Meta Description:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedSeo.description);
-                        onShowMessage('Description copied!');
-                      }}
-                      className="text-[11px] text-[#1683FF] hover:underline cursor-pointer"
-                    >
-                      Copy Description
-                    </button>
-                  </div>
-                  <div className="p-3 bg-[#050A14] border border-white/5 rounded-xl text-xs text-[#CBD5E1] leading-relaxed select-all">
-                    {generatedSeo.description}
-                  </div>
-                </div>
-
-                {/* Generated High-Conversion Search Tags */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Tag className="w-3.5 h-3.5 text-[#1683FF]" />
-                      <span className="text-xs font-bold text-white">
-                        Google Search Tags & High Intent Keywords ({generatedGoogleTags.length}):
+                  {/* Homepage Title with Char Counter */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-white">
+                        Homepage Meta Title <span className="text-[#1E88FF]">*</span>
+                      </label>
+                      <span className={`text-[11px] font-mono ${titleStatus.color}`}>
+                        {titleLen} / 60 · {titleStatus.hint}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleCopyTags}
-                      className="px-3 py-1 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors border border-white/10"
-                    >
-                      {copiedTags ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          <span className="text-emerald-400">Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 text-[#94A3B8]" />
-                          <span>Copy All Tags</span>
-                        </>
-                      )}
-                    </button>
+                    <input
+                      type="text"
+                      value={seo.homepageTitle || ''}
+                      onChange={(e) => updateSeoField('homepageTitle', e.target.value)}
+                      placeholder="Watch Anime in Hindi Dub & English Subtitles HD — ZYNOX"
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                    />
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 p-4 bg-[#050A14] border border-white/5 rounded-2xl max-h-48 overflow-y-auto">
-                    {generatedGoogleTags.map((tag, idx) => (
-                      <span
-                        key={idx}
-                        className="text-xs bg-[#0B1322] border border-white/10 text-[#CBD5E1] px-2.5 py-1 rounded-lg hover:border-[#1683FF]/40 hover:text-white transition-colors select-all"
-                      >
-                        {tag}
+                  {/* Homepage Description with Char Counter */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-white">
+                        Homepage Meta Description <span className="text-[#1E88FF]">*</span>
+                      </label>
+                      <span className={`text-[11px] font-mono ${descStatus.color}`}>
+                        {descLen} / 160 · {descStatus.hint}
                       </span>
-                    ))}
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={seo.homepageDescription || ''}
+                      onChange={(e) => updateSeoField('homepageDescription', e.target.value)}
+                      placeholder="Stream and download high quality Japanese anime in Hindi Dub, Multi Audio and English Subtitles in 1080p Ultra HD on ZYNOX anime."
+                      className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white outline-none resize-y min-h-[80px]"
+                    />
+                  </div>
+
+                  {/* Keywords */}
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Meta Keywords (Comma separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={seo.homepageKeywords || ''}
+                      onChange={(e) => updateSeoField('homepageKeywords', e.target.value)}
+                      placeholder="anime hindi dub, watch anime online, download anime 1080p, zynox anime"
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                    />
+                  </div>
+
+                  {/* Canonical URL */}
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Canonical Site Base URL
+                    </label>
+                    <input
+                      type="url"
+                      value={seo.canonicalUrl || ''}
+                      onChange={(e) => updateSeoField('canonicalUrl', e.target.value)}
+                      placeholder="https://zynox.in"
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm font-mono text-white outline-none"
+                    />
                   </div>
                 </div>
 
-                {/* Schema.org Structured Data Viewer */}
-                <div className="space-y-2 pt-2 border-t border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#94A3B8]">
-                      Generated Schema.org JSON-LD (Rich Google Snippets):
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopySchema}
-                      className="text-[11px] text-[#1683FF] hover:underline cursor-pointer"
-                    >
-                      {copiedSchema ? 'Copied!' : 'Copy JSON-LD'}
-                    </button>
+                {/* Robots.txt Card */}
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-[#1E88FF]" />
+                      <h3 className="text-sm font-semibold text-white">Robots.txt Directive</h3>
+                    </div>
+                    <span className="text-[11px] text-[#94A3B8]">Crawlers & Indexing</span>
                   </div>
-                  <pre className="p-3 bg-[#050A14] border border-white/5 rounded-xl text-[11px] font-mono text-emerald-400 max-h-40 overflow-y-auto select-all">
-                    {JSON.stringify(generatedSeo.schemaJson, null, 2)}
-                  </pre>
+                  <textarea
+                    rows={4}
+                    value={
+                      seo.robotsTxt ||
+                      'User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin/*\nSitemap: https://zynox.in/sitemap.xml'
+                    }
+                    onChange={(e) => updateSeoField('robotsTxt', e.target.value)}
+                    className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-xs font-mono text-[#94A3B8] outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 2: TEMPLATES ================= */}
+            {activeTab === 'templates' && (
+              <div className="space-y-5">
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-6">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Dynamic Page Title Templates</h3>
+                    <p className="text-xs text-[#94A3B8] mt-0.5">
+                      Use chips below each field to inject live tokens like anime title, episode number, or site name.
+                    </p>
+                  </div>
+
+                  {/* Anime Detail Title Template */}
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white">
+                        Anime Detail Page Title Template
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(animeTitleRef, 'animeTitleTemplate', '{title}')}
+                          className="px-2 py-0.5 bg-[#1E88FF]/15 hover:bg-[#1E88FF]/25 border border-[#1E88FF]/30 text-[#1E88FF] rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;title&#125;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(animeTitleRef, 'animeTitleTemplate', '{siteName}')}
+                          className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;siteName&#125;
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      ref={animeTitleRef}
+                      rows={2}
+                      value={seo.animeTitleTemplate || ''}
+                      onChange={(e) => updateSeoField('animeTitleTemplate', e.target.value)}
+                      placeholder="Watch {title} in Hindi Dub & English Sub HD — {siteName}"
+                      className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white font-mono outline-none resize-y"
+                    />
+                    <div className="p-2.5 bg-[#050A14] border border-white/5 rounded-[8px] text-xs text-[#94A3B8]">
+                      <span className="text-white font-semibold">Live Preview: </span>
+                      <span className="text-[#1E88FF]">{sampleAnimeTitle}</span>
+                    </div>
+                  </div>
+
+                  {/* Episode Watch Title Template */}
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white">
+                        Episode Player Title Template
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(epTitleRef, 'episodeTitleTemplate', '{title}')}
+                          className="px-2 py-0.5 bg-[#1E88FF]/15 hover:bg-[#1E88FF]/25 border border-[#1E88FF]/30 text-[#1E88FF] rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;title&#125;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(epTitleRef, 'episodeTitleTemplate', '{epNumber}')}
+                          className="px-2 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;epNumber&#125;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(epTitleRef, 'episodeTitleTemplate', '{siteName}')}
+                          className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;siteName&#125;
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      ref={epTitleRef}
+                      rows={2}
+                      value={seo.episodeTitleTemplate || ''}
+                      onChange={(e) => updateSeoField('episodeTitleTemplate', e.target.value)}
+                      placeholder="Watch {title} Episode {epNumber} [Hindi Dub] 1080p — {siteName}"
+                      className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white font-mono outline-none resize-y"
+                    />
+                    <div className="p-2.5 bg-[#050A14] border border-white/5 rounded-[8px] text-xs text-[#94A3B8]">
+                      <span className="text-white font-semibold">Live Preview: </span>
+                      <span className="text-[#1E88FF]">{sampleEpTitle}</span>
+                    </div>
+                  </div>
+
+                  {/* Download Page Title Template */}
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white">
+                        Download Page Title Template
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(dlTitleRef, 'downloadTitleTemplate', '{title}')}
+                          className="px-2 py-0.5 bg-[#1E88FF]/15 hover:bg-[#1E88FF]/25 border border-[#1E88FF]/30 text-[#1E88FF] rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;title&#125;
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(dlTitleRef, 'downloadTitleTemplate', '{siteName}')}
+                          className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-md text-[11px] font-mono cursor-pointer transition-colors"
+                        >
+                          + &#123;siteName&#125;
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      ref={dlTitleRef}
+                      rows={2}
+                      value={seo.downloadTitleTemplate || ''}
+                      onChange={(e) => updateSeoField('downloadTitleTemplate', e.target.value)}
+                      placeholder="Download {title} [Hindi Dub] All Episodes 720p 1080p HD Zip — {siteName}"
+                      className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white font-mono outline-none resize-y"
+                    />
+                    <div className="p-2.5 bg-[#050A14] border border-white/5 rounded-[8px] text-xs text-[#94A3B8]">
+                      <span className="text-white font-semibold">Live Preview: </span>
+                      <span className="text-[#1E88FF]">{sampleDlTitle}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 3: SOCIAL & OPEN GRAPH ================= */}
+            {activeTab === 'social' && (
+              <div className="space-y-5">
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center gap-2 pb-3 border-b border-white/5">
+                    <Share2 className="w-4 h-4 text-[#1E88FF]" />
+                    <h3 className="text-sm font-semibold text-white">Open Graph & Twitter Card Image</h3>
+                  </div>
+
+                  <p className="text-xs text-[#94A3B8]">
+                    This fallback image appears when your website homepage is shared on Telegram, Discord, WhatsApp, or Twitter. Recommended size: 1200 × 630 px.
+                  </p>
+
+                  <AdminImageUploader
+                    label="Default Social Share Image (1200 × 630)"
+                    type="banner"
+                    aspectRatio="16:9"
+                    currentUrl={seo.defaultOgImage || seo.defaultSocialImage || ''}
+                    onUrlChange={(url) => {
+                      updateSeoField('defaultOgImage', url);
+                      updateSeoField('defaultSocialImage', url);
+                    }}
+                    recommendedText="1200 × 630 px · WEBP, JPG or PNG"
+                  />
+
+                  <div className="pt-2 border-t border-white/5">
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Twitter / X Publisher Handle
+                    </label>
+                    <input
+                      type="text"
+                      value={seo.twitterHandle || ''}
+                      onChange={(e) => updateSeoField('twitterHandle', e.target.value)}
+                      placeholder="@ZynoxAnime"
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 4: SEARCH VERIFICATION ================= */}
+            {activeTab === 'verification' && (
+              <div className="space-y-5">
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center gap-2 pb-3 border-b border-white/5">
+                    <ShieldCheck className="w-4 h-4 text-[#1E88FF]" />
+                    <h3 className="text-sm font-semibold text-white">Search Console Webmaster Verification</h3>
+                  </div>
+
+                  <p className="text-xs text-[#94A3B8]">
+                    Paste the verification tokens provided by search engine consoles to verify domain ownership.
+                  </p>
+
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-white">
+                          Google Search Console Verification Token
+                        </label>
+                        <span className="text-[11px] text-[#94A3B8]">meta tag content only</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={seo.googleSiteVerification || ''}
+                        onChange={(e) => updateSeoField('googleSiteVerification', e.target.value)}
+                        placeholder="e.g. 7q8b9c... or google-site-verification token"
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-xs font-mono text-white outline-none"
+                      />
+                      <p className="text-[11px] text-[#94A3B8] mt-1">
+                        Format: google-site-verification value from &lt;meta name=&quot;google-site-verification&quot; content=&quot;...&quot; /&gt;
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5">
+                      <label className="block text-xs font-semibold text-white mb-1.5">
+                        Bing Webmaster Verification Code
+                      </label>
+                      <input
+                        type="text"
+                        value={seo.bingSiteVerification || ''}
+                        onChange={(e) => updateSeoField('bingSiteVerification', e.target.value)}
+                        placeholder="e.g. 32-character Bing verification hex string"
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-xs font-mono text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5">
+                      <label className="block text-xs font-semibold text-white mb-1.5">
+                        Yandex Verification Code
+                      </label>
+                      <input
+                        type="text"
+                        value={seo.yandexVerification || ''}
+                        onChange={(e) => updateSeoField('yandexVerification', e.target.value)}
+                        placeholder="Yandex webmaster token"
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-xs font-mono text-white outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= TAB 5: GOOGLE SERP PREVIEW ================= */}
+            {activeTab === 'preview' && (
+              <div className="space-y-5">
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4 text-[#1E88FF]" />
+                      <h3 className="text-sm font-semibold text-white">Google Search Result Snippet Preview</h3>
+                    </div>
+
+                    {/* Desktop / Mobile Switch */}
+                    <div className="flex items-center bg-[#050A14] border border-white/10 rounded-[8px] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDevice('desktop')}
+                        className={`h-7 px-2.5 rounded-[6px] text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          previewDevice === 'desktop'
+                            ? 'bg-[#1E88FF] text-white'
+                            : 'text-[#94A3B8] hover:text-white'
+                        }`}
+                      >
+                        <Monitor className="w-3 h-3" />
+                        <span>Desktop</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDevice('mobile')}
+                        className={`h-7 px-2.5 rounded-[6px] text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          previewDevice === 'mobile'
+                            ? 'bg-[#1E88FF] text-white'
+                            : 'text-[#94A3B8] hover:text-white'
+                        }`}
+                      >
+                        <Smartphone className="w-3 h-3" />
+                        <span>Mobile</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Google Card Representation */}
+                  <div className="p-4 sm:p-6 bg-[#202124] border border-[#3c4043] rounded-[12px] max-w-2xl text-left shadow-lg">
+                    {/* Breadcrumbs / URL bar */}
+                    <div className="flex items-center gap-2 text-xs text-[#bdc1c6] mb-1.5">
+                      <div className="w-5 h-5 rounded-full bg-[#1E88FF] text-white flex items-center justify-center text-[10px] font-bold">
+                        Z
+                      </div>
+                      <div className="leading-tight">
+                        <div className="text-xs text-white font-medium">Zynox Anime</div>
+                        <div className="text-[11px] text-[#9aa0a6] truncate font-mono">
+                          {seo.canonicalUrl || 'https://zynox.in'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Blue Title */}
+                    <h3 className="text-[#8ab4f8] hover:underline cursor-pointer text-base sm:text-lg font-medium leading-snug tracking-normal line-clamp-2">
+                      {seo.homepageTitle || 'Watch Anime in Hindi Dub & English Subtitles HD — ZYNOX'}
+                    </h3>
+
+                    {/* Grey Description */}
+                    <p className="text-[#bdc1c6] text-xs sm:text-sm mt-1 leading-relaxed line-clamp-2">
+                      {seo.homepageDescription ||
+                        'Stream and download high quality Japanese anime in Hindi Dub, Multi Audio and English Subtitles in 1080p Ultra HD on ZYNOX anime.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 4: SITEMAP.XML & ROBOTS.TXT */}
-        {activeTab === 'sitemap' && (
-          <div className="space-y-6">
-            {/* Sitemap Info Card */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <FileCode className="w-4 h-4 text-[#1683FF]" />
-                    <span>Live Google Sitemap.xml Generator</span>
-                  </h3>
-                  <p className="text-xs text-[#94A3B8]">
-                    Generates standardized XML sitemap of all anime pages, download mirrors, and static URLs.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={handleCopySitemap}
-                    className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10 cursor-pointer"
-                  >
-                    {copiedSitemap ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />
-                        <span>Copy XML</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadSitemap}
-                    className="px-3.5 py-2 bg-[#1683FF] hover:bg-[#0066ff] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-[#1683FF]/30"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download sitemap.xml</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Sitemap Code Viewer */}
-              <div className="space-y-1">
-                <pre className="p-4 bg-[#050A14] border border-white/5 rounded-2xl text-[11px] font-mono text-[#CBD5E1] max-h-72 overflow-y-auto leading-relaxed select-all">
-                  {generatedSitemap}
-                </pre>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2 text-xs text-[#94A3B8]">
-                <ExternalLink className="w-3.5 h-3.5 text-[#1683FF]" />
-                <span>
-                  Submit your sitemap URL to{' '}
-                  <a
-                    href="https://search.google.com/search-console"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[#1683FF] hover:underline"
-                  >
-                    Google Search Console
-                  </a>{' '}
-                  to index your site within 24-48 hours.
-                </span>
-              </div>
-            </div>
-
-            {/* Robots.txt Card */}
-            <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-amber-400" />
-                <span>robots.txt Configuration</span>
-              </h3>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#94A3B8]">Crawl Directives</label>
-                <textarea
-                  rows={6}
-                  value={seo.robotsTxt || generateRobotsTxt()}
-                  onChange={(e) => setSeo({ ...seo, robotsTxt: e.target.value })}
-                  className="w-full bg-[#050A14] border border-white/10 rounded-2xl p-4 text-xs font-mono text-white outline-none focus:border-[#1683FF] resize-none"
-                />
-              </div>
-            </div>
-          </div>
+        {/* Sticky Save Bar (Single primary action) */}
+        {isDirty && (
+          <AdminStickySaveBar
+            message="Unsaved SEO configuration changes"
+            saveLabel="Save SEO configuration"
+            saving={saving}
+            onSave={handleSave}
+            onDiscard={loadData}
+          />
         )}
       </div>
     </AdminLayout>

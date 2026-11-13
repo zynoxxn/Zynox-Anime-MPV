@@ -9,26 +9,34 @@ import {
   deleteBulkAnimeAvatars,
   resetDefaultAnimeAvatars,
   DEFAULT_DRIVE_FOLDER_ID,
-  DEFAULT_DRIVE_FOLDER_URL,
   syncDriveAvatarsToFirestore,
+  fetchDriveFolderAvatars,
 } from '../../lib/firestore/avatars';
 import { compressAvatarImage } from '../../lib/image-compress';
 import {
-  Upload,
+  AdminPageHeader,
+  AdminStatusBadge,
+  AdminSelectionBar,
+  AdminConfirmDialog,
+  AdminSkeleton,
+  AdminEmptyState,
+} from '../../components/admin';
+import {
   Plus,
-  Trash2,
-  RotateCcw,
-  Check,
-  AlertCircle,
-  X,
-  Copy,
-  Layers,
-  Image as ImageIcon,
-  CheckSquare,
-  Square,
-  FolderSync,
   RefreshCw,
-  ExternalLink,
+  Trash2,
+  Check,
+  CheckCircle2,
+  X,
+  Upload,
+  FolderSync,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+  Sparkles,
+  Link as LinkIcon,
+  Users,
 } from 'lucide-react';
 
 interface AdminAvatarsViewProps {
@@ -43,47 +51,45 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
   const [avatars, setAvatars] = useState<AnimeAvatar[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Selection for Bulk Delete
+  // Multi-select for avatars
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Modal: Single Upload / Add
+  // Google Drive Sync Card
+  const [showDriveDetails, setShowDriveDetails] = useState(false);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
+  const [syncReviewModalOpen, setSyncReviewModalOpen] = useState(false);
+  const [syncPreviewList, setSyncPreviewList] = useState<AnimeAvatar[]>([]);
+  const [isSavingSync, setIsSavingSync] = useState(false);
+
+  // Add Single Avatar Modal
   const [isSingleModalOpen, setIsSingleModalOpen] = useState(false);
+  const [singleName, setSingleName] = useState('');
   const [singleUrl, setSingleUrl] = useState('');
   const [singleSaving, setSingleSaving] = useState(false);
+  const singleFileRef = useRef<HTMLInputElement>(null);
 
-  // Modal: Bulk Upload
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  // Bulk Upload by URLs Modal
+  const [isBulkUrlModalOpen, setIsBulkUrlModalOpen] = useState(false);
   const [bulkUrlsText, setBulkUrlsText] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
-  const [bulkFilesCount, setBulkFilesCount] = useState(0);
 
-  // Modal: Single Delete Confirmation (in-app modal replacing blocked window.confirm)
-  const [avatarToDelete, setAvatarToDelete] = useState<AnimeAvatar | null>(null);
-  const [deletingSingle, setDeletingSingle] = useState(false);
-
-  // Modal: Bulk Delete Confirmation
-  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
-  const [deletingBulk, setDeletingBulk] = useState(false);
-
-  // Reset Confirmation
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
-
-  // File input refs
-  const singleFileRef = useRef<HTMLInputElement>(null);
+  // Bulk Files Upload Ref
   const bulkFilesRef = useRef<HTMLInputElement>(null);
 
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
+  // Confirmation dialogs
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadData = async (forceRefresh = false) => {
-    setLoading(true);
     try {
+      setLoading(true);
       const list = await getAnimeAvatars(forceRefresh);
       setAvatars(list);
     } catch (err) {
       console.error(err);
-      onShowMessage('Failed to load avatars list');
+      onShowMessage('Failed to load avatars list.');
     } finally {
       setLoading(false);
     }
@@ -93,704 +99,445 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
     loadData();
   }, []);
 
-  const handleSyncDrive = async () => {
-    setIsSyncingDrive(true);
+  // Selection toggle
+  const toggleSelectAvatar = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Google Drive Sync Flow: Sync -> Review Dialog -> Save to DB
+  const handleStartDriveSync = async () => {
     try {
-      await loadData(true);
-      onShowMessage('Google Drive folder synced! Latest PFPs are loaded.');
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to sync Google Drive folder.');
+      setIsSyncingDrive(true);
+      const syncedItems = await fetchDriveFolderAvatars(DEFAULT_DRIVE_FOLDER_ID, true);
+      setSyncPreviewList(syncedItems);
+      setSyncReviewModalOpen(true);
+    } catch (err: any) {
+      onShowMessage(`Google Drive sync error: ${err.message}`);
     } finally {
       setIsSyncingDrive(false);
     }
   };
 
-  const handleSaveDriveToCatalog = async () => {
-    setIsSyncingDrive(true);
+  const handleConfirmSaveSync = async () => {
     try {
+      setIsSavingSync(true);
       const count = await syncDriveAvatarsToFirestore();
       await loadData(true);
-      onShowMessage(`Saved ${count} Google Drive avatars permanently to database catalog!`);
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to save to database catalog.');
+      setSyncReviewModalOpen(false);
+      onShowMessage(`Saved ${count} avatars from Google Drive!`);
+    } catch (err: any) {
+      onShowMessage(`Failed to save synced avatars: ${err.message}`);
     } finally {
-      setIsSyncingDrive(false);
+      setIsSavingSync(false);
     }
   };
 
-  // --- Single Upload Handlers ---
-  const handleSingleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Single Add / File Compress
+  const handleSingleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      onShowMessage('Please select a valid image file (PNG, JPG, WEBP, GIF)');
-      return;
-    }
-
     try {
-      const compressed = await compressAvatarImage(file, 256, 0.82);
-      if (compressed) {
-        setSingleUrl(compressed);
+      const compressed = await compressAvatarImage(file);
+      setSingleUrl(compressed);
+      if (!singleName) {
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setSingleName(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
       }
     } catch {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        if (dataUrl) {
-          setSingleUrl(dataUrl);
-        }
-      };
-      reader.readAsDataURL(file);
+      onShowMessage('Failed to read and compress image file.');
     }
   };
 
-  const handleSaveSingle = async (e: React.FormEvent) => {
+  const handleSaveSingleAvatar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!singleUrl.trim()) {
-      onShowMessage('Please select an image file or enter an image URL.');
+      onShowMessage('Please provide an image URL or upload a file.');
       return;
     }
-
-    setSingleSaving(true);
     try {
-      await saveAnimeAvatar({ url: singleUrl.trim() });
+      setSingleSaving(true);
+      const newAvatar = await saveAnimeAvatar({
+        id: `avatar_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: singleName.trim() || `Avatar ${avatars.length + 1}`,
+        url: singleUrl.trim(),
+        anime: 'Custom',
+        category: 'Popular',
+        accentColor: '#1E88FF',
+      });
       await loadData(true);
       setIsSingleModalOpen(false);
+      setSingleName('');
       setSingleUrl('');
-      onShowMessage('Avatar added successfully!');
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to save avatar.');
+      onShowMessage(`Added avatar "${newAvatar.name}".`);
+    } catch (err: any) {
+      onShowMessage(`Failed to save avatar: ${err.message}`);
     } finally {
       setSingleSaving(false);
     }
   };
 
-  // --- Bulk Upload Handlers ---
-  const handleBulkFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  // Bulk URLs Parse and Save
+  const handleSaveBulkUrls = async () => {
+    const lines = bulkUrlsText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('http'));
 
-    setBulkSaving(true);
-    setBulkFilesCount(files.length);
+    if (lines.length === 0) {
+      onShowMessage('Please enter at least one valid image URL starting with http.');
+      return;
+    }
 
     try {
-      const readPromises: Promise<string>[] = [];
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type.startsWith('image/')) {
-          readPromises.push(compressAvatarImage(file, 256, 0.82));
-        }
-      }
-
-      const results = await Promise.all(readPromises);
-      const validDataUrls = results.filter((u) => u.length > 0);
-
-      if (validDataUrls.length > 0) {
-        await saveBulkAnimeAvatars(validDataUrls);
-        await loadData(true);
-        onShowMessage(`Successfully imported ${validDataUrls.length} avatars!`);
-      } else {
-        onShowMessage('No valid image files found.');
-      }
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Error during bulk file import.');
+      setBulkSaving(true);
+      await saveBulkAnimeAvatars(lines);
+      await loadData(true);
+      setIsBulkUrlModalOpen(false);
+      setBulkUrlsText('');
+      onShowMessage(`Imported ${lines.length} avatars successfully!`);
+    } catch (err: any) {
+      onShowMessage(`Failed to import avatars: ${err.message}`);
     } finally {
       setBulkSaving(false);
-      setBulkFilesCount(0);
+    }
+  };
+
+  // Bulk Files Select
+  const handleBulkFilesSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      setLoading(true);
+      const compressedUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressed = await compressAvatarImage(file);
+        if (compressed) {
+          compressedUrls.push(compressed);
+        }
+      }
+      if (compressedUrls.length > 0) {
+        await saveBulkAnimeAvatars(compressedUrls);
+        await loadData(true);
+        onShowMessage(`Uploaded and compressed ${compressedUrls.length} avatar images.`);
+      }
+    } catch (err: any) {
+      onShowMessage(`Error processing image files: ${err.message}`);
+    } finally {
+      setLoading(false);
       if (bulkFilesRef.current) bulkFilesRef.current.value = '';
     }
   };
 
-  const handleSaveBulkUrls = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!bulkUrlsText.trim()) {
-      onShowMessage('Please enter at least one image URL.');
-      return;
-    }
-
-    const lines = bulkUrlsText
-      .split(/[\n,]+/)
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith('http') || l.startsWith('data:image'));
-
-    if (lines.length === 0) {
-      onShowMessage('No valid image URLs found. Please enter URLs starting with http:// or https://');
-      return;
-    }
-
-    setBulkSaving(true);
+  // Bulk Delete
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     try {
-      await saveBulkAnimeAvatars(lines);
-      await loadData(true);
-      setIsBulkModalOpen(false);
-      setBulkUrlsText('');
-      onShowMessage(`Successfully imported ${lines.length} avatars!`);
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to save bulk avatars.');
-    } finally {
-      setBulkSaving(false);
-    }
-  };
-
-  // --- Single Delete Confirmation Execution ---
-  const handleConfirmDeleteSingle = async () => {
-    if (!avatarToDelete) return;
-    setDeletingSingle(true);
-    try {
-      await deleteAnimeAvatar(avatarToDelete.id);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(avatarToDelete.id);
-        return next;
-      });
-      await loadData(true);
-      setAvatarToDelete(null);
-      onShowMessage('Avatar deleted successfully.');
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to delete avatar.');
-    } finally {
-      setDeletingSingle(false);
-    }
-  };
-
-  // --- Bulk Delete Confirmation Execution ---
-  const handleConfirmDeleteSelected = async () => {
-    if (selectedIds.size === 0) return;
-    setDeletingBulk(true);
-    try {
-      const idsToDelete = Array.from(selectedIds) as string[];
-      await deleteBulkAnimeAvatars(idsToDelete);
+      setIsDeleting(true);
+      await deleteBulkAnimeAvatars(ids);
+      setAvatars((prev) => prev.filter((a) => !selectedIds.has(a.id)));
+      onShowMessage(`Deleted ${ids.length} avatars.`);
       setSelectedIds(new Set());
-      await loadData(true);
-      setIsBulkDeleteModalOpen(false);
-      onShowMessage(`${idsToDelete.length} avatars deleted successfully.`);
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to delete selected avatars.');
+      setShowBulkDeleteConfirm(false);
+    } catch (err: any) {
+      onShowMessage(`Failed to delete avatars: ${err.message}`);
     } finally {
-      setDeletingBulk(false);
+      setIsDeleting(false);
     }
   };
 
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setSelectedIds(next);
-  };
-
-  const selectAll = () => {
-    if (selectedIds.size === avatars.length) {
+  // Delete All with keyword DELETE
+  const handleDeleteAll = async () => {
+    try {
+      setIsDeleting(true);
+      const allIds = avatars.map((a) => a.id);
+      await deleteBulkAnimeAvatars(allIds);
+      setAvatars([]);
       setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(avatars.map((a) => a.id)));
+      setShowDeleteAllConfirm(false);
+      onShowMessage('All avatars have been removed.');
+    } catch (err: any) {
+      onShowMessage(`Failed to delete all avatars: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
+  // Reset Defaults
   const handleResetDefaults = async () => {
-    setResetting(true);
     try {
+      setIsDeleting(true);
       await resetDefaultAnimeAvatars();
       await loadData(true);
+      setShowResetConfirm(false);
       setSelectedIds(new Set());
-      setIsResetConfirmOpen(false);
-      onShowMessage('All avatars have been cleared.');
-    } catch (err) {
-      console.error(err);
-      onShowMessage('Failed to clear avatars.');
+      onShowMessage('Reset avatar library to standard defaults.');
+    } catch (err: any) {
+      onShowMessage(`Failed to reset defaults: ${err.message}`);
     } finally {
-      setResetting(false);
+      setIsDeleting(false);
     }
-  };
-
-  const copyUrl = (url: string, id: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-    onShowMessage('Avatar URL copied!');
   };
 
   return (
-    <AdminLayout
-      currentTab="avatars"
-      navigate={navigate}
-      onShowMessage={onShowMessage}
-    >
-      <div className="space-y-6 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-        
-        {/* Top Header Card */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/10 p-5 sm:p-6 rounded-3xl">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide">
-              Avatars
-            </h1>
-            <p className="text-xs sm:text-sm text-[#94A3B8] mt-1">
-              Manage the avatars collection that users can pick from across the app
-            </p>
-          </div>
+    <AdminLayout currentTab="avatars" navigate={navigate} onShowMessage={onShowMessage}>
+      <div className="space-y-6 min-w-0 pb-20">
+        {/* Hidden File Inputs */}
+        <input
+          ref={bulkFilesRef}
+          type="file"
+          multiple
+          accept="image/*"
+          className="hidden"
+          onChange={handleBulkFilesSelect}
+        />
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Hidden Bulk File Input */}
-            <input
-              type="file"
-              ref={bulkFilesRef}
-              multiple
-              accept="image/*"
-              onChange={handleBulkFilesSelected}
-              className="hidden"
-            />
+        {/* Page Header (1 Primary: Add avatar, Overflow Menu with bulk options) */}
+        <AdminPageHeader
+          title="Anime Profile Avatars"
+          description={`${avatars.length} selectable profile pictures available for registered users`}
+          primaryAction={{
+            label: 'Add avatar',
+            icon: Plus,
+            onClick: () => setIsSingleModalOpen(true),
+          }}
+          secondaryActions={[
+            {
+              label: 'Bulk upload images',
+              icon: Upload,
+              onClick: () => bulkFilesRef.current?.click(),
+            },
+            {
+              label: 'Add by URLs',
+              icon: LinkIcon,
+              onClick: () => setIsBulkUrlModalOpen(true),
+            },
+            {
+              label: 'Reset to defaults',
+              icon: RotateCcw,
+              onClick: () => setShowResetConfirm(true),
+            },
+            {
+              label: 'Delete all avatars',
+              icon: Trash2,
+              onClick: () => setShowDeleteAllConfirm(true),
+            },
+          ]}
+        />
 
-            {/* Reset */}
-            <button
-              type="button"
-              onClick={() => setIsResetConfirmOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Reset default avatars"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#94A3B8]" />
-              <span>Reset Defaults</span>
-            </button>
-
-            {/* Bulk Upload Files Button */}
-            <button
-              type="button"
-              onClick={() => bulkFilesRef.current?.click()}
-              disabled={bulkSaving}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-[#1683FF]/20 text-[#CBD5E1] hover:text-[#00CFFF] border border-white/10 hover:border-[#1683FF]/40 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
-            >
-              <Upload className="w-4 h-4 text-[#00CFFF]" />
-              <span>{bulkSaving ? `Importing ${bulkFilesCount}...` : 'Bulk Upload Files'}</span>
-            </button>
-
-            {/* Bulk URLs Importer Button */}
-            <button
-              type="button"
-              onClick={() => setIsBulkModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-white border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Layers className="w-4 h-4 text-[#1683FF]" />
-              <span>Bulk URLs</span>
-            </button>
-
-            {/* Add Single Avatar */}
-            <button
-              type="button"
-              onClick={() => {
-                setSingleUrl('');
-                setIsSingleModalOpen(true);
-              }}
-              className="px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 flex items-center gap-2 transition-all hover:scale-105 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Avatar</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Google Drive PFP Live Integration Banner */}
-        <div className="bg-gradient-to-r from-[#0C1A33] via-[#0E2244] to-[#0A162B] border border-[#1683FF]/30 p-5 rounded-3xl relative overflow-hidden shadow-xl">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#1683FF]/10 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start sm:items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center shrink-0 shadow-lg shadow-[#1683FF]/20">
-                <FolderSync className="w-6 h-6 text-[#00CFFF]" />
+        {/* Google Drive Sync: Collapsed Card */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-[10px] bg-[#1E88FF]/15 border border-[#1E88FF]/25 text-[#1E88FF] flex items-center justify-center shrink-0">
+                <FolderSync className="w-4 h-4" />
               </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-base font-bold text-white tracking-wide">
-                    Google Drive PFP Sync Active
-                  </h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Live Connected
-                  </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs sm:text-sm font-semibold text-white truncate">
+                    Google Drive Folder Sync
+                  </h3>
+                  <AdminStatusBadge status="live" label="Connected" />
                 </div>
-                <p className="text-xs text-[#94A3B8] mt-1">
-                  Folder: <span className="text-[#CBD5E1] font-mono">Pfp ({DEFAULT_DRIVE_FOLDER_ID})</span>
-                  <span className="mx-2 text-white/20">•</span>
-                  Jab bhi aap folder me new photos upload karoge, wo automatic yaha &amp; user avatar picker me show hongi.
+                <p className="text-xs text-[#94A3B8] truncate">
+                  Folder: &quot;Zynox Official PFPs&quot;
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <a
-                href={DEFAULT_DRIVE_FOLDER_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[#CBD5E1] hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open Drive</span>
-              </a>
-
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleSyncDrive}
-                disabled={isSyncingDrive}
-                className="px-4 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white text-xs font-bold shadow-lg shadow-[#1683FF]/30 flex items-center gap-2 transition-all hover:scale-105 cursor-pointer disabled:opacity-50"
+                onClick={() => setShowDriveDetails((prev) => !prev)}
+                className="h-8 px-2.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-[#CBD5E1] text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingDrive ? 'animate-spin' : ''}`} />
-                <span>{isSyncingDrive ? 'Syncing...' : 'Sync Now'}</span>
+                <span>Details</span>
+                {showDriveDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
 
               <button
                 type="button"
-                onClick={handleSaveDriveToCatalog}
                 disabled={isSyncingDrive}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Permanently copy all drive avatars into Firestore"
+                onClick={handleStartDriveSync}
+                className="h-8 px-3 rounded-[8px] bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>Save to Database</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingDrive ? 'animate-spin text-[#1E88FF]' : ''}`} />
+                <span>{isSyncingDrive ? 'Syncing...' : 'Sync now'}</span>
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Toolbar: Stats & Selection control */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0B1322] border border-white/10 px-5 py-3.5 rounded-2xl">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-bold text-white">
-              Total: <span className="text-[#00CFFF] font-black text-sm">{avatars.length}</span> Avatars
-            </span>
-            
-            {avatars.length > 0 && (
-              <button
-                type="button"
-                onClick={selectAll}
-                className="text-xs font-semibold text-[#94A3B8] hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                {selectedIds.size === avatars.length ? (
-                  <CheckSquare className="w-3.5 h-3.5 text-[#1683FF]" />
-                ) : (
-                  <Square className="w-3.5 h-3.5" />
-                )}
-                <span>{selectedIds.size === avatars.length ? 'Deselect All' : 'Select All'}</span>
-              </button>
-            )}
-          </div>
-
-          {avatars.length > 0 && (
-            <div className="flex items-center gap-2 animate-fadeIn">
-              {selectedIds.size > 0 && (
-                <>
-                  <span className="text-xs font-medium text-[#CBD5E1]">
-                    {selectedIds.size} selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsBulkDeleteModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Selected ({selectedIds.size})</span>
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={() => setIsResetConfirmOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Delete all avatars"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete All</span>
-              </button>
+          {showDriveDetails && (
+            <div className="pt-3 border-t border-white/5 space-y-2 text-xs text-[#94A3B8]">
+              <div className="flex items-center justify-between">
+                <span>Folder ID</span>
+                <span className="font-mono text-white text-[11px] truncate max-w-xs">{DEFAULT_DRIVE_FOLDER_ID}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Connects directly to the shared Drive folder without quota bottlenecks. Auto-compresses web images into crisp square thumbnails.
+              </p>
             </div>
           )}
         </div>
 
-        {/* Avatars Grid - Pure Avatars, No extra text */}
+        {/* Avatars Grid (4 cols phone / 8 cols desktop) */}
         {loading ? (
-          <div className="text-center py-20 text-[#94A3B8]">
-            <div className="w-8 h-8 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs">Loading avatars...</p>
+          <div className="space-y-4">
+            <AdminSkeleton variant="card" count={2} />
           </div>
         ) : avatars.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/10 rounded-3xl p-12 text-center text-[#94A3B8]">
-            <ImageIcon className="w-12 h-12 text-[#64748B] mx-auto mb-3 opacity-50" />
-            <h3 className="text-sm font-bold text-white">No avatars found</h3>
-            <p className="text-xs text-[#64748B] mt-1">Upload images or import bulk URLs above.</p>
+          <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-8">
+            <AdminEmptyState
+              icon={Users}
+              title="No avatars in library"
+              description="Add single images, sync from Google Drive, or restore defaults."
+            />
           </div>
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4 sm:gap-5">
-            {avatars.map((item) => {
-              const isSelected = selectedIds.has(item.id);
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3 sm:gap-4">
+            {avatars.map((av) => {
+              const isSelected = selectedIds.has(av.id);
               return (
                 <div
-                  key={item.id}
-                  className={`group relative bg-[#07111F] border rounded-2xl p-2.5 transition-all duration-200 flex flex-col items-center justify-center ${
+                  key={av.id}
+                  onClick={() => toggleSelectAvatar(av.id)}
+                  className={`group relative flex flex-col items-center gap-1.5 p-2 rounded-[14px] bg-[#0B1324] hover:bg-[#101A30] border cursor-pointer transition-all ${
                     isSelected
-                      ? 'border-[#00CFFF] ring-2 ring-[#00CFFF]/40 shadow-lg shadow-[#00CFFF]/20'
-                      : 'border-white/10 hover:border-[#1683FF]/50 hover:bg-[#0A1830]'
+                      ? 'border-[#1E88FF] ring-2 ring-[#1E88FF] bg-[#1E88FF]/10'
+                      : 'border-white/5 hover:border-white/15'
                   }`}
+                  title={`${av.name} (Tap to select)`}
                 >
-                  {/* Selection Checkbox on top-left */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSelect(item.id);
-                    }}
-                    className="absolute top-2 left-2 z-10 w-5 h-5 rounded-md bg-black/70 border border-white/30 flex items-center justify-center text-white transition-opacity group-hover:opacity-100 cursor-pointer"
-                    style={{ opacity: isSelected ? 1 : undefined }}
-                    title={isSelected ? 'Deselect' : 'Select'}
-                  >
-                    {isSelected ? (
-                      <Check className="w-3.5 h-3.5 text-[#00CFFF] stroke-[3]" />
-                    ) : null}
-                  </button>
+                  {/* Selection Indicator Check Badge (20px top-right) */}
+                  {isSelected && (
+                    <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md z-10 animate-scaleIn">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
 
-                  {/* Circular Avatar Image */}
-                  <div
-                    onClick={() => toggleSelect(item.id)}
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-[#1683FF] shadow-md bg-[#02060D] transition-transform duration-200 group-hover:scale-105 cursor-pointer mt-1"
-                  >
+                  {/* 64px Circular Avatar with Fallback */}
+                  <div className="w-16 h-16 rounded-full overflow-hidden bg-[#050A14] border border-white/10 shrink-0">
                     <img
-                      src={item.url}
-                      alt="Avatar"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
+                      src={av.url}
+                      alt={av.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = DEFAULT_AVATAR;
                       }}
                     />
                   </div>
 
-                  {/* Action Icons at bottom */}
-                  <div className="mt-3 flex items-center justify-center gap-1.5 w-full pt-1.5 border-t border-white/5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyUrl(item.url, item.id);
-                      }}
-                      className="p-1.5 rounded-lg hover:bg-white/10 text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
-                      title="Copy URL"
-                    >
-                      {copiedId === item.id ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-
-                    {/* Dedicated Delete Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAvatarToDelete(item);
-                      }}
-                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer"
-                      title="Delete Avatar"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {/* Name label */}
+                  <span className="text-[11px] font-medium text-[#CBD5E1] truncate w-full text-center">
+                    {av.name}
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* Modal: Single Avatar Delete Confirmation */}
-        {avatarToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
-            <div
-              className="w-full max-w-sm bg-[#081426] border border-rose-500/30 rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 animate-scaleUp"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 text-rose-400">
-                <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Delete Avatar</h3>
-                  <p className="text-xs text-[#94A3B8]">This avatar will be permanently removed.</p>
-                </div>
-              </div>
+        {/* Floating Selection Bar */}
+        <AdminSelectionBar
+          selectedCount={selectedIds.size}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            {
+              label: 'Delete',
+              icon: Trash2,
+              variant: 'danger',
+              onClick: () => setShowBulkDeleteConfirm(true),
+            },
+          ]}
+        />
 
-              {/* Preview of Avatar to delete */}
-              <div className="flex items-center justify-center py-3">
-                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-rose-500/40 shadow-lg shadow-rose-500/20 bg-[#02060D]">
-                  <img
-                    src={avatarToDelete.url}
-                    alt="Delete target"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = DEFAULT_AVATAR;
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setAvatarToDelete(null)}
-                  disabled={deletingSingle}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDeleteSingle}
-                  disabled={deletingSingle}
-                  className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white shadow-lg shadow-rose-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  {deletingSingle ? 'Deleting...' : 'Yes, Delete'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal: Bulk Delete Confirmation */}
-        {isBulkDeleteModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
-            <div
-              className="w-full max-w-sm bg-[#081426] border border-rose-500/30 rounded-3xl shadow-2xl p-5 sm:p-6 space-y-4 animate-scaleUp"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 text-rose-400">
-                <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Delete Selected Avatars</h3>
-                  <p className="text-xs text-[#94A3B8]">
-                    Are you sure you want to delete {selectedIds.size} avatars?
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-xs text-[#94A3B8] leading-relaxed">
-                These {selectedIds.size} avatars will be permanently removed from the catalog.
-              </p>
-
-              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIsBulkDeleteModalOpen(false)}
-                  disabled={deletingBulk}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDeleteSelected}
-                  disabled={deletingBulk}
-                  className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white shadow-lg shadow-rose-500/30 flex items-center gap-1.5 transition-all cursor-pointer"
-                >
-                  {deletingBulk ? 'Deleting...' : `Delete ${selectedIds.size} Avatars`}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal: Single Avatar Upload / URL */}
+        {/* Add Single Avatar Modal */}
         {isSingleModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div
-              className="w-full max-w-md bg-[#081426] border border-white/15 rounded-3xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-[#050A14]">
-                <h2 className="text-base font-bold text-white">Add Avatar</h2>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <div className="bg-[#0B1324] border border-white/15 rounded-[12px] p-5 max-w-md w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <h3 className="text-sm font-semibold text-white">Add New Avatar</h3>
                 <button
                   type="button"
                   onClick={() => setIsSingleModalOpen(false)}
-                  className="p-1 text-[#94A3B8] hover:text-white rounded-lg cursor-pointer"
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveSingle} className="p-5 sm:p-6 space-y-4">
-                {/* Live Circular Preview */}
-                <div className="flex flex-col items-center justify-center py-2">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#1683FF] shadow-lg shadow-[#1683FF]/30 bg-[#050A14]">
-                    <img
-                      src={singleUrl.trim() || DEFAULT_AVATAR}
-                      alt="Preview"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = DEFAULT_AVATAR;
-                      }}
-                    />
-                  </div>
+              <form onSubmit={handleSaveSingleAvatar} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    Character / Avatar Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={singleName}
+                    onChange={(e) => setSingleName(e.target.value)}
+                    placeholder="e.g. Gojo Satoru"
+                    className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[8px] px-3 text-xs text-white outline-none"
+                  />
                 </div>
 
-                {/* Upload File Option */}
-                <input
-                  type="file"
-                  ref={singleFileRef}
-                  onChange={handleSingleFileUpload}
-                  accept="image/*"
-                  className="hidden"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => singleFileRef.current?.click()}
-                  className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-[#1683FF]/20 text-[#CBD5E1] hover:text-[#00CFFF] border border-white/10 hover:border-[#1683FF]/40 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 text-[#00CFFF]" />
-                  <span>Choose Image File from Device</span>
-                </button>
-
-                <div className="flex items-center gap-3 my-2">
-                  <div className="flex-1 h-px bg-white/10" />
-                  <span className="text-[10px] uppercase font-bold text-[#64748B]">or paste URL</span>
-                  <div className="flex-1 h-px bg-white/10" />
-                </div>
-
-                {/* Direct Image URL */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-[#CBD5E1]">
-                    Image Direct URL
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    Avatar Image URL
                   </label>
                   <input
                     type="url"
                     value={singleUrl}
                     onChange={(e) => setSingleUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/... or any image link"
-                    className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-xl px-3.5 py-2 text-xs text-white outline-none"
+                    placeholder="https://.../avatar.jpg"
+                    className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[8px] px-3 text-xs font-mono text-white outline-none"
                   />
                 </div>
 
-                <div className="pt-3 flex items-center justify-end gap-2.5">
+                <div className="pt-1">
+                  <span className="block text-xs text-[#94A3B8] mb-2">Or select local file to compress:</span>
+                  <input
+                    ref={singleFileRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleSingleFileChange}
+                    className="text-xs text-[#94A3B8] file:mr-3 file:py-1.5 file:px-3 file:rounded-[8px] file:border-0 file:bg-white/10 file:text-white file:text-xs file:cursor-pointer hover:file:bg-white/20"
+                  />
+                </div>
+
+                {singleUrl && (
+                  <div className="flex items-center gap-3 p-2.5 bg-[#050A14] border border-white/10 rounded-[8px]">
+                    <img
+                      src={singleUrl}
+                      alt="Preview"
+                      className="w-12 h-12 rounded-full object-cover border border-white/10 shrink-0"
+                    />
+                    <div className="min-w-0 text-xs">
+                      <p className="text-white font-medium truncate">{singleName || 'Unnamed'}</p>
+                      <p className="text-[11px] text-[#94A3B8] font-mono truncate">{singleUrl.slice(0, 40)}...</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
                   <button
                     type="button"
                     onClick={() => setIsSingleModalOpen(false)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] cursor-pointer"
+                    className="h-9 px-3.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-[#CBD5E1] text-xs font-medium cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={singleSaving || !singleUrl.trim()}
-                    className="px-5 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    disabled={singleSaving}
+                    className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold cursor-pointer disabled:opacity-40"
                   >
                     {singleSaving ? 'Saving...' : 'Add Avatar'}
                   </button>
@@ -800,101 +547,148 @@ export const AdminAvatarsView: React.FC<AdminAvatarsViewProps> = ({
           </div>
         )}
 
-        {/* Modal: Bulk URLs Importer */}
-        {isBulkModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div
-              className="w-full max-w-lg bg-[#081426] border border-white/15 rounded-3xl shadow-2xl overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-[#050A14]">
-                <div className="flex items-center gap-2.5">
-                  <Layers className="w-5 h-5 text-[#1683FF]" />
-                  <h2 className="text-base font-bold text-white">Bulk Avatars Import (URLs)</h2>
-                </div>
+        {/* Add by URLs Modal */}
+        {isBulkUrlModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <div className="bg-[#0B1324] border border-white/15 rounded-[12px] p-5 max-w-lg w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <h3 className="text-sm font-semibold text-white">Import Avatars by URLs</h3>
                 <button
                   type="button"
-                  onClick={() => setIsBulkModalOpen(false)}
-                  className="p-1 text-[#94A3B8] hover:text-white rounded-lg cursor-pointer"
+                  onClick={() => setIsBulkUrlModalOpen(false)}
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveBulkUrls} className="p-5 sm:p-6 space-y-4">
-                <p className="text-xs text-[#94A3B8]">
-                  Paste multiple image URLs below, separated by line breaks or commas. All URLs will be imported simultaneously into the avatar catalog.
-                </p>
-
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-white">
+                  Paste Image URLs (One URL per line)
+                </label>
                 <textarea
-                  rows={8}
+                  rows={6}
                   value={bulkUrlsText}
                   onChange={(e) => setBulkUrlsText(e.target.value)}
-                  placeholder="https://images.unsplash.com/photo-1...&#10;https://images.unsplash.com/photo-2...&#10;https://images.unsplash.com/photo-3..."
-                  className="w-full bg-[#050A14] border border-white/10 focus:border-[#1683FF] rounded-2xl p-3 text-xs text-white placeholder-[#64748B] outline-none font-mono"
+                  placeholder="https://.../naruto.jpg&#10;https://.../sasuke.jpg&#10;https://.../luffy.jpg"
+                  className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[8px] p-3 text-xs font-mono text-white outline-none"
                 />
-
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-xs text-[#64748B]">
-                    {bulkUrlsText.split(/[\n,]+/).filter((l) => l.trim().length > 0).length} URLs entered
-                  </span>
-
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsBulkModalOpen(false)}
-                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={bulkSaving || !bulkUrlsText.trim()}
-                      className="px-5 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {bulkSaving ? 'Importing...' : 'Import All URLs'}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Reset / Delete All Confirmation Modal */}
-        {isResetConfirmOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div
-              className="w-full max-w-md bg-[#081426] border border-white/15 rounded-3xl shadow-2xl p-6 space-y-4"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 text-rose-400">
-                <AlertCircle className="w-6 h-6 shrink-0" />
-                <h3 className="text-base font-bold text-white">Delete All Avatars?</h3>
               </div>
-              <p className="text-xs text-[#94A3B8] leading-relaxed">
-                This will permanently delete all avatars from Firestore. You can upload or import new avatar images anytime.
-              </p>
-              <div className="flex items-center justify-end gap-2 pt-2">
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setIsResetConfirmOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] cursor-pointer"
+                  onClick={() => setIsBulkUrlModalOpen(false)}
+                  className="h-9 px-3.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-[#CBD5E1] text-xs font-medium cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleResetDefaults}
-                  disabled={resetting}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-md shadow-rose-600/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  disabled={bulkSaving}
+                  onClick={handleSaveBulkUrls}
+                  className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold cursor-pointer disabled:opacity-40"
                 >
-                  {resetting ? 'Deleting...' : 'Yes, Delete All'}
+                  {bulkSaving ? 'Importing...' : 'Import URLs'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* Google Drive Review & Save Dialog */}
+        {syncReviewModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="bg-[#0B1324] border border-white/15 rounded-[12px] p-5 max-w-xl w-full space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">Review Synced Drive Avatars</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSyncReviewModalOpen(false)}
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-[#94A3B8]">
+                Found {syncPreviewList.length} avatars in the Google Drive folder. Review the thumbnails below and click &quot;Save to Database&quot; to commit.
+              </p>
+
+              <div className="grid grid-cols-6 gap-2 max-h-56 overflow-y-auto p-2 bg-[#050A14] border border-white/10 rounded-[8px]">
+                {syncPreviewList.map((item, idx) => (
+                  <div key={idx} className="flex flex-col items-center gap-1">
+                    <img
+                      src={item.url}
+                      alt={item.name}
+                      className="w-12 h-12 rounded-full object-cover border border-white/10"
+                    />
+                    <span className="text-[10px] text-[#94A3B8] truncate w-full text-center">
+                      {item.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setSyncReviewModalOpen(false)}
+                  className="h-9 px-3.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-[#CBD5E1] text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingSync}
+                  onClick={handleConfirmSaveSync}
+                  className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold cursor-pointer disabled:opacity-40"
+                >
+                  {isSavingSync ? 'Saving...' : `Save ${syncPreviewList.length} Avatars`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Delete Confirm Dialog */}
+        <AdminConfirmDialog
+          isOpen={showBulkDeleteConfirm}
+          onClose={() => setShowBulkDeleteConfirm(false)}
+          onConfirm={handleBulkDelete}
+          title={`Delete ${selectedIds.size} selected avatars?`}
+          consequence="These avatars will be removed from the selection catalog for registered members."
+          confirmLabel="Delete Selected"
+          isLoading={isDeleting}
+        />
+
+        {/* Delete All with Keyword DELETE */}
+        <AdminConfirmDialog
+          isOpen={showDeleteAllConfirm}
+          onClose={() => setShowDeleteAllConfirm(false)}
+          onConfirm={handleDeleteAll}
+          title="Delete all avatars in catalog?"
+          consequence="This will permanently empty the avatar library document collection."
+          confirmLabel="Delete All Avatars"
+          requireKeyword="DELETE"
+          isDestructive={true}
+          isLoading={isDeleting}
+        />
+
+        {/* Reset Defaults Confirm */}
+        <AdminConfirmDialog
+          isOpen={showResetConfirm}
+          onClose={() => setShowResetConfirm(false)}
+          onConfirm={handleResetDefaults}
+          title="Reset to default anime avatar library?"
+          consequence="This replaces existing avatar documents with the official anime avatar default library."
+          confirmLabel="Reset Defaults"
+          isDestructive={false}
+          isLoading={isDeleting}
+        />
       </div>
     </AdminLayout>
   );

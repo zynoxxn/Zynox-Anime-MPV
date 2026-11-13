@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/auth';
-import type { EpisodeReport, ReportStatus, CommentReportItem, CommentReportStatus } from '../../types/library';
+import type {
+  EpisodeReport,
+  ReportStatus,
+  CommentReportItem,
+  CommentReportStatus,
+} from '../../types/library';
 import {
   getAllEpisodeReports,
   updateReportStatus,
@@ -9,23 +14,33 @@ import {
 import {
   getAllCommentReports,
   updateCommentReportStatus,
-  toggleHideCommentAdmin,
   deleteComment,
 } from '../../lib/firestore/comments';
 import { toggleUserCommentRestriction } from '../../lib/firestore/admin-users';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { AdminLayout } from './AdminLayout';
 import {
+  AdminPageHeader,
+  AdminSegmentedTabs,
+  AdminListRow,
+  AdminStatusBadge,
+  AdminEmptyState,
+  AdminSelectionBar,
+  AdminConfirmDialog,
+  AdminSkeleton,
+} from '../../components/admin';
+import {
   AlertTriangle,
-  Trash2,
-  CheckCircle2,
   MessageSquare,
-  EyeOff,
-  Eye,
+  CheckCircle2,
+  Trash2,
+  ExternalLink,
   ShieldAlert,
-  Loader2,
   Ban,
-  Film,
+  Clock,
+  Check,
+  AlertCircle,
+  Eye,
 } from 'lucide-react';
 
 interface AdminReportsViewProps {
@@ -33,20 +48,56 @@ interface AdminReportsViewProps {
   onShowMessage: (msg: string) => void;
 }
 
+function formatReportTime(ts: any): string {
+  if (!ts) return '—';
+  try {
+    let date: Date;
+    if (ts.toDate && typeof ts.toDate === 'function') {
+      date = ts.toDate();
+    } else if (ts.seconds) {
+      date = new Date(ts.seconds * 1000);
+    } else if (typeof ts === 'string' || typeof ts === 'number') {
+      date = new Date(ts);
+    } else {
+      return '—';
+    }
+    if (isNaN(date.getTime())) return '—';
+
+    const now = Date.now();
+    const diff = Math.floor((now - date.getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch {
+    return '—';
+  }
+}
+
 export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
   navigate,
   onShowMessage,
 }) => {
   const { user, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<'episodes' | 'comments'>('episodes');
+  const [activeTab, setActiveTab] = useState<'streams' | 'comments'>('streams');
 
-  // Episode reports state
+  // Streams / Episode reports
   const [episodeReports, setEpisodeReports] = useState<EpisodeReport[]>([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(true);
 
-  // Comment reports state
+  // Comments reports
   const [commentReports, setCommentReports] = useState<CommentReportItem[]>([]);
   const [loadingComments, setLoadingComments] = useState(true);
+
+  // Selection mode for bulk resolve
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Confirm dialogs
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; type: 'stream' | 'comment'; label: string } | null>(null);
+  const [banTarget, setBanTarget] = useState<{ userId: string; userName: string } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const fetchEpisodeReports = async () => {
     try {
@@ -54,7 +105,7 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
       const items = await getAllEpisodeReports();
       setEpisodeReports(items);
     } catch (err) {
-      console.warn('Could not load episode reports:', err);
+      console.warn('Could not load stream reports:', err);
     } finally {
       setLoadingEpisodes(false);
     }
@@ -77,337 +128,380 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
     fetchCommentReports();
   }, [user, isAdmin]);
 
-  const handleUpdateEpisodeReportStatus = async (id: string, newStatus: ReportStatus) => {
-    await updateReportStatus(id, newStatus);
-    await logAdminActivity(
-      user?.uid || '',
-      user?.email || '',
-      `Updated Episode Report status to ${newStatus}`,
-      'Reports',
-      id,
-      `Report #${id}`
-    );
-    setEpisodeReports((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-    );
-    onShowMessage(`Report marked as ${newStatus}.`);
+  // Clear selection on tab switch
+  const handleTabChange = (tab: 'streams' | 'comments') => {
+    setActiveTab(tab);
+    setSelectedIds(new Set());
+    setSelectionMode(false);
   };
 
-  const handleDeleteEpisodeReport = async (id: string) => {
-    if (window.confirm('Delete this episode report?')) {
-      await deleteEpisodeReport(id);
+  // Toggle single item selection
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Episode report actions
+  const handleMarkStreamFixed = async (id: string, animeTitle: string) => {
+    try {
+      await updateReportStatus(id, 'resolved');
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
-        'Deleted Episode Report',
+        'Marked Stream Report as Fixed',
         'Reports',
         id,
-        `Report #${id}`
+        animeTitle
       );
-      setEpisodeReports((prev) => prev.filter((r) => r.id !== id));
-      onShowMessage('Report deleted.');
+      setEpisodeReports((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: 'resolved' } : r))
+      );
+      onShowMessage(`Stream report for "${animeTitle}" marked as fixed.`);
+    } catch (err: any) {
+      onShowMessage(`Failed to update report: ${err.message}`);
     }
   };
 
-  const handleUpdateCommentReportStatus = async (id: string, newStatus: CommentReportStatus) => {
-    await updateCommentReportStatus(id, newStatus);
-    await logAdminActivity(
-      user?.uid || '',
-      user?.email || '',
-      `Updated Comment Report status to ${newStatus}`,
-      'Reports',
-      id,
-      `Report #${id}`
-    );
-    setCommentReports((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-    );
-    onShowMessage(`Report status updated to ${newStatus}.`);
+  const handleDeleteStreamReport = async (id: string) => {
+    try {
+      setIsProcessing(true);
+      await deleteEpisodeReport(id);
+      setEpisodeReports((prev) => prev.filter((r) => r.id !== id));
+      onShowMessage('Stream report deleted.');
+      setDeleteTarget(null);
+    } catch (err: any) {
+      onShowMessage(`Failed to delete report: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handleToggleHideComment = async (
-    reportId: string,
-    commentId: string,
-    currentHidden?: boolean
-  ) => {
-    const nextVal = !currentHidden;
-    await toggleHideCommentAdmin(commentId, nextVal);
-    await logAdminActivity(
-      user?.uid || '',
-      user?.email || '',
-      `${nextVal ? 'Hidden' : 'Unhidden'} Comment`,
-      'Comments',
-      commentId,
-      `Comment #${commentId}`
-    );
-    setCommentReports((prev) =>
-      prev.map((r) =>
-        r.id === reportId && r.comment
-          ? { ...r, comment: { ...r.comment, isHiddenByAdmin: nextVal } }
-          : r
-      )
-    );
-    onShowMessage(`Comment is now ${nextVal ? 'Hidden' : 'Visible'}.`);
+  // Comment report actions
+  const handleApproveComment = async (reportId: string, commentId: string) => {
+    try {
+      await updateCommentReportStatus(reportId, 'dismissed');
+      setCommentReports((prev) =>
+        prev.map((r) => (r.id === reportId ? { ...r, status: 'dismissed' } : r))
+      );
+      onShowMessage('Comment approved and report dismissed.');
+    } catch (err: any) {
+      onShowMessage(`Failed to approve comment: ${err.message}`);
+    }
   };
 
-  const handleDeleteComment = async (reportId: string, commentId: string) => {
-    if (window.confirm('Permanently delete this comment?')) {
+  const handleDeleteCommentItem = async (reportId: string, commentId: string) => {
+    try {
+      setIsProcessing(true);
       await deleteComment(commentId);
+      await updateCommentReportStatus(reportId, 'resolved');
+      setCommentReports((prev) =>
+        prev.map((r) => (r.id === reportId ? { ...r, status: 'resolved' } : r))
+      );
+      onShowMessage('Comment deleted and report marked resolved.');
+      setDeleteTarget(null);
+    } catch (err: any) {
+      onShowMessage(`Failed to delete comment: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleBanUser = async (userId: string, userName: string) => {
+    try {
+      setIsProcessing(true);
+      await toggleUserCommentRestriction(userId, true, userName);
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
-        'Deleted Inappropriate Comment',
-        'Comments',
-        commentId,
-        `Comment #${commentId}`
+        `Restricted User Comments (${userName})`,
+        'Users',
+        userId,
+        userName
       );
-      setCommentReports((prev) => prev.filter((r) => r.id !== reportId));
-      onShowMessage('Comment deleted.');
+      onShowMessage(`User "${userName}" has been banned from posting comments.`);
+      setBanTarget(null);
+    } catch (err: any) {
+      onShowMessage(`Failed to restrict user: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handleToggleMuteUser = async (userId: string, isRestricted: boolean) => {
-    const nextVal = !isRestricted;
-    await toggleUserCommentRestriction(userId, nextVal);
-    await logAdminActivity(
-      user?.uid || '',
-      user?.email || '',
-      `${nextVal ? 'Restricted' : 'Unrestricted'} User Comments`,
-      'Users',
-      userId,
-      `User #${userId}`
-    );
-    onShowMessage(`User commenting privileges ${nextVal ? 'revoked' : 'restored'}.`);
+  // Bulk Resolve
+  const handleBulkResolve = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      if (activeTab === 'streams') {
+        await Promise.all(ids.map((id) => updateReportStatus(id, 'resolved')));
+        setEpisodeReports((prev) =>
+          prev.map((r) => (r.id && ids.includes(r.id) ? { ...r, status: 'resolved' } : r))
+        );
+      } else {
+        await Promise.all(ids.map((id) => updateCommentReportStatus(id, 'resolved')));
+        setCommentReports((prev) =>
+          prev.map((r) => (r.id && ids.includes(r.id) ? { ...r, status: 'resolved' } : r))
+        );
+      }
+      onShowMessage(`Resolved ${ids.length} reports.`);
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    } catch (err: any) {
+      onShowMessage(`Failed bulk resolve: ${err.message}`);
+    }
   };
+
+  const tabs = [
+    { id: 'streams' as const, label: 'Streams', count: episodeReports.filter((r) => r.status === 'open').length },
+    { id: 'comments' as const, label: 'Comments', count: commentReports.filter((r) => r.status === 'open' || r.status === 'pending').length },
+  ];
 
   return (
     <AdminLayout currentTab="reports" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-rose-400 uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4" />
-              <span>Moderation &amp; Issues Desk</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Broken Streams &amp; Flagged Content
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Review playback errors, dead video links, and flagged community comments.
-            </p>
-          </div>
+      <div className="space-y-6 min-w-0 pb-20">
+        {/* Page Header */}
+        <AdminPageHeader
+          title="Reports & Moderation"
+          description="Review broken stream playback issues and community flagged comments"
+          secondaryActions={[
+            {
+              label: selectionMode ? 'Exit select' : 'Select',
+              onClick: () => {
+                setSelectionMode((prev) => !prev);
+                setSelectedIds(new Set());
+              },
+            },
+          ]}
+        />
 
-          <div className="flex items-center gap-2 bg-[#050A14] p-1.5 rounded-2xl border border-white/5">
-            <button
-              type="button"
-              onClick={() => setActiveTab('episodes')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'episodes'
-                  ? 'bg-rose-500 text-white shadow-md'
-                  : 'text-[#94A3B8] hover:text-white'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Broken Streams ({episodeReports.length})</span>
-            </button>
+        {/* Segmented Tabs (Normal active styling: #1E88FF) */}
+        <AdminSegmentedTabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={handleTabChange}
+        />
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('comments')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'comments'
-                  ? 'bg-rose-500 text-white shadow-md'
-                  : 'text-[#94A3B8] hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Flagged Comments ({commentReports.length})</span>
-            </button>
-          </div>
-        </div>
-
-        {/* EPISODE STREAM REPORTS */}
-        {activeTab === 'episodes' && (
+        {/* ================= TAB 1: STREAMS ================= */}
+        {activeTab === 'streams' && (
           <div>
             {loadingEpisodes ? (
-              <div className="py-20 text-center text-xs text-[#94A3B8]">Loading stream issue reports...</div>
+              <div className="space-y-3">
+                <AdminSkeleton variant="table-row" count={4} />
+              </div>
             ) : episodeReports.length === 0 ? (
-              <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8]">
-                No broken stream reports reported by users. All systems operational!
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-6 max-h-[160px] flex items-center justify-center">
+                <AdminEmptyState
+                  icon={AlertTriangle}
+                  title="No broken streams reported"
+                  description="All video servers and episodes are operational."
+                  compact
+                />
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {episodeReports.map((r) => (
-                  <div
-                    key={r.id}
-                    className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 space-y-4 hover:border-white/10 transition-all flex flex-col justify-between"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                          <h3 className="text-sm font-bold text-white leading-tight">
-                            {r.animeTitle} - Ep {r.episodeNumber}
-                          </h3>
-                        </div>
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] divide-y divide-white/5 overflow-hidden">
+                {episodeReports.map((item) => {
+                  const id = item.id || '';
+                  const isResolved = item.status === 'resolved';
+                  const isSelected = selectedIds.has(id);
+                  const title = `${item.animeTitle} · Ep ${item.episodeNumber}`;
+                  const server = item.serverName || 'Primary Server';
+                  const time = formatReportTime(item.createdAt);
+                  const reason = (item.reason || item.issueType || 'playback issue').replace(/_/g, ' ');
+                  const meta = `${server} · ${reason} · ${time}`;
 
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                            r.status === 'resolved'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : r.status === 'investigating'
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          }`}
-                        >
-                          {r.status}
-                        </span>
-                      </div>
-
-                      <div className="p-3 bg-[#050A14] rounded-2xl border border-white/5 space-y-1">
-                        <div className="text-xs font-bold text-rose-300">
-                          Problem: <span className="capitalize font-normal text-white">{r.issueType}</span>
-                        </div>
-                        {r.description && (
-                          <p className="text-xs text-[#94A3B8] leading-relaxed">
-                            "{r.description}"
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-[#64748B] flex items-center gap-2">
-                        <span>Reported by: {r.userEmail || 'Anonymous'}</span>
-                        {r.serverName && <span>&bull; Server: {r.serverName}</span>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateEpisodeReportStatus(r.id, 'investigating')}
-                          className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[11px] font-bold rounded-lg transition-all"
-                        >
-                          Investigate
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateEpisodeReportStatus(r.id, 'resolved')}
-                          className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
-                        >
-                          Resolved
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteEpisodeReport(r.id)}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500 text-[#94A3B8] hover:text-white transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  return (
+                    <AdminListRow
+                      key={id}
+                      id={id}
+                      title={title}
+                      meta={meta}
+                      badge={
+                        isResolved ? (
+                          <AdminStatusBadge status="live" label="Fixed" />
+                        ) : (
+                          <AdminStatusBadge status="archived" label="Open" />
+                        )
+                      }
+                      selectable={selectionMode}
+                      selected={isSelected}
+                      onSelect={() => toggleSelect(id)}
+                      menuItems={[
+                        {
+                          id: 'open-episode',
+                          label: 'Open watch page',
+                          icon: ExternalLink,
+                          onClick: () =>
+                            window.open(
+                              `/watch/${item.animeId}/${item.episodeId || item.episodeNumber}`,
+                              '_blank'
+                            ),
+                        },
+                        ...(!isResolved
+                          ? [
+                              {
+                                id: 'mark-fixed',
+                                label: 'Mark as fixed',
+                                icon: CheckCircle2,
+                                onClick: () => handleMarkStreamFixed(id, item.animeTitle),
+                              },
+                            ]
+                          : []),
+                        {
+                          id: 'delete',
+                          label: 'Delete report',
+                          icon: Trash2,
+                          destructive: true,
+                          onClick: () =>
+                            setDeleteTarget({
+                              id,
+                              type: 'stream',
+                              label: `${item.animeTitle} Ep ${item.episodeNumber}`,
+                            }),
+                        },
+                      ]}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* COMMENT REPORTS */}
+        {/* ================= TAB 2: COMMENTS ================= */}
         {activeTab === 'comments' && (
           <div>
             {loadingComments ? (
-              <div className="py-20 text-center text-xs text-[#94A3B8]">Loading flagged comments...</div>
+              <div className="space-y-3">
+                <AdminSkeleton variant="table-row" count={4} />
+              </div>
             ) : commentReports.length === 0 ? (
-              <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8]">
-                No reported comments found. Community moderation clean.
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-6 max-h-[160px] flex items-center justify-center">
+                <AdminEmptyState
+                  icon={MessageSquare}
+                  title="No flagged comments"
+                  description="No visitor comments currently flagged for moderation."
+                  compact
+                />
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {commentReports.map((cr) => (
-                  <div
-                    key={cr.id}
-                    className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 space-y-4 hover:border-white/10 transition-all flex flex-col justify-between"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="text-xs font-bold text-rose-400">
-                          Flag: <span className="text-white uppercase font-bold">{cr.reason}</span>
-                        </div>
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                            cr.status === 'resolved'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          }`}
-                        >
-                          {cr.status}
-                        </span>
-                      </div>
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] divide-y divide-white/5 overflow-hidden">
+                {commentReports.map((report) => {
+                  const id = report.id || '';
+                  const isResolved = report.status === 'resolved' || report.status === 'dismissed';
+                  const isSelected = selectedIds.has(id);
+                  const author = report.commentAuthorName || 'Visitor';
+                  const time = formatReportTime(report.createdAt);
+                  const reason = (report.reason || 'inappropriate').replace(/_/g, ' ');
+                  const commentText = report.commentContent || (report.comment?.content ?? 'Comment text unavailable');
 
-                      {cr.comment && (
-                        <div className="p-3 bg-[#050A14] rounded-2xl border border-white/5 space-y-1">
-                          <div className="text-[11px] font-bold text-white">
-                            Author: {cr.comment.userName}
-                          </div>
-                          <p className="text-xs text-[#94A3B8] leading-relaxed">
-                            "{cr.comment.text}"
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                      <div className="flex items-center gap-1.5">
-                        {cr.comment && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleHideComment(
-                                cr.id,
-                                cr.commentId,
-                                cr.comment?.isHiddenByAdmin
-                              )
-                            }
-                            className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1"
-                          >
-                            {cr.comment.isHiddenByAdmin ? (
-                              <Eye className="w-3 h-3 text-emerald-400" />
-                            ) : (
-                              <EyeOff className="w-3 h-3 text-rose-400" />
-                            )}
-                            <span>{cr.comment.isHiddenByAdmin ? 'Unhide' : 'Hide'}</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateCommentReportStatus(cr.id, 'resolved')}
-                          className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
-                        >
-                          Dismiss / Resolve
-                        </button>
-                      </div>
-
-                      {cr.comment && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteComment(cr.id, cr.commentId)}
-                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors"
-                          title="Delete Comment"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  return (
+                    <AdminListRow
+                      key={id}
+                      id={id}
+                      title={`"${commentText.slice(0, 100)}${commentText.length > 100 ? '...' : ''}"`}
+                      meta={`By ${author} · Reason: ${reason} · ${time}`}
+                      badge={
+                        isResolved ? (
+                          <AdminStatusBadge status="live" label="Reviewed" />
+                        ) : (
+                          <AdminStatusBadge status="archived" label="Flagged" />
+                        )
+                      }
+                      selectable={selectionMode}
+                      selected={isSelected}
+                      onSelect={() => toggleSelect(id)}
+                      menuItems={[
+                        ...(!isResolved
+                          ? [
+                              {
+                                id: 'approve',
+                                label: 'Approve comment (Dismiss report)',
+                                icon: CheckCircle2,
+                                onClick: () => handleApproveComment(id, report.commentId),
+                              },
+                            ]
+                          : []),
+                        {
+                          id: 'delete-comment',
+                          label: 'Delete comment',
+                          icon: Trash2,
+                          destructive: true,
+                          onClick: () =>
+                            setDeleteTarget({
+                              id,
+                              type: 'comment',
+                              label: `comment by ${author}`,
+                            }),
+                        },
+                        {
+                          id: 'ban-user',
+                          label: `Ban ${author} from commenting`,
+                          icon: Ban,
+                          destructive: true,
+                          onClick: () =>
+                            setBanTarget({
+                              userId: report.commentAuthorId,
+                              userName: author,
+                            }),
+                        },
+                      ]}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
         )}
+
+        {/* Floating Bulk Selection Bar */}
+        <AdminSelectionBar
+          selectedCount={selectedIds.size}
+          onClear={() => setSelectedIds(new Set())}
+          actions={[
+            {
+              label: 'Mark resolved',
+              icon: CheckCircle2,
+              variant: 'primary',
+              onClick: handleBulkResolve,
+            },
+          ]}
+        />
+
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (!deleteTarget) return;
+            if (deleteTarget.type === 'stream') {
+              handleDeleteStreamReport(deleteTarget.id);
+            } else {
+              const rep = commentReports.find((r) => r.id === deleteTarget.id);
+              if (rep) handleDeleteCommentItem(rep.id || '', rep.commentId);
+            }
+          }}
+          title="Delete report item?"
+          consequence={`Permanently delete ${deleteTarget?.label}. This action cannot be reversed.`}
+          confirmLabel="Delete"
+          isLoading={isProcessing}
+        />
+
+        {/* Ban User Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={!!banTarget}
+          onClose={() => setBanTarget(null)}
+          onConfirm={() => {
+            if (banTarget) handleBanUser(banTarget.userId, banTarget.userName);
+          }}
+          title={`Ban user "${banTarget?.userName}"?`}
+          consequence="This user will be permanently restricted from submitting new comments or replies across all anime."
+          confirmLabel="Ban user"
+          isLoading={isProcessing}
+        />
       </div>
     </AdminLayout>
   );

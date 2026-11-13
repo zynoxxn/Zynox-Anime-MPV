@@ -1,10 +1,22 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import type { Anime } from '../types/anime';
 import type { Episode } from '../types/episode';
-import type { WatchlistStatus } from '../types/library';
+import type { WatchlistStatus, WatchProgress } from '../types/library';
+import type { CmsSeoSettings } from '../types/cms';
 import { useAuth } from '../lib/auth';
-import { getAnimeBySlug, getAnimeById, getPublishedAnimes, incrementAnimeViews, cleanAnimeTitle } from '../lib/firestore/anime';
+import {
+  getAnimeBySlug,
+  getAnimeById,
+  getPublishedAnimes,
+  getCachedPublishedAnimes,
+  getLocalStoredAnimes,
+  incrementAnimeViews,
+} from '../lib/firestore/anime';
 import { getPublishedEpisodesByAnimeId } from '../lib/firestore/episodes';
+import { getCmsSeoSettings } from '../lib/firestore/cms';
+import { getCachedSiteSettings } from '../lib/firestore/site-settings';
+import { withTimeout } from '../lib/firestore/fast-cache';
+import { DEFAULT_ANIMES } from '../data/defaultCatalog';
 import {
   toggleFavorite,
   isFavorite,
@@ -12,14 +24,16 @@ import {
   removeFromWatchlist,
   getAnimeWatchlistStatus,
   getWatchedEpisodes,
+  getContinueWatching,
+  isFavoriteCached,
+  getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
 import { ShareModal } from '../components/ShareModal';
 import { openSystemShare } from '../lib/share';
 import { DownloadModal } from '../components/DownloadModal';
-import { EpisodeSelector } from '../components/EpisodeSelector';
 import { AnimeCard } from '../components/AnimeCard';
+import { EpisodeSelector } from '../components/EpisodeSelector';
 import { AnimeDetailSkeleton } from '../components/SkeletonLoader';
-import { FollowButton } from '../components/FollowButton';
 import { CommentSection } from '../components/community/CommentSection';
 import {
   resolveEpisodeDownloadUrl,
@@ -27,29 +41,25 @@ import {
   getAllEpisodeDownloadMirrors,
   type DownloadMirror,
 } from '../lib/downloadRedirect';
+import { isValidSafeUrl } from '../lib/security';
 import { generateAnimeSeoMetadata } from '../lib/seo';
 import { usePageSeo } from '../hooks/usePageSeo';
 import { getOptimizedImageUrl } from '../lib/image-optimizer';
 import {
   ArrowLeft,
   Play,
-  Film,
   Star,
   Heart,
   Bookmark,
   Share2,
   AlertCircle,
-  Loader2,
-  Check,
-  Clock,
-  Layers,
-  Mic,
+  Film,
+  X,
   Download,
-  Info,
   Sparkles,
-  ChevronRight,
-  Eye,
   Tv,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 
 interface AnimeDetailViewProps {
@@ -59,6 +69,39 @@ interface AnimeDetailViewProps {
   onShowMessage?: (msg: string) => void;
 }
 
+function findCachedAnimeSynchronously(rawSlug: string): Anime | null {
+  if (!rawSlug) return null;
+  let decoded = rawSlug;
+  try {
+    decoded = decodeURIComponent(rawSlug);
+  } catch {}
+  const clean = decoded.trim();
+  const lower = clean.toLowerCase();
+  const slugified = lower.replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const pools = [
+    ...getLocalStoredAnimes(),
+    ...getCachedPublishedAnimes(),
+    ...DEFAULT_ANIMES,
+  ];
+  return (
+    pools.find((a) => {
+      if (!a || (a as any).isDeleted === true) return false;
+      const aSlug = a.slug?.trim()?.toLowerCase();
+      const aId = a.id?.trim()?.toLowerCase();
+      const aTitle = a.title?.trim()?.toLowerCase();
+      return (
+        a.slug === clean ||
+        a.id === clean ||
+        aSlug === lower ||
+        aId === lower ||
+        aTitle === lower ||
+        (Boolean(slugified) && (aSlug === slugified || aId === slugified))
+      );
+    }) || null
+  );
+}
+
 export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   slug,
   initialSeason,
@@ -66,15 +109,20 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   onShowMessage,
 }) => {
   const { user, isAdmin } = useAuth();
-  const [anime, setAnime] = useState<Anime | null>(null);
+  const initialCached = useMemo(() => findCachedAnimeSynchronously(slug), [slug]);
+  const [anime, setAnime] = useState<Anime | null>(initialCached);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [episodesLoading, setEpisodesLoading] = useState(true);
   const [relatedAnimes, setRelatedAnimes] = useState<Anime[]>([]);
   const [watchedEpNumbers, setWatchedEpNumbers] = useState<number[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [continueProgress, setContinueProgress] = useState<WatchProgress | null>(null);
+  const [seoSettings, setSeoSettings] = useState<CmsSeoSettings | null>(null);
+  const [loading, setLoading] = useState(!initialCached);
   const [error, setError] = useState<string | null>(null);
   const [showFullSynopsis, setShowFullSynopsis] = useState(false);
+  const [showTrailerModal, setShowTrailerModal] = useState(false);
 
-  // Active season selection (Crunchyroll-style dynamic asset switching)
+  // Active season selection
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number | 'all'>(() => {
     if (initialSeason !== undefined) return initialSeason;
     if (typeof window !== 'undefined') {
@@ -87,7 +135,6 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     return 'all';
   });
 
-  // Keep season in sync if initialSeason prop updates
   useEffect(() => {
     if (initialSeason !== undefined) {
       setSelectedSeasonNumber(initialSeason);
@@ -95,111 +142,161 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   }, [initialSeason]);
 
   // User state
-  const [fav, setFav] = useState(false);
-  const [watchlistStatus, setWatchStatus] = useState<WatchlistStatus | null>(null);
+  const [fav, setFav] = useState(() =>
+    initialCached?.id ? isFavoriteCached(initialCached.id) : false
+  );
+  const [watchlistStatus, setWatchStatus] = useState<WatchlistStatus | null>(() =>
+    initialCached?.id ? getAnimeWatchlistStatusCached(initialCached.id) : null
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
   const [downloadModalSubtitle, setDownloadModalSubtitle] = useState('');
 
-  const handleShare = () => {
-    const shareTitle = anime?.title || 'Anime';
-    const shareText = `Watch ${shareTitle} in Hindi Dub & English Sub on ZYNOX ANIME`;
-    openSystemShare({
-      title: shareTitle,
-      text: shareText,
-      url: typeof window !== 'undefined' ? window.location.href : '',
-      onShowMessage,
-      onFallback: () => setShareOpen(true),
-    });
-  };
-
-  // Dynamic Google SEO & Schema.org Structured Data
+  // SEO synchronized with Admin SEO Settings & Site Name
   const seoMetadata = useMemo(() => {
     if (!anime) return null;
+    const siteCfg = getCachedSiteSettings();
     return generateAnimeSeoMetadata(anime, {
-      siteName: 'ZYNOX ANIME',
+      siteName: siteCfg?.siteName || 'ZYNOX ANIME',
+      seoSettings: seoSettings || undefined,
     });
-  }, [anime]);
-
+  }, [anime, seoSettings]);
   usePageSeo(seoMetadata);
 
-  // Active season metadata if a specific season is chosen (Crunchyroll style) - Must be declared before any conditional returns
+  // Active season metadata
   const activeSeasonEntry = useMemo(() => {
     if (selectedSeasonNumber === 'all' || !anime?.seasonsList) return null;
     return anime.seasonsList.find((s) => Number(s.seasonNumber) === Number(selectedSeasonNumber)) || null;
   }, [anime?.seasonsList, selectedSeasonNumber]);
 
-  // First episode of the selected season (for the main play button) - Must be declared before any conditional returns
-  const firstSeasonEpisode = useMemo(() => {
-    if (selectedSeasonNumber === 'all') return episodes[0] || null;
-    return (
-      episodes.find(
-        (e) => Number(e.seasonNumber || e.season || 1) === Number(selectedSeasonNumber)
-      ) || episodes[0] || null
-    );
-  }, [episodes, selectedSeasonNumber]);
-
+  // Fetch Anime details
   useEffect(() => {
     let isMounted = true;
-
     const fetchDetails = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        let animeData = await getAnimeBySlug(slug);
-        if (!animeData) {
-          animeData = await getAnimeById(slug);
+      const cachedMatch = findCachedAnimeSynchronously(slug);
+      if (cachedMatch) {
+        if (isMounted) {
+          setAnime(cachedMatch);
+          setLoading(false);
+          setError(null);
         }
+      } else {
+        if (isMounted) {
+          setLoading(true);
+          setError(null);
+        }
+      }
+      if (isMounted) {
+        setEpisodesLoading(true);
+      }
+
+      try {
+        withTimeout(getCmsSeoSettings(), 3000, null)
+          .then((s) => {
+            if (isMounted && s) setSeoSettings(s);
+          })
+          .catch(() => {});
+
+        let animeData = cachedMatch;
         if (!animeData) {
-          if (isMounted) setError('Anime not found or not published.');
+          animeData = await withTimeout(getAnimeBySlug(slug), 5000, null);
+          if (!animeData) {
+            animeData = await withTimeout(getAnimeById(slug), 3500, null);
+          }
+        }
+
+        if (!animeData) {
+          if (isMounted) {
+            setError('Anime not found or not published.');
+            setLoading(false);
+            setEpisodesLoading(false);
+          }
           return;
         }
 
         if (animeData.published === false && !isAdmin) {
-          if (isMounted) setError('This anime is currently not published.');
+          if (isMounted) {
+            setError('This anime is currently not published.');
+            setLoading(false);
+            setEpisodesLoading(false);
+          }
           return;
         }
 
         if (isMounted) {
           setAnime(animeData);
+          setLoading(false);
         }
 
-        if (animeData.id) {
-          incrementAnimeViews(animeData.id);
+        const animeKey = animeData.id || animeData.slug;
+        if (animeKey) {
+          incrementAnimeViews(animeKey);
 
-          const [epList, allAnimes, isFav, wStatus, watchedList] = await Promise.all([
-            getPublishedEpisodesByAnimeId(animeData.id),
-            getPublishedAnimes(),
-            isFavorite(user?.uid || null, animeData.id),
-            getAnimeWatchlistStatus(user?.uid || null, animeData.id),
-            getWatchedEpisodes(user?.uid || null, animeData.id),
-          ]);
-
-          if (isMounted) {
-            setEpisodes(epList);
-            setFav(isFav);
-            setWatchStatus(wStatus);
-            setWatchedEpNumbers(watchedList);
-
-            // Filter related anime with shared genres
-            const related = allAnimes.filter((a) => {
-              if (a.id === animeData.id) return false;
-              if (!animeData.genres || !a.genres) return true;
-              return a.genres.some((g) => animeData.genres?.includes(g));
+          const epPromise = withTimeout(getPublishedEpisodesByAnimeId(animeKey), 6000, [] as Episode[])
+            .then((epList) => {
+              if (isMounted) {
+                setEpisodes(epList);
+                setEpisodesLoading(false);
+              }
+            })
+            .catch(() => {
+              if (isMounted) setEpisodesLoading(false);
             });
-            setRelatedAnimes(related.slice(0, 6));
-          }
+
+          const relatedPromise = withTimeout(getPublishedAnimes(), 4500, getCachedPublishedAnimes())
+            .then((allAnimes) => {
+              if (!isMounted || !animeData) return;
+              const related = allAnimes.filter((a) => {
+                if (a.id === animeData?.id || a.slug === animeData?.slug) return false;
+                const sameStudio = Boolean(
+                  animeData?.studio && a.studio && a.studio.toLowerCase() === animeData.studio.toLowerCase()
+                );
+                const sharedGenre = Boolean(
+                  animeData?.genres && a.genres && a.genres.some((g) => animeData?.genres?.includes(g))
+                );
+                return sameStudio || sharedGenre;
+              });
+              const fallback = allAnimes.filter(
+                (a) => a.id !== animeData?.id && a.slug !== animeData?.slug && !related.some((r) => r.id === a.id)
+              );
+              setRelatedAnimes([...related, ...fallback].slice(0, 12));
+            })
+            .catch(() => {});
+
+          const userActivityPromise = Promise.allSettled([
+            withTimeout(isFavorite(user?.uid || null, animeKey), 3500, isFavoriteCached(animeKey)),
+            withTimeout(getAnimeWatchlistStatus(user?.uid || null, animeKey), 3500, getAnimeWatchlistStatusCached(animeKey)),
+            withTimeout(getWatchedEpisodes(user?.uid || null, animeKey), 3500, [] as number[]),
+            withTimeout(getContinueWatching(user?.uid || null), 3500, [] as WatchProgress[]),
+          ]).then(([favRes, watchRes, watchedRes, contRes]) => {
+            if (!isMounted) return;
+            if (favRes.status === 'fulfilled') setFav(favRes.value);
+            if (watchRes.status === 'fulfilled') setWatchStatus(watchRes.value);
+            if (watchedRes.status === 'fulfilled') setWatchedEpNumbers(watchedRes.value);
+            if (contRes.status === 'fulfilled') {
+              const activeProgress = contRes.value.find(
+                (p) => p.animeId === animeData?.id || p.animeSlug === animeData?.slug
+              );
+              setContinueProgress(activeProgress && !activeProgress.completed ? activeProgress : null);
+            }
+          });
+
+          await Promise.allSettled([epPromise, relatedPromise, userActivityPromise]);
+        } else if (isMounted) {
+          setEpisodesLoading(false);
         }
       } catch (err: any) {
         if (isMounted) {
           console.error('Error fetching anime details:', err);
-          setError('Failed to load anime details.');
+          if (!cachedMatch) {
+            setError('Failed to load anime details.');
+          }
         }
       } finally {
         if (isMounted) {
           setLoading(false);
+          setEpisodesLoading(false);
         }
       }
     };
@@ -208,7 +305,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [slug, user?.uid]);
+  }, [slug, user?.uid, isAdmin]);
 
   const handleFavoriteClick = async () => {
     if (!anime?.id) return;
@@ -221,7 +318,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
       anime.genres
     );
     setFav(newFav);
-    onShowMessage?.(newFav ? `Added "${anime.title}" to favorites.` : `Removed from favorites.`);
+    onShowMessage?.(newFav ? `Added "${anime.title}" to favorites.` : 'Removed from favorites.');
   };
 
   const handleWatchlistToggle = async () => {
@@ -247,12 +344,23 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     }
   };
 
+  const handleShare = () => {
+    const shareTitle = anime?.title || 'Anime';
+    const shareText = `Watch ${shareTitle} in Hindi Dub & English Sub on ZYNOX ANIME`;
+    openSystemShare({
+      title: shareTitle,
+      text: shareText,
+      url: typeof window !== 'undefined' ? window.location.href : '',
+      onShowMessage,
+      onFallback: () => setShareOpen(true),
+    });
+  };
+
   const handleDownloadClick = (ep?: Episode) => {
     if (anime?.slug || anime?.id) {
-      const slug = anime.slug || anime.id;
       const sParam = selectedSeasonNumber !== 'all' ? `?season=${selectedSeasonNumber}` : '';
       const epParam = ep ? (sParam ? `&episode=${ep.episodeNumber}` : `?episode=${ep.episodeNumber}`) : '';
-      navigate(`/anime/${slug}/download${sParam}${epParam}`);
+      navigate(`/anime/${anime.slug || anime.id}/download${sParam}${epParam}`);
       return;
     }
 
@@ -280,377 +388,443 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     );
   };
 
-  const handleOpenMirrors = (ep?: Episode) => {
-    const targetEp = ep || episodes[0];
-    const mirrors = getAllEpisodeDownloadMirrors(targetEp, anime);
-    setDownloadMirrors(mirrors);
-    setDownloadModalSubtitle(
-      targetEp ? `Select quality to download Episode ${targetEp.episodeNumber}` : 'Select download mirror'
-    );
-    setDownloadModalOpen(true);
-  };
-
   if (loading) {
     return <AnimeDetailSkeleton />;
   }
 
   if (error || !anime) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="bg-[#07111F] border border-rose-500/30 text-rose-300 p-8 rounded-3xl shadow-2xl space-y-4">
-          <AlertCircle className="w-10 h-10 mx-auto text-rose-400" />
-          <h2 className="text-xl font-bold text-[#F8FAFC]">{error || 'Anime Not Found'}</h2>
-          <p className="text-xs text-[#94A3B8] leading-relaxed">
-            The requested title does not exist or has not been published to the catalog.
-          </p>
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-20 bg-[#050A14]">
+        <div className="max-w-md w-full bg-[#0B1324] border border-white/10 p-8 rounded-2xl text-center space-y-4 shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-[#101A30] border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-bold text-white">{error || 'Anime Not Found'}</h2>
+            <p className="text-xs text-[#94A3B8] leading-relaxed">
+              The title you are looking for does not exist, has been unpublished, or the link has changed.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() => navigate('/')}
-            className="px-5 py-2.5 bg-[#081426] hover:bg-[#0B1B32] text-white text-xs font-bold rounded-xl border border-white/10 transition-colors inline-flex items-center gap-2"
+            onClick={() => navigate('/browse')}
+            className="w-full h-11 bg-[#1E88FF] hover:bg-[#1570d8] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to Catalog
+            <span>Back to Browse</span>
           </button>
         </div>
       </div>
     );
   }
 
-  const altTitle =
-    anime.altTitles && anime.altTitles.length > 0
-      ? anime.altTitles[0]
-      : anime.alternateTitles && anime.alternateTitles.length > 0
-      ? anime.alternateTitles[0]
-      : anime.japaneseTitle || '';
-
-  // Dynamic visual assets and metadata
+  // Dynamic visual assets
   const rawPoster = activeSeasonEntry?.poster || anime.poster;
   const rawBanner = activeSeasonEntry?.banner || anime.banner || rawPoster;
   const currentPoster = getOptimizedImageUrl(rawPoster, { width: 600, fallbackType: 'poster' });
   const currentBanner = getOptimizedImageUrl(rawBanner, { width: 1400, fallbackType: 'banner' });
-  const currentDescription = activeSeasonEntry?.description || anime.description;
-  const currentSeasonNumber =
-    activeSeasonEntry?.seasonNumber ||
-    (selectedSeasonNumber !== 'all' ? selectedSeasonNumber : 1);
-  const currentSeasonTitle = `Season ${currentSeasonNumber}`;
-  const isAnimeUpcoming =
-    anime.status === 'upcoming' ||
-    Boolean(anime.isUpcoming) ||
-    episodes.some((ep) => ep.status === 'upcoming' || Boolean(ep.isUpcoming));
+  const currentDescription = activeSeasonEntry?.description || anime.description || 'No synopsis available.';
+
+  // Target episode for primary Watch button
+  const continueEpNum = continueProgress?.episodeNumber;
+  const targetEp = continueEpNum
+    ? episodes.find((e) => e.episodeNumber === continueEpNum) || episodes[0]
+    : episodes[0];
+  const targetEpNum = targetEp?.episodeNumber || 1;
+  const targetSeasonNum = targetEp ? targetEp.seasonNumber || targetEp.season || 1 : 1;
+  const isContinue = Boolean(continueProgress && continueEpNum);
+
+  // Audio labels derived strictly from Anime model properties
+  const audioBadges: string[] = [];
+  const rawAudioLang = (anime.audioLanguage || '').toLowerCase();
+  const hasHindi =
+    rawAudioLang.includes('hindi') ||
+    anime.audioTags?.some((t) => t.toLowerCase().includes('hindi')) ||
+    anime.languages?.some((l) => l.toLowerCase().includes('hindi'));
+  const hasEng =
+    rawAudioLang.includes('english') ||
+    anime.audioTags?.some((t) => t.toLowerCase().includes('eng')) ||
+    anime.languages?.some((l) => l.toLowerCase().includes('english'));
+  const hasSub =
+    rawAudioLang.includes('sub') ||
+    rawAudioLang.includes('japanese') ||
+    anime.audioTags?.some((t) => t.toLowerCase().includes('sub')) ||
+    anime.languages?.some((l) => l.toLowerCase().includes('japanese'));
+
+  if (hasHindi) audioBadges.push('Hindi Dub');
+  if (hasEng) audioBadges.push('English Dub');
+  if (hasSub) audioBadges.push('Sub');
+  if (audioBadges.length === 0) audioBadges.push('Hindi Dub');
+
+  const safeTrailerUrl = anime.trailerUrl && isValidSafeUrl(anime.trailerUrl) ? anime.trailerUrl : '';
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-      {/* Top Breadcrumb Navigation */}
-      <div className="flex items-center justify-between gap-2 text-xs text-[#94A3B8]">
-        <button
-          id="btn-back-home"
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-1.5 font-bold hover:text-[#00CFFF] transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Catalog</span>
-        </button>
+    <div className="min-h-screen bg-[#050A14] text-[#F8FAFC] overflow-x-clip">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
+        {/* Top Breadcrumb Navigation */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-[#94A3B8] min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="inline-flex items-center gap-1.5 text-[#CBD5E1] hover:text-white font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </button>
+            <span className="shrink-0 text-white/30">/</span>
+            <button
+              type="button"
+              onClick={() => navigate('/browse')}
+              className="hover:text-white transition-colors cursor-pointer shrink-0"
+            >
+              Browse
+            </button>
+            <span className="shrink-0 text-white/30">/</span>
+            <span className="text-white font-medium truncate">{anime.title}</span>
+          </div>
 
-        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleShare}
-            className="p-2 bg-[#07111F] hover:bg-[#081426] text-[#94A3B8] hover:text-[#00CFFF] rounded-xl border border-white/10 transition-colors cursor-pointer"
-            title="Share anime"
+            aria-label="Share anime"
+            title="Share"
+            className="w-9 h-9 rounded-xl bg-[#07111F] hover:bg-[#101A30] border border-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
-            <Share2 className="w-3.5 h-3.5" />
+            <Share2 className="w-4 h-4" />
           </button>
         </div>
-      </div>
 
-      {/* 1. TOP SECTION */}
-      <div className="bg-[#07111F] border border-white/[0.06] hover:border-[#1683FF]/20 rounded-3xl p-5 sm:p-8 md:p-10 shadow-2xl relative overflow-hidden transition-all">
-        {/* Dynamic Season Backdrop Banner (Crunchyroll Style) */}
-        {currentBanner && (
-          <div className="absolute inset-0 opacity-20 overflow-hidden pointer-events-none transition-opacity duration-500">
-            <img
-              key={currentBanner}
-              src={currentBanner}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover blur-2xl scale-125 transition-all duration-500 animate-in fade-in"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/90 to-transparent" />
-          </div>
-        )}
-
-        <div className="relative flex flex-col md:flex-row items-center md:items-start gap-6 sm:gap-8">
-          {/* Centered Large Poster Container - Updates dynamically per season */}
-          <div className="relative w-44 sm:w-56 md:w-64 aspect-[2/3] shrink-0 rounded-2xl overflow-hidden border border-[#1683FF]/30 shadow-2xl shadow-[#1683FF]/15 group bg-[#050A14]">
-            {currentPoster ? (
+        {/* 1. HEADER / HERO DETAILS CARD */}
+        <div className="bg-[#07111F] border border-white/[0.06] rounded-3xl p-5 sm:p-8 md:p-10 shadow-2xl relative overflow-hidden">
+          {/* Subtle Blurred Backdrop inside Card */}
+          {currentBanner && (
+            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
               <img
-                key={currentPoster}
+                src={currentBanner}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover opacity-20 blur-md scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/90 to-[#07111F]/70" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#07111F] via-[#07111F]/80 to-transparent" />
+            </div>
+          )}
+
+          <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6 sm:gap-8">
+            {/* Large Poster Container (2:3 aspect) */}
+            <div className="relative w-44 sm:w-56 md:w-64 aspect-[2/3] shrink-0 rounded-2xl bg-[#050A14] border border-[#1E88FF]/20 shadow-2xl overflow-hidden group">
+              <img
                 src={currentPoster}
                 alt={anime.title}
-                fetchPriority="high"
-                decoding="async"
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-all duration-300 animate-in fade-in"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
               />
-            ) : (
-              <div className="w-full h-full bg-[#050A14] flex items-center justify-center text-[#64748B]">
-                <Film className="w-12 h-12 opacity-30" />
-              </div>
-            )}
+              {anime.rating && (
+                <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-amber-400 text-xs font-bold flex items-center gap-1 shadow-md">
+                  <Star className="w-3.5 h-3.5 fill-amber-400" />
+                  <span>{anime.rating}</span>
+                </div>
+              )}
+            </div>
 
-            {/* Active Season Badge on Poster */}
-            {selectedSeasonNumber !== 'all' && (
-              <div className="absolute top-2 right-2 px-2.5 py-1 bg-[#1683FF] text-white text-[10px] font-black uppercase rounded-lg shadow-lg flex items-center gap-1 border border-white/20">
-                <Layers className="w-3 h-3" />
-                <span>Season {selectedSeasonNumber}</span>
-              </div>
-            )}
-
-            {/* Upcoming Release Badge on Poster */}
-            {isAnimeUpcoming && (
-              <div className="absolute top-2 left-2 px-2.5 py-1 bg-amber-500 text-black text-[10px] font-black uppercase rounded shadow-lg flex items-center gap-1 z-10">
-                <Clock className="w-3 h-3" />
-                <span>Upcoming</span>
-              </div>
-            )}
-
-            {/* Optional Rank Badge if explicitly defined */}
-            {anime.badge && !isAnimeUpcoming && (
-              <div className="absolute top-2 left-2 px-2.5 py-1 bg-[#1683FF] text-white text-[10px] font-black uppercase rounded shadow-md flex items-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                <span>{anime.badge}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Anime Details Info */}
-          <div className="flex-1 text-center md:text-left space-y-3.5">
-            {/* Metadata Tags Row */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-              <span className="px-2.5 py-1 bg-[#050A14] border border-white/10 rounded-lg text-xs font-bold text-[#F8FAFC]">
-                {anime.type || 'TV'}
-              </span>
-              {anime.year && (
-                <span className="px-2.5 py-1 bg-[#050A14] border border-white/10 rounded-lg text-xs font-bold text-[#94A3B8]">
-                  {anime.year}
+            {/* Info Column */}
+            <div className="flex-1 text-center md:text-left space-y-4 w-full min-w-0">
+              {/* Metadata Badges Row */}
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                {anime.type && (
+                  <span className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-semibold">
+                    {anime.type}
+                  </span>
+                )}
+                {anime.year && (
+                  <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[#CBD5E1] text-xs font-medium">
+                    {anime.year}
+                  </span>
+                )}
+                <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[#CBD5E1] text-xs font-medium">
+                  {episodes.length || anime.totalEpisodes || 0} Episodes
                 </span>
-              )}
-              <span className="px-2.5 py-1 bg-[#050A14] border border-white/10 rounded-lg text-xs font-bold text-[#94A3B8]">
-                {episodes.length > 0 ? `${episodes.length} Eps` : anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : 'TBA'}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg text-xs font-bold capitalize border bg-[#050A14] text-[#CBD5E1] border-white/10">
-                {anime.status || 'Ongoing'}
-              </span>
-              {anime.audioLanguage && (
-                <span className="px-2.5 py-1 bg-[#1683FF]/15 text-[#00CFFF] border border-[#1683FF]/30 rounded-lg text-xs font-bold flex items-center gap-1">
-                  <Mic className="w-3 h-3" />
-                  <span>{anime.audioLanguage}</span>
-                </span>
-              )}
-            </div>
-
-            {/* Title & Season Indicator */}
-            <div>
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5">
-                <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-[#F8FAFC] tracking-tight uppercase">
-                  {cleanAnimeTitle(anime.title)}
-                </h1>
-                {currentSeasonTitle && (
-                  <span className="px-3 py-1 bg-[#1683FF]/20 text-[#00CFFF] border border-[#1683FF]/40 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-sm">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>{currentSeasonTitle}</span>
+                {anime.status && (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-xs font-semibold capitalize">
+                    {anime.status}
                   </span>
                 )}
-              </div>
-              {altTitle && (
-                <p className="text-xs sm:text-sm text-[#94A3B8] mt-1 font-medium italic">
-                  {altTitle}
-                </p>
-              )}
-            </div>
-
-            {/* Rating & Studio Line */}
-            {(anime.rating || anime.studio) && (
-              <div className="flex items-center justify-center md:justify-start gap-3 text-xs sm:text-sm text-[#94A3B8]">
-                {anime.rating && (
-                  <span className="flex items-center gap-1 text-amber-400 font-bold">
-                    <Star className="w-4 h-4 fill-amber-400" />
-                    <span>{anime.rating}</span>
-                  </span>
-                )}
-                {anime.rating && anime.studio && <span>•</span>}
-                {anime.studio && (
-                  <span className="text-[#94A3B8]">
-                    Studio: <strong className="text-[#F8FAFC] font-bold">{anime.studio}</strong>
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Synopsis Description (Dynamic per selected season) */}
-            <div className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed max-w-3xl">
-              <p className={showFullSynopsis ? '' : 'line-clamp-3'}>
-                {currentDescription || 'No synopsis has been provided for this series.'}
-              </p>
-              {currentDescription && currentDescription.length > 180 && (
-                <button
-                  type="button"
-                  onClick={() => setShowFullSynopsis((prev) => !prev)}
-                  className="text-xs font-bold text-[#00CFFF] hover:underline mt-1 inline-block"
-                >
-                  {showFullSynopsis ? 'Show Less' : 'Read More'}
-                </button>
-              )}
-            </div>
-
-            {/* Genre Chips */}
-            {anime.genres && anime.genres.length > 0 && (
-              <div className="flex flex-wrap justify-center md:justify-start gap-2 pt-1">
-                {anime.genres.map((genre, idx) => (
+                {audioBadges.map((badge) => (
                   <span
-                    key={idx}
-                    className="text-xs px-3 py-1 rounded-xl bg-[#050A14] text-[#00CFFF] border border-[#1683FF]/20 font-bold"
+                    key={badge}
+                    className="px-2.5 py-1 rounded-lg bg-[#1E88FF]/15 border border-[#1E88FF]/30 text-[#1E88FF] text-xs font-bold"
                   >
-                    {genre}
+                    {badge}
                   </span>
                 ))}
               </div>
-            )}
 
-            {/* Primary Action Buttons: [▶ Watch Ep 1] [⬇ Download] */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-3">
-              {firstSeasonEpisode ? (
-                <button
-                  id="btn-watch-first-episode"
-                  type="button"
-                  onClick={() => {
-                    const sNum = firstSeasonEpisode.seasonNumber || firstSeasonEpisode.season || 1;
-                    navigate(`/anime/${anime.slug}/episode/${firstSeasonEpisode.episodeNumber}?season=${sNum}`);
-                  }}
-                  className="px-7 py-3 bg-[#1683FF] hover:bg-[#2196FF] text-white font-black text-xs sm:text-sm rounded-xl transition-all inline-flex items-center gap-2 shadow-lg shadow-[#1683FF]/30 hover:scale-105 active:scale-95 cursor-pointer"
-                >
-                  <Play className="w-4 h-4 fill-white" />
-                  <span>
-                    Watch Ep {firstSeasonEpisode.episodeNumber}
-                    {selectedSeasonNumber !== 'all' ? ` (S${selectedSeasonNumber})` : ''}
+              {/* Title & Japanese Title */}
+              <div className="space-y-1.5">
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
+                  {anime.title}
+                </h1>
+                {anime.japaneseTitle && (
+                  <p className="text-xs sm:text-sm text-[#94A3B8] font-medium">
+                    {anime.japaneseTitle}
+                  </p>
+                )}
+              </div>
+
+              {/* Rating, Studio & Details Line */}
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-xs sm:text-sm text-[#94A3B8]">
+                {anime.rating && (
+                  <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <span>{anime.rating}</span>
                   </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="px-7 py-3 bg-[#1683FF]/30 text-white/50 font-black text-xs sm:text-sm rounded-xl"
+                )}
+                {anime.studio && (
+                  <span className="inline-flex items-center gap-1.5 text-[#CBD5E1]">
+                    <Tv className="w-3.5 h-3.5 text-[#1E88FF]" />
+                    <span>{anime.studio}</span>
+                  </span>
+                )}
+                {anime.season && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#1E88FF]" />
+                    <span>
+                      {anime.season} {anime.year || ''}
+                    </span>
+                  </span>
+                )}
+                {anime.duration && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#1E88FF]" />
+                    <span>{anime.duration}</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Synopsis */}
+              <div className="max-w-3xl mx-auto md:mx-0 pt-1 space-y-1.5">
+                <p
+                  className={`text-xs sm:text-sm text-[#CBD5E1] leading-relaxed ${
+                    !showFullSynopsis ? 'line-clamp-4' : ''
+                  }`}
                 >
-                  Episodes Coming Soon
-                </button>
+                  {currentDescription}
+                </p>
+                {currentDescription.length > 240 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFullSynopsis(!showFullSynopsis)}
+                    className="text-xs font-semibold text-[#1E88FF] hover:underline cursor-pointer"
+                  >
+                    {showFullSynopsis ? 'Show less' : 'Read more'}
+                  </button>
+                )}
+              </div>
+
+              {/* Genre Chips */}
+              {anime.genres && anime.genres.length > 0 && (
+                <div className="flex flex-wrap justify-center md:justify-start gap-2 pt-1">
+                  {anime.genres.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => navigate(`/browse?genre=${encodeURIComponent(g)}`)}
+                      className="px-3 py-1 rounded-xl bg-[#050A14] hover:bg-[#1E88FF]/20 border border-white/10 hover:border-[#1E88FF]/40 text-xs font-medium text-[#CBD5E1] hover:text-white transition-colors cursor-pointer"
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => handleDownloadClick()}
-                className="px-6 py-3 bg-[#081426] hover:bg-emerald-600/20 text-emerald-400 hover:text-emerald-300 font-bold text-xs sm:text-sm rounded-xl border border-emerald-500/30 hover:border-emerald-500/60 transition-all inline-flex items-center gap-2 hover:scale-[1.02] cursor-pointer"
-                title="Download Anime (Redirect)"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download</span>
-              </button>
+              {/* Action Buttons Row */}
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5 sm:gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate(`/anime/${anime.slug}/episode/${targetEpNum}?season=${targetSeasonNum}`);
+                  }}
+                  className="h-11 sm:h-12 px-6 bg-[#1E88FF] hover:bg-[#1570d8] text-white text-sm font-bold rounded-xl transition-all inline-flex items-center justify-center gap-2 cursor-pointer relative overflow-hidden whitespace-nowrap"
+                >
+                  <Play className="w-4 h-4 fill-white shrink-0" />
+                  <span>{isContinue ? `Continue EP ${targetEpNum}` : 'Watch Now'}</span>
+                  {isContinue && continueProgress?.percentage && (
+                    <div
+                      className="absolute bottom-0 left-0 h-1 bg-white/50"
+                      style={{ width: `${continueProgress.percentage}%` }}
+                    />
+                  )}
+                </button>
 
-              {/* Watchlist Toggle */}
-              <button
-                id="btn-watchlist-toggle"
-                type="button"
-                onClick={handleWatchlistToggle}
-                className={`px-4 py-3 rounded-xl border transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
-                  watchlistStatus
-                    ? 'bg-[#1683FF] text-white border-[#1683FF] shadow-md shadow-[#1683FF]/25'
-                    : 'bg-[#081426] hover:bg-[#0B1B32] text-[#94A3B8] border-white/10 hover:text-white'
-                }`}
-                title={watchlistStatus ? 'Remove from Watchlist' : 'Add to Watchlist'}
-              >
-                {watchlistStatus ? <Check className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
-                <span>{watchlistStatus ? 'In Watchlist' : '+ Watchlist'}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadClick()}
+                  className="h-11 sm:h-12 px-5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-sm font-semibold rounded-xl transition-all inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span>Download</span>
+                </button>
 
-              {/* Favorite Toggle */}
-              <button
-                type="button"
-                onClick={handleFavoriteClick}
-                className={`p-3 rounded-xl border transition-all flex items-center justify-center cursor-pointer ${
-                  fav
-                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/25'
-                    : 'bg-[#081426] hover:bg-[#0B1B32] text-[#94A3B8] border-white/10 hover:text-white'
-                }`}
-                title={fav ? 'Favorited' : 'Add to favorites'}
-              >
-                <Heart className={`w-4 h-4 ${fav ? 'fill-current' : ''}`} />
-              </button>
+                <button
+                  type="button"
+                  onClick={handleWatchlistToggle}
+                  className={`h-11 sm:h-12 px-4 rounded-xl border text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                    watchlistStatus
+                      ? 'bg-[#1E88FF]/15 border-[#1E88FF]/50 text-[#1E88FF]'
+                      : 'bg-[#050A14] hover:bg-[#101A30] border-white/10 text-[#CBD5E1] hover:text-white'
+                  }`}
+                >
+                  <Bookmark className={`w-4 h-4 shrink-0 ${watchlistStatus ? 'fill-current' : ''}`} />
+                  <span>{watchlistStatus ? 'In Watchlist' : 'Watchlist'}</span>
+                </button>
 
-              {/* Share */}
-              <button
-                type="button"
-                onClick={handleShare}
-                className="p-3 rounded-xl bg-[#081426] hover:bg-[#0B1B32] text-[#94A3B8] border border-white/10 hover:text-[#00CFFF] transition-colors cursor-pointer"
-                title="Share"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={handleFavoriteClick}
+                  title={fav ? 'Favorited' : 'Add to Favorites'}
+                  aria-label="Toggle favorite"
+                  className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                    fav
+                      ? 'bg-rose-500/15 border-rose-500/50 text-rose-400'
+                      : 'bg-[#050A14] hover:bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white'
+                  }`}
+                >
+                  <Heart className={`w-5 h-5 ${fav ? 'fill-current' : ''}`} />
+                </button>
+
+                {safeTrailerUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTrailerModal(true)}
+                    className="h-11 sm:h-12 px-4 rounded-xl bg-[#050A14] hover:bg-[#101A30] border border-white/10 text-[#CBD5E1] hover:text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <Film className="w-4 h-4 text-[#1E88FF] shrink-0" />
+                    <span>Trailer</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* 2. EPISODES DIRECT SELECTOR */}
-      <EpisodeSelector
-        episodes={episodes}
-        animeTitle={anime.title}
-        animePoster={currentPoster}
-        animeBanner={currentBanner}
-        seasonsList={anime.seasonsList}
-        selectedSeason={selectedSeasonNumber}
-        isAnimeUpcoming={isAnimeUpcoming}
-        onSeasonChange={(s) => setSelectedSeasonNumber(s)}
-        watchedEpisodeNumbers={watchedEpNumbers}
-        onSelectEpisode={(epNum, epSeason) => navigate(`/anime/${anime.slug}/episode/${epNum}?season=${epSeason || 1}`)}
-        onDownloadEpisode={handleDownloadClick}
-        onNavigateSeasonAnime={(seasonSlug) => navigate(`/anime/${seasonSlug}`)}
-      />
-
-      {/* 3. COMMUNITY COMMENTS */}
-      <div className="bg-[#07111F] border border-white/[0.06] rounded-2xl sm:rounded-3xl p-5 sm:p-7 shadow-xl">
-        <CommentSection
-          targetType="anime"
-          animeId={anime.id!}
-          animeSlug={anime.slug}
+        {/* 2. EPISODES SELECTOR */}
+        <EpisodeSelector
+          episodes={episodes}
           animeTitle={anime.title}
-          onShowMessage={onShowMessage || (() => {})}
-          navigate={navigate}
+          animePoster={currentPoster}
+          animeBanner={currentBanner}
+          seasonsList={anime.seasonsList}
+          currentEpisodeNumber={continueProgress?.episodeNumber}
+          watchedEpisodeNumbers={watchedEpNumbers}
+          selectedSeason={selectedSeasonNumber}
+          isAnimeUpcoming={anime.status === 'upcoming'}
+          loading={episodesLoading}
+          onSeasonChange={(s) => setSelectedSeasonNumber(s)}
+          onSelectEpisode={(epNum, sNum, ep) => {
+            const isUpcoming = ep?.status === 'upcoming' || Boolean(ep?.isUpcoming);
+            if (isUpcoming && !isAdmin) {
+              onShowMessage?.(`Episode ${epNum} is scheduled and airing soon.`);
+              return;
+            }
+            const targetSeason = sNum || (selectedSeasonNumber !== 'all' ? selectedSeasonNumber : 1);
+            navigate(`/anime/${anime.slug}/episode/${epNum}?season=${targetSeason}`);
+          }}
+          onDownloadEpisode={(ep) => handleDownloadClick(ep)}
+          onNavigateSeasonAnime={(sSlug) => navigate(`/anime/${encodeURIComponent(sSlug)}`)}
         />
+
+        {/* 3. RELATED ANIME */}
+        {relatedAnimes.length > 0 && (
+          <section className="space-y-4 pt-2">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#1E88FF] shrink-0" />
+                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  Related Anime
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/browse')}
+                className="text-xs font-semibold text-[#1E88FF] hover:underline cursor-pointer shrink-0"
+              >
+                Explore All
+              </button>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-3.5">
+              {relatedAnimes.map((rel) => (
+                <AnimeCard
+                  key={rel.id || rel.slug}
+                  anime={rel}
+                  navigate={navigate}
+                  onShowMessage={onShowMessage}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 4. COMMENTS SECTION */}
+        <section className="bg-[#07111F] border border-white/[0.06] rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+          <CommentSection
+            targetType="anime"
+            animeId={anime.id || slug}
+            animeSlug={anime.slug}
+            animeTitle={anime.title}
+            onShowMessage={onShowMessage || (() => {})}
+            navigate={navigate}
+          />
+        </section>
       </div>
 
-      {/* 5. RELATED ANIME (3 columns on mobile matching screenshot) */}
-      {relatedAnimes.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 border-b border-white/5 pb-3">
-            <Layers className="w-4 h-4 text-[#1683FF]" />
-            <h3 className="font-black text-[#F8FAFC] text-lg">Related Anime</h3>
-          </div>
-
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3">
-            {relatedAnimes.map((rel, idx) => (
-              <AnimeCard
-                key={`detail-rel-${rel.id || rel.slug}-${idx}`}
-                anime={rel}
-                navigate={navigate}
-                onShowMessage={onShowMessage}
+      {/* TRAILER MODAL */}
+      {showTrailerModal && safeTrailerUrl && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="max-w-3xl w-full bg-[#0B1324] border border-white/10 rounded-2xl overflow-hidden shadow-2xl space-y-3 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 truncate pr-2">
+                <Film className="w-4 h-4 text-[#1E88FF] shrink-0" />
+                <span className="truncate">{anime.title} — Trailer</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTrailerModal(false)}
+                aria-label="Close trailer"
+                className="w-8 h-8 rounded-lg bg-[#101A30] hover:bg-white/10 text-white flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="aspect-video w-full rounded-xl overflow-hidden bg-black">
+              <iframe
+                src={
+                  safeTrailerUrl.includes('watch?v=')
+                    ? safeTrailerUrl.replace('watch?v=', 'embed/')
+                    : safeTrailerUrl
+                }
+                title="Anime Trailer"
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
               />
-            ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Download Modal */}
-      {anime && (
+      {/* SHARE MODAL */}
+      {shareOpen && (
+        <ShareModal
+          isOpen={shareOpen}
+          onClose={() => setShareOpen(false)}
+          title={anime.title}
+          url={typeof window !== 'undefined' ? window.location.href : ''}
+        />
+      )}
+
+      {/* DOWNLOAD MIRRORS MODAL */}
+      {downloadModalOpen && (
         <DownloadModal
           isOpen={downloadModalOpen}
           onClose={() => setDownloadModalOpen(false)}
@@ -660,14 +834,6 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
           onShowMessage={onShowMessage}
         />
       )}
-
-      {/* Share Modal */}
-      <ShareModal
-        isOpen={shareOpen}
-        onClose={() => setShareOpen(false)}
-        title={anime.title}
-        url={`/anime/${anime.slug}`}
-      />
     </div>
   );
 };

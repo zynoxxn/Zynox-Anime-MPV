@@ -54,7 +54,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               onClick={() => navigate(item.path)}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 text-left ${
                 active
-                  ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/30 font-bold translate-x-0.5'
+                  ? 'bg-[#1E88FF] text-white font-bold translate-x-0.5'
                   : 'text-[#94A3B8] hover:text-white hover:bg-[#07111F] hover:translate-x-0.5'
               }`}
             >
@@ -122,7 +122,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               onClick={() => navigate(item.path)}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 text-left ${
                 active
-                  ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/30 font-bold translate-x-0.5'
+                  ? 'bg-[#1E88FF] text-white font-bold translate-x-0.5'
                   : 'text-[#94A3B8] hover:text-white hover:bg-[#07111F] hover:translate-x-0.5'
               }`}
             >
@@ -140,7 +140,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           onClick={() => navigate('/profile?tab=settings')}
           className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
             currentPath.startsWith('/profile')
-              ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/30 font-bold'
+              ? 'bg-[#1E88FF] text-white font-bold'
               : 'text-[#94A3B8] hover:text-white hover:bg-[#07111F]'
           }`}
           title="Profile & Settings"

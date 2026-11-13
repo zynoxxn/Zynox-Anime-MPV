@@ -8,6 +8,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   serverTimestamp,
   onSnapshot,
 } from 'firebase/firestore';
@@ -1056,7 +1057,16 @@ export async function getCmsSiteSettings(): Promise<CmsSiteSettings> {
 
 export async function saveCmsSiteSettings(settings: Partial<CmsSiteSettings>): Promise<void> {
   const docRef = doc(db, CMS_CONFIG, 'siteSettings');
-  await setDoc(docRef, sanitize(settings), { merge: true });
+  const legacyDocRef = doc(db, 'siteSettings', 'config');
+  await Promise.all([
+    setDoc(docRef, sanitize(settings), { merge: true }),
+    setDoc(legacyDocRef, sanitize(settings), { merge: true }),
+  ]);
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('zynox:settings-updated', { detail: settings }));
+    }
+  } catch {}
 }
 
 // ==========================================
@@ -1180,8 +1190,15 @@ export async function logAdminActivity(
 
 export async function getAdminLogs(limitCount: number = 50): Promise<CmsAdminLog[]> {
   try {
-    const snap = await getDocs(collection(db, CMS_LOGS));
-    if (!snap.empty) {
+    let snap;
+    try {
+      const q = query(collection(db, CMS_LOGS), orderBy('timestamp', 'desc'), limit(limitCount));
+      snap = await getDocs(q);
+    } catch {
+      const q = query(collection(db, CMS_LOGS), limit(limitCount));
+      snap = await getDocs(q);
+    }
+    if (snap && !snap.empty) {
       const list = snap.docs.map((d) => ({ ...(d.data() as CmsAdminLog), id: d.id }));
       return list
         .sort((a, b) => {

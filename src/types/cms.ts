@@ -178,6 +178,7 @@ export interface SocialLink {
   platform: string; // telegram, discord, twitter, youtube, instagram, reddit, github
   url: string;
   icon?: string;
+  enabled?: boolean;
 }
 
 export interface CmsFooterConfig {
@@ -189,6 +190,9 @@ export interface CmsFooterConfig {
   disclaimerText: string;
   socialLinks: SocialLink[];
   columns: FooterColumn[];
+  brandName?: string;
+  description?: string;
+  disclaimer?: string;
 }
 
 export type AnnouncementType = 'info' | 'success' | 'warning' | 'important';
@@ -286,6 +290,9 @@ export interface CmsSiteSettings {
   faviconUrl?: string;
   tagline: string;
   themeAccent: string; // e.g. '#1683FF' or '#8B5CF6'
+  primaryColor?: string;
+  themeShape?: string; // 'rounded-xl' | 'rounded-full' | 'rounded-md'
+  themeFont?: string; // 'Modern Sans' | 'System UI' | 'Display' | 'Clean Minimal'
   contactEmail: string;
   telegramUrl?: string;
   discordUrl?: string;

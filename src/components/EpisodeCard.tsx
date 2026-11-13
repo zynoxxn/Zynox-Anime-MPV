@@ -1,7 +1,8 @@
 import React from 'react';
-import { Play, Clock } from 'lucide-react';
+import { Play } from 'lucide-react';
 import type { LatestEpisodeItem } from '../lib/firestore/episodes';
 import { getOptimizedImageUrl, FALLBACK_ANIME_BANNER } from '../lib/image-optimizer';
+import { cleanAnimeTitle } from '../lib/firestore/anime';
 
 interface EpisodeCardProps {
   item: LatestEpisodeItem;
@@ -12,36 +13,56 @@ interface EpisodeCardProps {
 export const EpisodeCard: React.FC<EpisodeCardProps> = ({
   item,
   navigate,
-  variant = 'landscape-card',
 }) => {
   const { episode, animeTitle, animeSlug, animePoster, animeBanner } = item;
-  const isEpUpcoming = episode.status === 'upcoming' || Boolean(episode.isUpcoming);
   const sNum = episode.seasonNumber || episode.season || 1;
   const cleanSlug = animeSlug || episode.animeId || '';
   const targetUrl = `/anime/${cleanSlug}/episode/${episode.episodeNumber}${sNum > 1 ? `?season=${sNum}` : ''}`;
 
-  // Time ago calculation
-  const getTimeAgo = () => {
-    if (isEpUpcoming) {
-      return episode.airDate ? `Air: ${episode.airDate}` : 'Upcoming premiere';
-    }
-    if (!episode.createdAt) return 'Recently';
+  // Time ago
+  const getTimeAgo = (): string => {
+    const rawDate =
+      episode.createdAt ||
+      (episode as any).updatedAt ||
+      (episode as any).releasedAt ||
+      (item as any).createdAt;
+
+    if (!rawDate) return '';
     try {
-      const millis = typeof episode.createdAt?.toMillis === 'function'
-        ? episode.createdAt.toMillis()
-        : new Date(episode.createdAt).getTime();
-      const diffHrs = Math.max(0, Math.round((Date.now() - millis) / (1000 * 60 * 60)));
-      if (diffHrs < 1) return 'Just now';
-      if (diffHrs < 24) return `${diffHrs}h ago`;
-      const diffDays = Math.round(diffHrs / 24);
-      return `${diffDays}d ago`;
+      let millis: number | null = null;
+      if (typeof rawDate?.toMillis === 'function') {
+        millis = rawDate.toMillis();
+      } else if (typeof rawDate?.seconds === 'number') {
+        millis = rawDate.seconds * 1000;
+      } else if (typeof rawDate === 'number') {
+        millis = rawDate < 1e11 ? rawDate * 1000 : rawDate;
+      } else if (rawDate instanceof Date) {
+        millis = rawDate.getTime();
+      } else if (typeof rawDate === 'string') {
+        const parsed = Date.parse(rawDate);
+        if (!isNaN(parsed)) millis = parsed;
+      }
+
+      if (!millis) return '';
+      const diffSecs = Math.max(0, Math.floor((Date.now() - millis) / 1000));
+      const diffMins = Math.floor(diffSecs / 60);
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays}d ago`;
+      const diffWeeks = Math.floor(diffDays / 7);
+      if (diffWeeks < 5) return `${diffWeeks}w ago`;
+      const diffMonths = Math.floor(diffDays / 30);
+      return `${diffMonths}mo ago`;
     } catch {
-      return 'Recently';
+      return '';
     }
   };
 
-  const epLabel = sNum > 1 ? `S${sNum} · EP ${episode.episodeNumber}` : `EP ${episode.episodeNumber}`;
-  // Prioritize anime banner for 16:9 episode thumbnail
+  const timeAgoStr = getTimeAgo() || 'Recently';
+
   const rawThumbnail =
     animeBanner ||
     (item as any).animeBanner ||
@@ -51,69 +72,19 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
     animePoster ||
     FALLBACK_ANIME_BANNER;
 
-  const thumbnail = getOptimizedImageUrl(rawThumbnail, { width: 480, fallbackType: 'banner' });
+  const thumbnail = getOptimizedImageUrl(rawThumbnail, { width: 320, fallbackType: 'banner' });
+  const displayTitle = cleanAnimeTitle(animeTitle);
 
-  if (variant === 'mobile-row') {
-    return (
-      <div
-        onClick={() => navigate(targetUrl)}
-        className="flex items-center gap-3 p-2 rounded-xl bg-[#081426]/70 border border-white/5 hover:border-[#1683FF]/30 active:scale-[0.99] cursor-pointer group transition-all"
-      >
-        {/* Landscape Thumbnail with Center Play Button */}
-        <div className="relative w-28 sm:w-32 aspect-video bg-[#050A14] rounded-lg overflow-hidden shrink-0 border border-white/10">
-          <img
-            src={thumbnail}
-            alt={episode.title || animeTitle}
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              if (animePoster && target.src !== animePoster) {
-                target.src = animePoster;
-              }
-            }}
-          />
-          {/* Centered Play Button Circle */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/25">
-            <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
-              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
-            </div>
-          </div>
-        </div>
-
-        {/* Middle Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <h4 className="text-xs font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors flex-1">
-              {animeTitle}
-            </h4>
-          </div>
-          <p className="text-[11px] text-[#94A3B8] mt-1">
-            {getTimeAgo()}
-          </p>
-        </div>
-
-        {/* Right EP Badge */}
-        <div className="px-2 py-1 rounded-md border border-white/10 bg-[#07111F] text-[11px] font-bold text-[#CBD5E1] shrink-0">
-          {epLabel}
-        </div>
-      </div>
-    );
-  }
-
-  // Desktop Landscape Card
   return (
     <div
       onClick={() => navigate(targetUrl)}
-      className="flex flex-col cursor-pointer group transition-transform duration-200 hover:-translate-y-1 select-none"
+      className="h-[68px] sm:h-[72px] flex items-center gap-3 p-1.5 sm:p-2 rounded-lg bg-[#0B1324] border border-white/5 hover:border-[#1E88FF]/30 active:scale-[0.99] cursor-pointer group transition-all min-w-0"
     >
-      {/* 16:9 Thumbnail with badges & play overlay */}
-      <div className="relative aspect-video bg-[#081426] rounded-xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/40 transition-colors shadow-md">
+      {/* 16:9 Thumbnail (96px wide) */}
+      <div className="relative w-[96px] h-full aspect-video bg-[#050A14] rounded-md overflow-hidden shrink-0 border border-white/10">
         <img
           src={thumbnail}
-          alt={episode.title || animeTitle}
+          alt=""
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
@@ -125,30 +96,25 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             }
           }}
         />
-
-        {/* Top-Right EP Badge */}
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded backdrop-blur-sm text-[10px] sm:text-[11px] font-bold border bg-black/75 text-white border-white/10">
-          {epLabel}
-        </div>
-
-        {/* Center Play Button Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
-          <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
-            <Play className="w-4 h-4 fill-white ml-0.5" />
+        {/* Play icon in center */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="w-6 h-6 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md">
+            <Play className="w-3 h-3 fill-white ml-0.5" />
           </div>
         </div>
       </div>
 
-      {/* Info Below Thumbnail */}
-      <div className="pt-2 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight flex-1">
-            {animeTitle}
-          </h4>
-        </div>
-        <span className="text-[11px] text-[#94A3B8]">
-          {getTimeAgo()}
-        </span>
+      {/* Info: Title (1 line) + one muted line "Ep 12 · 2h ago" (No extra chips) */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+        <h4
+          title={displayTitle}
+          className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight"
+        >
+          {displayTitle}
+        </h4>
+        <p className="text-[11px] sm:text-xs text-[#94A3B8] truncate leading-none">
+          Ep {episode.episodeNumber} · {timeAgoStr}
+        </p>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/auth';
 import type { AnimeRequest } from '../types/library';
 import {
@@ -6,6 +6,10 @@ import {
   getUserAnimeRequests,
   getAllAnimeRequests,
 } from '../lib/firestore/community';
+import { getSiteSettings } from '../lib/firestore/site-settings';
+import { sanitizeString } from '../lib/security';
+import { EmptyState, ErrorState } from '../components/common/FeedbackStates';
+import { usePageSeo } from '../hooks/usePageSeo';
 import {
   Send,
   Sparkles,
@@ -15,6 +19,7 @@ import {
   Loader2,
   Plus,
   Tv,
+  X,
 } from 'lucide-react';
 
 interface AnimeRequestsViewProps {
@@ -22,16 +27,19 @@ interface AnimeRequestsViewProps {
   onShowMessage?: (msg: string) => void;
 }
 
+const REQUEST_COOLDOWN_KEY = 'zynox_last_request_ts';
+const COOLDOWN_MS = 15_000;
+
 export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
-  navigate,
   onShowMessage,
 }) => {
   const { user, userProfile } = useAuth();
   const [requests, setRequests] = useState<AnimeRequest[]>([]);
   const [myRequests, setMyRequests] = useState<AnimeRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [requestsEnabled, setRequestsEnabled] = useState(true);
 
-  // Modal / Form state
   const [showModal, setShowModal] = useState(false);
   const [animeTitle, setAnimeTitle] = useState('');
   const [reason, setReason] = useState('');
@@ -41,8 +49,31 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
 
   const [activeTab, setActiveTab] = useState<'community' | 'mine'>('community');
 
-  const loadRequests = async () => {
+  usePageSeo({
+    title: 'Request Anime | ZYNOX ANIME',
+    description: 'Request missing anime series, dubbed seasons, or movies to be added to ZYNOX ANIME.',
+  });
+
+  useEffect(() => {
+    getSiteSettings().then((cfg) => {
+      if (cfg.enableRequests === false) {
+        setRequestsEnabled(false);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showModal) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) setShowModal(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showModal, submitting]);
+
+  const loadRequests = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const all = await getAllAnimeRequests();
       setRequests(all);
@@ -52,21 +83,40 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
       }
     } catch (err) {
       console.warn('Failed to load requests:', err);
+      setError('Failed to load anime requests. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
 
   useEffect(() => {
     loadRequests();
-  }, [user?.uid]);
+  }, [loadRequests]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    const title = animeTitle.trim();
-    const res = reason.trim();
+    if (!requestsEnabled) {
+      setFormError('Anime requests are currently paused by an administrator.');
+      return;
+    }
+
+    try {
+      const lastTs = Number(localStorage.getItem(REQUEST_COOLDOWN_KEY) || '0');
+      const remaining = COOLDOWN_MS - (Date.now() - lastTs);
+      if (remaining > 0) {
+        setFormError(`Please wait ${Math.ceil(remaining / 1000)}s before submitting another request.`);
+        return;
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    const title = sanitizeString(animeTitle).slice(0, 120);
+    const res = sanitizeString(reason).slice(0, 120);
+    const notes = sanitizeString(message).slice(0, 500);
+
     if (!title) {
       setFormError('Please enter an anime title.');
       return;
@@ -80,12 +130,18 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
     try {
       await submitAnimeRequest({
         userId: user?.uid,
-        userName: userProfile?.displayName || user?.displayName || 'Anonymous Fan',
+        userName: userProfile?.displayName || user?.displayName || 'Community Fan',
         userEmail: user?.email || undefined,
         animeTitle: title,
         reason: res,
-        message: message.trim() || undefined,
+        message: notes || undefined,
       });
+
+      try {
+        localStorage.setItem(REQUEST_COOLDOWN_KEY, String(Date.now()));
+      } catch {
+        // ignore
+      }
 
       onShowMessage?.(`Request for "${title}" submitted successfully!`);
       setShowModal(false);
@@ -93,7 +149,7 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
       setReason('');
       setMessage('');
       loadRequests();
-    } catch (err: any) {
+    } catch {
       setFormError('Failed to submit request. Please try again.');
     } finally {
       setSubmitting(false);
@@ -104,28 +160,28 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
     switch (status) {
       case 'completed':
         return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
             <CheckCircle2 className="w-3 h-3" />
-            <span>Added to Catalog</span>
+            <span>Added</span>
           </span>
         );
       case 'approved':
         return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#00A8FF]/15 text-[#00D9FF] border border-[#00A8FF]/30 flex items-center gap-1">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#1E88FF]/15 text-[#1E88FF] border border-[#1E88FF]/30 inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
             <Sparkles className="w-3 h-3" />
-            <span>Approved (In Queue)</span>
+            <span>Approved</span>
           </span>
         );
       case 'rejected':
         return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0 whitespace-nowrap">
             Declined
           </span>
         );
       case 'pending':
       default:
         return (
-          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
             <Clock className="w-3 h-3" />
             <span>Under Review</span>
           </span>
@@ -133,127 +189,151 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
     }
   };
 
+  const activeList = activeTab === 'community' ? requests : myRequests;
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-      {/* Header */}
-      <div className="bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#00A8FF]/15 border border-[#00A8FF]/30 text-[#00D9FF] text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Community Request Desk</span>
-          </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-[#F5F9FF] tracking-tight">
-            Request an Anime Series or Movie
+    <div className="max-w-5xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
+      {/* Clean Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="space-y-1.5 min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
+            <Tv className="w-6 h-6 sm:w-7 sm:h-7 text-[#1E88FF] shrink-0" />
+            <span className="truncate">Request Anime</span>
           </h1>
-          <p className="text-xs sm:text-sm text-[#A9B8CC] max-w-xl">
-            Can&apos;t find your favorite anime on ZYNOX? Submit a request and our content curators will review and upload it.
+          <p className="text-xs sm:text-sm text-[#94A3B8] max-w-xl leading-relaxed">
+            Missing a series, movie, or regional dub? Submit a request for our curators to review.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="px-6 py-3.5 bg-gradient-to-r from-[#0066FF] to-[#00A8FF] hover:from-[#0052cc] hover:to-[#0088cc] text-black font-black text-xs rounded-2xl transition-all shadow-xl shadow-[#00A8FF]/20 flex items-center justify-center gap-2 shrink-0 self-start sm:self-auto hover:scale-105"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Anime Request</span>
-        </button>
+        {requestsEnabled ? (
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="h-10 px-4 bg-[#1E88FF] hover:bg-[#3B9BFF] text-white font-semibold text-xs sm:text-sm rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0 self-start sm:self-auto cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>New Request</span>
+          </button>
+        ) : (
+          <span className="h-9 px-3 bg-[#0B1324] border border-white/10 text-[#94A3B8] text-xs font-medium rounded-xl inline-flex items-center shrink-0 self-start sm:self-auto whitespace-nowrap">
+            Requests Paused
+          </span>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-white/5 text-xs">
+      <div className="flex border-b border-white/10 text-xs overflow-x-auto no-scrollbar gap-4">
         <button
           type="button"
           onClick={() => setActiveTab('community')}
-          className={`px-5 py-3 font-bold border-b-2 transition-colors flex items-center gap-2 ${
+          className={`py-3 font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeTab === 'community'
-              ? 'border-[#00A8FF] text-[#00D9FF]'
-              : 'border-transparent text-[#A9B8CC] hover:text-white'
+              ? 'border-[#1E88FF] text-white'
+              : 'border-transparent text-[#94A3B8] hover:text-white'
           }`}
         >
-          <Tv className="w-4 h-4" />
+          <Tv className="w-4 h-4 text-[#1E88FF]" />
           <span>Community Requests ({requests.length})</span>
         </button>
         {user && (
           <button
             type="button"
             onClick={() => setActiveTab('mine')}
-            className={`px-5 py-3 font-bold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`py-3 font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'mine'
-                ? 'border-[#00A8FF] text-[#00D9FF]'
-                : 'border-transparent text-[#A9B8CC] hover:text-white'
+                ? 'border-[#1E88FF] text-white'
+                : 'border-transparent text-[#94A3B8] hover:text-white'
             }`}
           >
-            <Send className="w-4 h-4" />
-            <span>My Submitted Requests ({myRequests.length})</span>
+            <Send className="w-4 h-4 text-[#1E88FF]" />
+            <span>My Requests ({myRequests.length})</span>
           </button>
         )}
       </div>
 
       {/* List */}
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-[#A9B8CC] gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-[#00A8FF]" />
-          <span className="text-xs font-semibold">Loading requests...</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-36 rounded-2xl bg-[#0B1324] border border-white/10 animate-pulse"
+            />
+          ))}
         </div>
-      ) : (activeTab === 'community' ? requests : myRequests).length === 0 ? (
-        <div className="text-center py-16 bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-8 max-w-md mx-auto space-y-3 shadow-xl">
-          <Tv className="w-10 h-10 mx-auto text-[#6E7F95]" />
-          <h3 className="text-base font-bold text-[#F5F9FF]">No requests yet</h3>
-          <p className="text-xs text-[#A9B8CC]">
-            Be the first to submit a request for an anime series you want to watch!
-          </p>
-        </div>
+      ) : error ? (
+        <ErrorState
+          title="Could Not Load Requests"
+          message={error}
+          onRetry={loadRequests}
+        />
+      ) : activeList.length === 0 ? (
+        <EmptyState
+          icon={<Tv className="w-7 h-7 text-[#1E88FF]" />}
+          title="No requests yet"
+          description="Be the first to submit a request for an anime series you want added."
+          actionLabel={requestsEnabled ? 'New Request' : undefined}
+          onAction={requestsEnabled ? () => setShowModal(true) : undefined}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {(activeTab === 'community' ? requests : myRequests).map((r) => (
+          {activeList.map((r) => (
             <div
               key={r.id}
-              className="bg-[#0D1B2E] border border-white/5 hover:border-[#00A8FF]/40 rounded-2xl p-5 space-y-3 transition-colors flex flex-col justify-between shadow-lg hover:bg-[#11243C]"
+              className="bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 rounded-2xl p-4 sm:p-5 space-y-3 transition-colors flex flex-col justify-between min-w-0"
             >
-              <div className="space-y-2">
+              <div className="space-y-2.5 min-w-0">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-sm font-bold text-[#F5F9FF] leading-snug">{r.animeTitle}</h3>
+                  <h3 className="text-sm font-bold text-white leading-snug break-words min-w-0">
+                    {r.animeTitle}
+                  </h3>
                   {getStatusBadge(r.status)}
                 </div>
 
-                <div className="text-xs text-[#A9B8CC] bg-[#06101F] border border-white/5 rounded-xl p-3">
-                  <span className="text-[10px] font-bold text-[#00D9FF] uppercase tracking-wider block mb-1">
+                <div className="text-xs text-[#CBD5E1] bg-[#101A30] border border-white/5 rounded-xl p-3 space-y-1">
+                  <span className="text-[10px] font-bold text-[#1E88FF] uppercase tracking-wider block">
                     Reason / Category
                   </span>
-                  <p>{r.reason}</p>
-                  {r.message && <p className="text-[#6E7F95] mt-1">{r.message}</p>}
+                  <p className="break-words">{r.reason}</p>
+                  {r.message && <p className="text-[#94A3B8] break-words">{r.message}</p>}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-[#6E7F95] pt-2 border-t border-white/5 font-semibold">
-                <span>Requested by {r.userName || 'Community Fan'}</span>
+              <div className="flex items-center justify-between text-[11px] text-[#64748B] pt-2 border-t border-white/10 font-medium">
+                <span className="truncate">Requested by {r.userName || 'Community Fan'}</span>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Request Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#0A1628] border border-[#00A8FF]/30 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
-              <h3 className="text-base font-bold text-[#F5F9FF] flex items-center gap-2">
-                <Send className="w-4 h-4 text-[#00A8FF]" />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          onClick={() => !submitting && setShowModal(false)}
+        >
+          <div
+            className="bg-[#0B1324] border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Send className="w-4 h-4 text-[#1E88FF]" />
                 <span>Submit Anime Request</span>
-              </h3>
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="text-[#A9B8CC] hover:text-white text-xs font-bold"
+                aria-label="Close modal"
+                className="w-8 h-8 rounded-lg hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             {formError && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-300 p-3 rounded-xl text-xs flex items-start gap-2">
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 p-3 rounded-xl text-xs flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>{formError}</span>
               </div>
@@ -261,7 +341,7 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
 
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-[11px] font-bold text-[#A9B8CC] uppercase tracking-wider mb-1">
+                <label className="block text-xs font-semibold text-[#CBD5E1] mb-1.5">
                   Anime Title *
                 </label>
                 <input
@@ -270,50 +350,50 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
                   onChange={(e) => setAnimeTitle(e.target.value)}
                   placeholder="e.g. Solo Leveling Season 2"
                   disabled={submitting}
-                  className="w-full bg-[#0D1B2E] border border-white/10 focus:border-[#00A8FF] rounded-xl px-3.5 py-2.5 text-[#F5F9FF] text-xs outline-none"
+                  className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-xl px-3.5 text-white text-xs sm:text-sm outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#A9B8CC] uppercase tracking-wider mb-1">
+                <label className="block text-xs font-semibold text-[#CBD5E1] mb-1.5">
                   Reason / Category *
                 </label>
                 <input
                   type="text"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Hindi Dubbed, Missing Season, 4K Remaster"
+                  placeholder="e.g. Hindi Dubbed, Missing Season"
                   disabled={submitting}
-                  className="w-full bg-[#0D1B2E] border border-white/10 focus:border-[#00A8FF] rounded-xl px-3.5 py-2.5 text-[#F5F9FF] text-xs outline-none"
+                  className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-xl px-3.5 text-white text-xs sm:text-sm outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#A9B8CC] uppercase tracking-wider mb-1">
+                <label className="block text-xs font-semibold text-[#CBD5E1] mb-1.5">
                   Additional Notes (Optional)
                 </label>
                 <textarea
                   rows={3}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Any extra info (MyAnimeList / AniList link, preferred audio/sub, release year)..."
+                  placeholder="Preferred audio, release year, or source details..."
                   disabled={submitting}
-                  className="w-full bg-[#0D1B2E] border border-white/10 focus:border-[#00A8FF] rounded-xl p-3 text-[#F5F9FF] text-xs outline-none"
+                  className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-xl p-3 text-white text-xs sm:text-sm outline-none resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-[#A9B8CC] hover:text-white"
+                  className="h-10 px-4 text-xs font-semibold text-[#94A3B8] hover:text-white bg-white/5 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-[#0066FF] hover:bg-[#0052cc] disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-[#0066FF]/30"
+                  className="h-10 px-5 bg-[#1E88FF] hover:bg-[#3B9BFF] disabled:opacity-50 text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   {submitting ? (
                     <>

@@ -8,11 +8,59 @@ import {
 } from '../../lib/firestore/community';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { AdminLayout } from './AdminLayout';
-import { Film, Trash2, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react';
+import {
+  AdminPageHeader,
+  AdminSegmentedTabs,
+  AdminListRow,
+  AdminStatusBadge,
+  AdminEmptyState,
+  AdminSkeleton,
+  AdminConfirmDialog,
+} from '../../components/admin';
+import {
+  Film,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Plus,
+  Mail,
+  Trash2,
+  Check,
+  RotateCcw,
+} from 'lucide-react';
 
 interface AdminRequestsViewProps {
   navigate: (path: string) => void;
   onShowMessage: (msg: string) => void;
+}
+
+type RequestTab = 'all' | 'pending' | 'approved' | 'done' | 'rejected';
+
+function formatTimestamp(ts: any): string {
+  if (!ts) return '—';
+  try {
+    let date: Date;
+    if (ts.toDate && typeof ts.toDate === 'function') {
+      date = ts.toDate();
+    } else if (ts.seconds) {
+      date = new Date(ts.seconds * 1000);
+    } else if (typeof ts === 'string' || typeof ts === 'number') {
+      date = new Date(ts);
+    } else {
+      return '—';
+    }
+    if (isNaN(date.getTime())) return '—';
+
+    const now = Date.now();
+    const diff = Math.floor((now - date.getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return '—';
+  }
 }
 
 export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
@@ -22,7 +70,9 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
   const { user } = useAuth();
   const [requests, setRequests] = useState<AnimeRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'all' | RequestStatus>('all');
+  const [activeTab, setActiveTab] = useState<RequestTab>('all');
+  const [requestToDelete, setRequestToDelete] = useState<AnimeRequest | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchRequests = async () => {
     try {
@@ -30,7 +80,8 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
       const items = await getAllAnimeRequests();
       setRequests(items);
     } catch (err) {
-      console.error('Failed to load requests:', err);
+      console.error('Failed to load anime requests:', err);
+      onShowMessage('Failed to load anime requests.');
     } finally {
       setLoading(false);
     }
@@ -41,156 +92,215 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
   }, []);
 
   const handleStatusChange = async (id: string, animeTitle: string, newStatus: RequestStatus) => {
-    await updateRequestStatus(id, newStatus);
-    await logAdminActivity(
-      user?.uid || '',
-      user?.email || '',
-      `Changed Anime Request Status to ${newStatus}`,
-      'Requests',
-      id,
-      animeTitle
-    );
-    setRequests((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
-    );
-    onShowMessage(`Updated request status to ${newStatus}.`);
+    try {
+      await updateRequestStatus(id, newStatus);
+      await logAdminActivity(
+        user?.uid || '',
+        user?.email || '',
+        `Changed Anime Request Status to ${newStatus}`,
+        'Requests',
+        id,
+        animeTitle
+      );
+      setRequests((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
+      );
+      onShowMessage(`Request for "${animeTitle}" marked as ${newStatus}.`);
+    } catch (err: any) {
+      onShowMessage(`Failed to update status: ${err.message}`);
+    }
   };
 
-  const handleDelete = async (id: string, animeTitle: string) => {
-    if (window.confirm('Delete this anime request?')) {
-      await deleteAnimeRequest(id);
+  const handleDelete = async () => {
+    if (!requestToDelete?.id) return;
+    try {
+      setDeleting(true);
+      await deleteAnimeRequest(requestToDelete.id);
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
         'Deleted Anime Request',
         'Requests',
-        id,
-        animeTitle
+        requestToDelete.id,
+        requestToDelete.animeTitle
       );
-      setRequests((prev) => prev.filter((r) => r.id !== id));
-      onShowMessage('Anime request deleted.');
+      setRequests((prev) => prev.filter((r) => r.id !== requestToDelete.id));
+      onShowMessage(`Deleted request for "${requestToDelete.animeTitle}".`);
+      setRequestToDelete(null);
+    } catch (err: any) {
+      onShowMessage(`Failed to delete request: ${err.message}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const filtered = requests.filter((r) => statusFilter === 'all' || r.status === statusFilter);
+  // Filter counts for tabs
+  const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const approvedCount = requests.filter((r) => r.status === 'approved' || r.status === 'in_progress').length;
+  const doneCount = requests.filter((r) => r.status === 'completed' || r.status === 'fulfilled').length;
+  const rejectedCount = requests.filter((r) => r.status === 'rejected').length;
+
+  const tabs = [
+    { id: 'all' as const, label: 'All', count: requests.length },
+    { id: 'pending' as const, label: 'Pending', count: pendingCount },
+    { id: 'approved' as const, label: 'Approved', count: approvedCount },
+    { id: 'done' as const, label: 'Done', count: doneCount },
+    { id: 'rejected' as const, label: 'Rejected', count: rejectedCount },
+  ];
+
+  const filteredRequests = requests.filter((r) => {
+    if (activeTab === 'all') return true;
+    if (activeTab === 'pending') return r.status === 'pending';
+    if (activeTab === 'approved') return r.status === 'approved' || r.status === 'in_progress';
+    if (activeTab === 'done') return r.status === 'completed' || r.status === 'fulfilled';
+    if (activeTab === 'rejected') return r.status === 'rejected';
+    return true;
+  });
+
+  const getStatusBadge = (status: RequestStatus) => {
+    switch (status) {
+      case 'approved':
+      case 'in_progress':
+        return <AdminStatusBadge status="live" label="Approved" />;
+      case 'completed':
+      case 'fulfilled':
+        return <AdminStatusBadge status="live" label="Done" />;
+      case 'rejected':
+        return <AdminStatusBadge status="archived" label="Rejected" />;
+      case 'pending':
+      default:
+        return <AdminStatusBadge status="pending" label="Pending" />;
+    }
+  };
 
   return (
     <AdminLayout currentTab="requests" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-5 sm:p-6 rounded-2xl">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white">
-              Requests
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              {requests.length} requests submitted
-            </p>
-          </div>
+      <div className="space-y-6 min-w-0 pb-20">
+        {/* Page Header */}
+        <AdminPageHeader
+          title="Anime Community Requests"
+          description="Visitor submissions for requested series, movies, and missing seasons"
+          primaryAction={{
+            label: 'Add anime to catalog',
+            icon: Plus,
+            onClick: () => navigate('/admin/anime/new'),
+          }}
+        />
 
-          <div className="flex items-center gap-2">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-amber-500"
-            >
-              <option value="all">All Statuses ({requests.length})</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="fulfilled">Fulfilled / Added</option>
-            </select>
-          </div>
-        </div>
+        {/* Segmented Tabs */}
+        <AdminSegmentedTabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={(tab) => setActiveTab(tab)}
+        />
 
-        {/* Requests List */}
         {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading community requests...</div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8]">
-            No anime requests found in this category.
+          <div className="space-y-3">
+            <AdminSkeleton variant="table-row" count={4} />
+          </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-6 max-h-[160px] flex items-center justify-center">
+            <AdminEmptyState
+              icon={Film}
+              title={
+                activeTab === 'all'
+                  ? 'No anime requests yet'
+                  : `No ${activeTab} requests found`
+              }
+              description="New visitor submissions from /requests will appear here."
+              compact
+            />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filtered.map((req) => (
-              <div
-                key={req.id}
-                className="bg-[#0B1322] border border-white/5 rounded-3xl p-5 space-y-4 hover:border-white/10 transition-all flex flex-col justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Film className="w-4 h-4 text-amber-400 shrink-0" />
-                      <h3 className="text-sm font-bold text-white leading-tight">
-                        {req.title}
-                      </h3>
-                    </div>
+          <div className="bg-[#0B1324] border border-white/10 rounded-[12px] divide-y divide-white/5 overflow-hidden">
+            {filteredRequests.map((req) => {
+              const requester = req.userName || req.userEmail || 'Anonymous Visitor';
+              const dateText = formatTimestamp(req.createdAt);
+              const metaText = `${requester} · ${dateText}${req.notes || req.message ? ` · "${req.notes || req.message}"` : ''}`;
 
-                    <span
-                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                        req.status === 'fulfilled'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : req.status === 'approved'
-                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                          : req.status === 'rejected'
-                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}
-                    >
-                      {req.status}
-                    </span>
-                  </div>
-
-                  {req.notes && (
-                    <p className="text-xs text-[#94A3B8] leading-relaxed bg-[#050A14] p-3 rounded-2xl border border-white/5">
-                      "{req.notes}"
-                    </p>
-                  )}
-
-                  <div className="text-[11px] text-[#64748B] flex items-center gap-2">
-                    <span>From: {req.userEmail || 'Anonymous User'}</span>
-                    <span>•</span>
-                    <span>{req.year ? `Year ${req.year}` : 'Year N/A'}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-white/5">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(req.id, req.title, 'approved')}
-                      className="px-2.5 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-[11px] font-bold rounded-lg transition-all"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(req.id, req.title, 'fulfilled')}
-                      className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-lg transition-all"
-                    >
-                      Fulfilled
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(req.id, req.title, 'rejected')}
-                      className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[11px] font-bold rounded-lg transition-all"
-                    >
-                      Reject
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(req.id, req.title)}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500 text-[#94A3B8] hover:text-white transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              return (
+                <AdminListRow
+                  key={req.id || `${req.animeTitle}-${dateText}`}
+                  id={req.id || ''}
+                  title={req.animeTitle}
+                  meta={metaText}
+                  badge={getStatusBadge(req.status)}
+                  menuItems={[
+                    ...(req.status !== 'approved'
+                      ? [
+                          {
+                            id: 'approve',
+                            label: 'Approve request',
+                            icon: CheckCircle2,
+                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'approved'),
+                          },
+                        ]
+                      : []),
+                    ...(req.status !== 'completed' && req.status !== 'fulfilled'
+                      ? [
+                          {
+                            id: 'done',
+                            label: 'Mark as done',
+                            icon: Check,
+                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'completed'),
+                          },
+                        ]
+                      : []),
+                    ...(req.status !== 'rejected'
+                      ? [
+                          {
+                            id: 'reject',
+                            label: 'Reject request',
+                            icon: XCircle,
+                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'rejected'),
+                          },
+                        ]
+                      : []),
+                    {
+                      id: 'draft',
+                      label: 'Create anime draft',
+                      icon: Plus,
+                      onClick: () =>
+                        navigate(`/admin/anime/new?title=${encodeURIComponent(req.animeTitle)}`),
+                    },
+                    ...(req.userEmail
+                      ? [
+                          {
+                            id: 'reply',
+                            label: `Email requester (${req.userEmail})`,
+                            icon: Mail,
+                            onClick: () => {
+                              window.location.href = `mailto:${req.userEmail}?subject=${encodeURIComponent(
+                                `Regarding your request: ${req.animeTitle}`
+                              )}`;
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      id: 'delete',
+                      label: 'Delete request',
+                      icon: Trash2,
+                      destructive: true,
+                      onClick: () => setRequestToDelete(req),
+                    },
+                  ]}
+                />
+              );
+            })}
           </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={!!requestToDelete}
+          onClose={() => setRequestToDelete(null)}
+          onConfirm={handleDelete}
+          title="Delete anime request?"
+          consequence={`Permanently remove the submission for "${requestToDelete?.animeTitle}". This action cannot be reversed.`}
+          confirmLabel="Delete request"
+          isLoading={deleting}
+        />
       </div>
     </AdminLayout>
   );

@@ -9,6 +9,7 @@ import {
   deleteDoc,
   query,
   where,
+  limit,
   increment,
   serverTimestamp,
   arrayUnion,
@@ -47,10 +48,41 @@ function sanitizeData<T extends Record<string, any>>(obj: T): Record<string, any
 export function cleanAnimeTitle(title?: string): string {
   if (!title) return '';
   return title
+    // Strip Hindi/Hindi Dub/Hindi Dubbed in brackets, parentheses or suffixes
+    .replace(/\s*[\(\[]\s*(?:in\s+)?hindi(?:\s*(?:dub|dubbed|sub|audio|dubbing))?\s*[\)\]]/gi, '')
+    .replace(/\s*[-:|/]\s*(?:in\s+)?hindi(?:\s*(?:dub|dubbed|sub|audio|dubbing))?\s*$/gi, '')
+    .replace(/\s+(?:in\s+)?hindi(?:\s*(?:dub|dubbed|sub|audio|dubbing))?\s*$/gi, '')
+    // Strip English Dub / Dub / Sub / Multi Audio in brackets or parentheses
+    .replace(/\s*[\(\[]\s*(?:english|eng)?(?:\s*(?:dub|dubbed|sub|multi\s*audio))\s*[\)\]]/gi, '')
+    .replace(/\s*[-:|/]\s*(?:english|eng)?(?:\s*(?:dub|dubbed|sub))\s*$/gi, '')
+    // Strip upcoming tags
     .replace(/\s*[\(\[]\s*upcoming(?:\s+show)?\s*[\)\]]/gi, '')
-    .replace(/\s*-\s*upcoming(?:\s+show)?\s*$/gi, '')
+    .replace(/\s*[-:|/]\s*upcoming(?:\s+show)?\s*$/gi, '')
     .replace(/\s+upcoming(?:\s+show)?\s*$/gi, '')
+    // Strip new tags
+    .replace(/\s*[\(\[]\s*new\s*[\)\]]/gi, '')
+    .replace(/\s*[-:|/]\s*new\s*$/gi, '')
+    .replace(/^\s*new\s*[-:]\s*/gi, '')
+    .replace(/\s+new\s*$/gi, '')
+    // Clean dangling trailing separators
+    .replace(/\s*[-:|/]\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+export function isHentaiAnime(item: any): boolean {
+  if (!item) return false;
+  if (item.isHentai === true || item.isNsfw === true || item.nsfw === true) return true;
+  const genreList = item.genres || item.categories || item.tags;
+  if (Array.isArray(genreList)) {
+    if (genreList.some((g: any) => typeof g === 'string' && g.trim().toLowerCase() === 'hentai')) {
+      return true;
+    }
+  }
+  if (typeof item.genre === 'string' && item.genre.trim().toLowerCase() === 'hentai') {
+    return true;
+  }
+  return false;
 }
 
 const OLD_REMOVED_ANIME_IDS = new Set<string>();
@@ -360,7 +392,8 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
       try {
         const q = query(
           collection(db, ANIME_COLLECTION),
-          where('published', '==', true)
+          where('published', '==', true),
+          limit(250)
         );
         const snapshot = await withTimeout(getDocs(q), 3500, null);
         if (snapshot && !snapshot.empty) {
@@ -373,22 +406,6 @@ export async function getPublishedAnimes(forceFresh: boolean = false): Promise<A
         }
       } catch (err) {
         console.warn('Direct anime query fallback:', err);
-      }
-
-      // If published query was empty, try all docs in 'anime'
-      if (allDocs.length === 0) {
-        try {
-          const snapshot = await withTimeout(getDocs(collection(db, ANIME_COLLECTION)), 3000, null);
-          if (snapshot && !snapshot.empty) {
-            for (const docSnap of snapshot.docs) {
-              const data = docSnap.data();
-              if (data.published !== false && !seenDocIds.has(docSnap.id)) {
-                seenDocIds.add(docSnap.id);
-                allDocs.push(docSnap);
-              }
-            }
-          }
-        } catch {}
       }
 
       if (allDocs.length > 0) {
@@ -445,24 +462,22 @@ export async function getAllAnimes(): Promise<Anime[]> {
       } catch {}
     }
 
-    if (allDocs.length > 0) {
-      const list: Anime[] = allDocs.map((docSnap) => ({
-        ...(docSnap.data() as Omit<Anime, 'id'>),
-        id: docSnap.id,
-      }));
+    const list: Anime[] = allDocs.map((docSnap) => ({
+      ...(docSnap.data() as Omit<Anime, 'id'>),
+      id: docSnap.id,
+    }));
 
-      const merged = mergeWithDefaultAnimes(list, false);
-      return merged.sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || 0;
-        if (timeB !== timeA) return timeB - timeA;
-        return (b.viewsCount || 0) - (a.viewsCount || 0);
-      });
-    }
+    const merged = mergeWithDefaultAnimes(list, false);
+    return merged.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis?.() || 0;
+      const timeB = b.createdAt?.toMillis?.() || 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.viewsCount || 0) - (a.viewsCount || 0);
+    });
   } catch (err) {
-    console.warn('Failed to get all animes from Firestore, using default catalog:', err);
+    console.warn('Failed to get all animes from Firestore, using catalog fallback:', err);
   }
-  return DEFAULT_ANIMES.filter((a) => !isAnimeDeleted(a.id) && (!a.slug || !isAnimeDeleted(a.slug)));
+  return mergeWithDefaultAnimes([], false);
 }
 
 export async function getAnimeBySlug(rawSlug: string): Promise<Anime | null> {
@@ -542,92 +557,59 @@ export async function getAnimeBySlug(rawSlug: string): Promise<Anime | null> {
   });
 
   try {
-    const collectionNames = ['anime', 'Anime', 'animes'];
-    for (const coll of collectionNames) {
-      // 3a. Check exact slug match in Firestore
-      try {
-        const q = query(collection(db, coll), where('slug', '==', slug));
-        const snapshot = await withTimeout(getDocs(q), 2500, null);
-        if (snapshot && !snapshot.empty) {
-          for (const docSnap of snapshot.docs) {
-            const data = docSnap.data() as Anime;
-            if (!(data as any).isDeleted) {
-              const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
-              const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
-              const result: Anime = {
-                id: docSnap.id,
-                ...defaultMatch,
-                ...data,
-                published: data.published !== false,
-                poster,
-                posterUrl: poster,
-                banner,
-                bannerUrl: banner,
-              };
-              saveLocalStoredAnime(result);
-              return result;
-            }
-          }
-        }
-      } catch {}
-
-      // 3b. Check lowercased slug match in Firestore
-      if (lowerSlug !== slug) {
-        try {
-          const qLower = query(collection(db, coll), where('slug', '==', lowerSlug));
-          const snapLower = await withTimeout(getDocs(qLower), 2000, null);
-          if (snapLower && !snapLower.empty) {
-            for (const docSnap of snapLower.docs) {
-              const data = docSnap.data() as Anime;
-              if (!(data as any).isDeleted) {
-                const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
-                const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
-                const result: Anime = {
-                  id: docSnap.id,
-                  ...defaultMatch,
-                  ...data,
-                  published: data.published !== false,
-                  poster,
-                  posterUrl: poster,
-                  banner,
-                  bannerUrl: banner,
-                };
-                saveLocalStoredAnime(result);
-                return result;
-              }
-            }
-          }
-        } catch {}
-      }
-
-      // 3c. Check if slug was actually a Firestore doc ID
-      try {
-        const docRef = doc(db, coll, slug);
-        const docSnap = await withTimeout(getDoc(docRef), 2000, null);
-        if (docSnap && docSnap.exists()) {
+    // 3a. Parallel lookup on primary 'anime' collection (slug, lowerSlug, docId)
+    const coll = ANIME_COLLECTION;
+    const queries: Promise<Anime | null>[] = [
+      withTimeout(getDocs(query(collection(db, coll), where('slug', '==', slug), limit(1))), 2500, null).then(
+        (snap) => {
+          const docSnap = snap && !snap.empty ? snap.docs[0] : null;
+          if (!docSnap) return null;
           const data = docSnap.data() as Anime;
-          if (!(data as any).isDeleted) {
-            const poster = (data as any).posterUrl || (data as any).poster || defaultMatch?.poster || '';
-            const banner = (data as any).bannerUrl || (data as any).banner || defaultMatch?.banner;
-            const result: Anime = {
-              id: docSnap.id,
-              ...defaultMatch,
-              ...data,
-              published: data.published !== false,
-              poster,
-              posterUrl: poster,
-              banner,
-              bannerUrl: banner,
-            };
-            saveLocalStoredAnime(result);
-            return result;
-          }
+          if ((data as any).isDeleted) return null;
+          return { id: docSnap.id, ...data };
         }
-      } catch {}
+      ),
+      withTimeout(getDoc(doc(db, coll, slug)), 2500, null).then((docSnap) => {
+        if (!docSnap || !docSnap.exists()) return null;
+        const data = docSnap.data() as Anime;
+        if ((data as any).isDeleted) return null;
+        return { id: docSnap.id, ...data };
+      }),
+    ];
+    if (lowerSlug !== slug) {
+      queries.push(
+        withTimeout(getDocs(query(collection(db, coll), where('slug', '==', lowerSlug), limit(1))), 2500, null).then(
+          (snap) => {
+            const docSnap = snap && !snap.empty ? snap.docs[0] : null;
+            if (!docSnap) return null;
+            const data = docSnap.data() as Anime;
+            if ((data as any).isDeleted) return null;
+            return { id: docSnap.id, ...data };
+          }
+        )
+      );
+    }
+
+    const candidates = await Promise.all(queries);
+    const directMatch = candidates.find(Boolean);
+    if (directMatch) {
+      const poster = (directMatch as any).posterUrl || (directMatch as any).poster || defaultMatch?.poster || '';
+      const banner = (directMatch as any).bannerUrl || (directMatch as any).banner || defaultMatch?.banner;
+      const result: Anime = {
+        ...defaultMatch,
+        ...directMatch,
+        published: directMatch.published !== false,
+        poster,
+        posterUrl: poster,
+        banner,
+        bannerUrl: banner,
+      };
+      saveLocalStoredAnime(result);
+      return result;
     }
 
     // 4. Scan in all published animes (fallback for custom slugs or docIds)
-    const all = await withTimeout(getAllAnimes(), 2500, []);
+    const all = await withTimeout(getPublishedAnimes(), 2500, []);
     const match = all.find(
       (a) =>
         a.slug === slug ||
@@ -861,7 +843,8 @@ export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): P
         const altMatch = a.altTitles?.some((alt) => (alt || '').toLowerCase().includes(q));
         const descMatch = (a.description || '').toLowerCase().includes(q);
         const studioMatch = (a.studio || '').toLowerCase().includes(q);
-        const hasBaseMatch = titleMatch || altMatch || descMatch || studioMatch;
+        const genreMatch = a.genres?.some((g) => (g || '').toLowerCase().includes(q));
+        const hasBaseMatch = titleMatch || altMatch || descMatch || studioMatch || genreMatch;
 
         // If anime has multiple seasons configured, return individual seasons as distinct search entries
         if (a.seasonsList && a.seasonsList.length > 1) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../lib/auth';
 import type { WatchlistItem, WatchlistStatus } from '../types/library';
 import type { Anime } from '../types/anime';
@@ -6,89 +6,69 @@ import {
   getWatchlist,
   removeFromWatchlist,
   setWatchlistStatus,
-  getWatchHistory,
 } from '../lib/firestore/user-activity';
 import { getPublishedAnimes } from '../lib/firestore/anime';
-import {
-  Bookmark,
-  Search,
-  Trash2,
-  Film,
-  SlidersHorizontal,
-} from 'lucide-react';
+import { AdminSelect } from '../components/admin/AdminSelect';
+import { EmptyState, ErrorState } from '../components/common/FeedbackStates';
+import { usePageSeo } from '../hooks/usePageSeo';
+import { Bookmark, Search, Trash2, Film, Clock, CheckCircle2, PlayCircle } from 'lucide-react';
 
 interface WatchlistViewProps {
   navigate: (path: string) => void;
   onShowMessage?: (msg: string) => void;
 }
 
+const FALLBACK_POSTER =
+  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80';
+
 export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMessage }) => {
   const { user } = useAuth();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [animeCatalog, setAnimeCatalog] = useState<Record<string, Anime>>({});
-  const [historyMap, setHistoryMap] = useState<Record<string, number[]>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<'all' | 'watching' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'recent' | 'title'>('recent');
 
-  const fetchItems = async () => {
+  usePageSeo({
+    title: 'My Watchlist | ZYNOX ANIME',
+    description: 'Manage your saved anime series, watching status, and completed titles.',
+  });
+
+  const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
-      const [items, catalog, history] = await Promise.all([
+      setError(null);
+      const [items, catalog] = await Promise.all([
         getWatchlist(user?.uid || null),
         getPublishedAnimes(),
-        getWatchHistory(user?.uid || null),
       ]);
 
-      // Map catalog by id and slug
       const catMap: Record<string, Anime> = {};
       catalog.forEach((a) => {
         if (a.id) catMap[a.id] = a;
         if (a.slug) catMap[a.slug] = a;
       });
       setAnimeCatalog(catMap);
-
-      // Map watched episodes array by animeId
-      const histMap: Record<string, number[]> = {};
-      history.forEach((h) => {
-        if (!histMap[h.animeId]) histMap[h.animeId] = [];
-        if (!histMap[h.animeId].includes(h.episodeNumber)) {
-          histMap[h.animeId].push(h.episodeNumber);
-        }
-      });
-      setHistoryMap(histMap);
-
       setWatchlist(items);
     } catch (err) {
       console.error('Watchlist fetch error:', err);
+      setError('Failed to load your watchlist. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
 
   useEffect(() => {
     fetchItems();
-  }, [user?.uid]);
+  }, [fetchItems]);
 
-  // Helper to determine total episodes for an item
   const getTotalEpisodes = (item: WatchlistItem): number => {
     if (item.totalEpisodes && item.totalEpisodes > 0) return item.totalEpisodes;
     const fromCat = animeCatalog[item.animeId] || animeCatalog[item.animeSlug];
     if (fromCat?.totalEpisodes && fromCat.totalEpisodes > 0) return fromCat.totalEpisodes;
-    return 12; // Standard seasonal fallback
-  };
-
-  // Helper to determine completed episodes count
-  const getCompletedEpisodes = (item: WatchlistItem): number => {
-    if (typeof item.completedEpisodes === 'number') {
-      return item.completedEpisodes;
-    }
-    const watchedFromHistory = historyMap[item.animeId] || historyMap[item.animeSlug] || [];
-    if (watchedFromHistory.length > 0) {
-      return Math.max(...watchedFromHistory);
-    }
-    return item.status === 'completed' ? getTotalEpisodes(item) : 0;
+    return 12;
   };
 
   const handleRemove = async (animeId: string, title: string) => {
@@ -99,13 +79,12 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
 
   const handleStatusChange = async (item: WatchlistItem, newStatus: WatchlistStatus) => {
     const totalEp = getTotalEpisodes(item);
-    const currentCompleted = getCompletedEpisodes(item);
     const updatedCompleted =
       newStatus === 'completed'
         ? totalEp
-        : newStatus === 'plan_to_watch' && currentCompleted === 0
+        : newStatus === 'plan_to_watch'
         ? 0
-        : currentCompleted;
+        : item.completedEpisodes || 0;
 
     await setWatchlistStatus(
       user?.uid || null,
@@ -127,7 +106,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
           : w
       )
     );
-    onShowMessage?.(`Updated status to ${newStatus.replace('_', ' ')}.`);
+    onShowMessage?.(`Updated status to ${newStatus.replace(/_/g, ' ')}.`);
   };
 
   const filteredItems = useMemo(() => {
@@ -139,9 +118,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
           : selectedTab === 'completed'
           ? item.status === 'completed'
           : item.status !== 'completed';
-      const matchSearch =
-        q === '' ||
-        (item.animeTitle || '').toLowerCase().includes(q);
+      const matchSearch = q === '' || (item.animeTitle || '').toLowerCase().includes(q);
       return matchTab && matchSearch;
     });
 
@@ -149,9 +126,14 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
       if (sortBy === 'title') {
         return (a.animeTitle || '').localeCompare(b.animeTitle || '');
       }
-      // Default: recent
-      const timeA = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : a.updatedAt?.toMillis?.() || 0;
-      const timeB = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : b.updatedAt?.toMillis?.() || 0;
+      const timeA =
+        typeof a.updatedAt === 'string'
+          ? new Date(a.updatedAt).getTime()
+          : a.updatedAt?.toMillis?.() || 0;
+      const timeB =
+        typeof b.updatedAt === 'string'
+          ? new Date(b.updatedAt).getTime()
+          : b.updatedAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
   }, [watchlist, selectedTab, searchQuery, sortBy]);
@@ -162,51 +144,61 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
     { key: 'completed', label: 'Completed' },
   ];
 
+  const SORT_OPTIONS: { value: 'recent' | 'title'; label: string }[] = [
+    { value: 'recent', label: 'Recently Updated' },
+    { value: 'title', label: 'Alphabetical (A-Z)' },
+  ];
+
+  const STATUS_OPTIONS: {
+    value: WatchlistStatus;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
+    { value: 'watching', label: 'Watching', icon: PlayCircle },
+    { value: 'plan_to_watch', label: 'Plan to Watch', icon: Clock },
+    { value: 'completed', label: 'Completed', icon: CheckCircle2 },
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white flex items-center gap-3 tracking-tight">
-            <span className="w-9 h-9 rounded-2xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center text-[#1683FF]">
-              <Bookmark className="w-5 h-5" />
-            </span>
-            <span>My Watchlist</span>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
+            <Bookmark className="w-6 h-6 sm:w-7 sm:h-7 text-[#1E88FF] shrink-0" />
+            <span className="truncate">My Watchlist</span>
           </h1>
-          <p className="text-xs sm:text-sm text-[#A9B8CC] mt-1.5">
-            Track your saved anime series, manage watchlist statuses, and watch anytime.
+          <p className="text-xs sm:text-sm text-[#94A3B8] mt-1">
+            Track saved anime series, manage status, and pick up anytime.
           </p>
         </div>
 
-        {/* Search & Sort Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+        {/* Search & Custom Sort Select */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
+          <div className="relative flex-1 sm:w-60 min-w-0">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#64748B]" />
             <input
               type="text"
               placeholder="Search saved titles..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#081426] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-zinc-500 focus:border-[#1683FF] focus:outline-none transition-colors"
+              aria-label="Search watchlist"
+              className="w-full h-10 bg-[#0B1324] border border-white/10 rounded-xl pl-10 pr-3.5 text-xs sm:text-sm text-white placeholder:text-[#64748B] focus:border-[#1E88FF] focus:outline-none transition-colors"
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-[#081426] border border-white/10 rounded-xl px-3 py-1.5">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-[#1683FF]" />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-transparent text-xs font-semibold text-zinc-300 focus:outline-none cursor-pointer"
-            >
-              <option value="recent" className="bg-[#081426] text-white">Recently Updated</option>
-              <option value="title" className="bg-[#081426] text-white">Alphabetical (A-Z)</option>
-            </select>
-          </div>
+          <AdminSelect<'recent' | 'title'>
+            value={sortBy}
+            onChange={(val) => setSortBy(val)}
+            options={SORT_OPTIONS}
+            sheetTitle="Sort Watchlist"
+            className="sm:w-48 shrink-0"
+          />
         </div>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
         {TABS.map((tab) => {
           const count =
             tab.key === 'all'
@@ -220,18 +212,18 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
               key={tab.key}
               type="button"
               onClick={() => setSelectedTab(tab.key)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-2 ${
+              className={`h-9 px-3.5 rounded-xl text-xs font-semibold shrink-0 whitespace-nowrap transition-colors flex items-center gap-2 border cursor-pointer ${
                 selectedTab === tab.key
-                  ? 'bg-[#1683FF] text-white shadow-lg shadow-[#1683FF]/30 border border-[#1683FF]'
-                  : 'bg-[#081426] text-zinc-400 hover:text-white border border-white/5 hover:bg-[#0D1B2E]'
+                  ? 'bg-[#1E88FF] text-white border-[#1E88FF]'
+                  : 'bg-[#0B1324] text-[#94A3B8] hover:text-white border-white/10 hover:bg-[#101A30]'
               }`}
             >
               <span>{tab.label}</span>
               <span
-                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono font-bold ${
                   selectedTab === tab.key
-                    ? 'bg-black/30 text-white'
-                    : 'bg-[#050A14] text-zinc-500'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/5 text-[#94A3B8]'
                 }`}
               >
                 {count}
@@ -243,85 +235,109 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
 
       {/* Watchlist Grid */}
       {loading ? (
-        <div className="py-24 text-center text-xs text-zinc-400 flex flex-col items-center justify-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
-          <span>Loading your watchlist...</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-36 rounded-2xl bg-[#0B1324] border border-white/10 animate-pulse p-4 flex gap-3.5"
+            >
+              <div className="w-20 h-full rounded-xl bg-white/5 shrink-0" />
+              <div className="flex-1 space-y-2.5 py-1">
+                <div className="h-4 w-3/4 bg-white/5 rounded" />
+                <div className="h-3 w-1/2 bg-white/5 rounded" />
+                <div className="h-8 w-28 bg-white/5 rounded-xl mt-4" />
+              </div>
+            </div>
+          ))}
         </div>
+      ) : error ? (
+        <ErrorState
+          title="Could Not Load Watchlist"
+          message={error}
+          onRetry={fetchItems}
+        />
       ) : filteredItems.length === 0 ? (
-        <div className="text-center py-20 bg-[#081426] border border-white/10 rounded-3xl p-8 max-w-md mx-auto space-y-4 shadow-xl">
-          <Film className="w-12 h-12 mx-auto text-zinc-600" />
-          <h3 className="text-lg font-bold text-white">No series found</h3>
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            {searchQuery
-              ? 'No anime in your watchlist matched your search filter.'
-              : 'Add anime to your watchlist to keep track of what you want to watch.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/browse')}
-            className="px-5 py-2.5 bg-[#1683FF] hover:bg-[#0070ea] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#1683FF]/30"
-          >
-            Explore Anime
-          </button>
-        </div>
+        <EmptyState
+          icon={<Film className="w-7 h-7 text-[#1E88FF]" />}
+          title={searchQuery ? 'No matching titles' : 'Your watchlist is empty'}
+          description={
+            searchQuery
+              ? 'No anime in your watchlist matched that search query.'
+              : 'Bookmark any anime series to track progress and find it quickly here.'
+          }
+          actionLabel={searchQuery ? 'Clear Search' : 'Explore Anime'}
+          onAction={() => (searchQuery ? setSearchQuery('') : navigate('/browse'))}
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredItems.map((item) => {
+            const currentStatus: WatchlistStatus =
+              item.status === 'completed' || item.status === 'plan_to_watch'
+                ? item.status
+                : 'watching';
+
             return (
               <div
                 key={item.animeId}
-                className="bg-[#081426] border border-white/10 hover:border-[#1683FF]/50 rounded-2xl p-4 flex gap-3.5 transition-all shadow-lg hover:shadow-[#1683FF]/10 group"
+                className="bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 rounded-2xl p-3.5 sm:p-4 flex gap-3.5 transition-colors group min-w-0"
               >
-                {/* Poster Thumbnail */}
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate(`/anime/${item.animeSlug}`)}
-                  className="w-20 sm:w-24 h-28 sm:h-32 rounded-xl bg-[#050A14] overflow-hidden shrink-0 cursor-pointer relative border border-white/10 shadow-md group/poster"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/anime/${item.animeSlug}`);
+                    }
+                  }}
+                  className="w-20 sm:w-24 aspect-[2/3] rounded-xl bg-[#050A14] overflow-hidden shrink-0 cursor-pointer border border-white/10"
                 >
-                  {item.animePoster ? (
-                    <img
-                      src={item.animePoster}
-                      alt={item.animeTitle}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <Film className="w-6 h-6 m-auto mt-10 text-zinc-600" />
-                  )}
+                  <img
+                    src={item.animePoster || FALLBACK_POSTER}
+                    alt={item.animeTitle}
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (target.src !== FALLBACK_POSTER) target.src = FALLBACK_POSTER;
+                    }}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
                 </div>
 
-                {/* Info Header */}
-                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                  <div>
+                <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
+                  <div className="min-w-0">
                     <h4
                       onClick={() => navigate(`/anime/${item.animeSlug}`)}
-                      className="text-sm sm:text-base font-bold text-white hover:text-[#00CFFF] cursor-pointer transition-colors line-clamp-2 leading-snug"
+                      className="text-sm font-bold text-white hover:text-[#1E88FF] cursor-pointer transition-colors line-clamp-2 leading-snug"
                     >
                       {item.animeTitle}
                     </h4>
 
                     {item.genres && item.genres.length > 0 && (
-                      <p className="text-[11px] text-zinc-400 mt-1 truncate">
+                      <p className="text-[11px] text-[#94A3B8] mt-1 truncate">
                         {item.genres.slice(0, 3).join(' • ')}
                       </p>
                     )}
                   </div>
 
-                  {/* Status dropdown & Delete */}
-                  <div className="flex items-center justify-between gap-2 pt-2">
-                    <select
-                      value={item.status === 'completed' ? 'completed' : 'watching'}
-                      onChange={(e) => handleStatusChange(item, e.target.value as WatchlistStatus)}
-                      className="bg-[#050A14] border border-white/10 text-[11px] font-bold text-zinc-300 rounded-lg px-2.5 py-1.5 focus:border-[#1683FF] outline-none capitalize cursor-pointer hover:border-white/20 transition-colors"
-                    >
-                      <option value="watching">Watching</option>
-                      <option value="completed">Completed</option>
-                    </select>
+                  <div className="flex items-center justify-between gap-2">
+                    <AdminSelect<WatchlistStatus>
+                      value={currentStatus}
+                      onChange={(val) => handleStatusChange(item, val)}
+                      options={STATUS_OPTIONS}
+                      sheetTitle="Watchlist Status"
+                      className="flex-1 min-w-0"
+                      buttonClassName="h-9 bg-[#050A14] text-xs"
+                    />
 
                     <button
                       type="button"
                       onClick={() => handleRemove(item.animeId, item.animeTitle)}
-                      className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                      title="Remove from watchlist"
+                      className="w-9 h-9 rounded-xl text-[#94A3B8] hover:text-rose-400 hover:bg-rose-500/10 border border-white/10 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      aria-label={`Remove ${item.animeTitle} from watchlist`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -335,4 +351,3 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({ navigate, onShowMe
     </div>
   );
 };
-

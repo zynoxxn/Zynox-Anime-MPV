@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Zynox Anime",
+  "name": "ZYNOX ANIME",
   "short_name": "Zynox Anime",
-  "description": "Watch your favorite Indian regional dubbed anime in Hindi Dub & Sub, and more! Zynox Anime brings you the best anime content online. Start watching now!",
+  "description": "Watch and download Indian regional dubbed anime in Hindi Dub and English Sub in 1080p HD.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -11,16 +11,16 @@
   "background_color": "#050A14",
   "icons": [
     {
-      "src": "/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png",
-      "sizes": "512x512",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     }
   ],
   "categories": ["entertainment", "video", "multimedia"]

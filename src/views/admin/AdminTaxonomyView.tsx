@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { AdminLayout } from './AdminLayout';
 import { useAuth } from '../../lib/auth';
 import type {
@@ -34,18 +34,25 @@ import {
   deleteCmsStudio,
   logAdminActivity,
 } from '../../lib/firestore/cms';
-import { ConfirmModal } from '../../components/ConfirmModal';
+import {
+  AdminPageHeader,
+  AdminSegmentedTabs,
+  AdminListRow,
+  AdminToggle,
+  AdminConfirmDialog,
+  AdminEmptyState,
+  AdminErrorState,
+  AdminSkeleton,
+} from '../../components/admin';
 import {
   Tag,
-  Calendar,
-  Layers,
-  Sparkles,
   Plus,
   Trash2,
   Edit2,
-  Save,
   X,
-  CheckCircle2,
+  Layers,
+  Calendar,
+  Sparkles,
   Globe,
   Radio,
   Sliders,
@@ -138,50 +145,96 @@ export const AdminTaxonomyView: React.FC<AdminTaxonomyViewProps> = ({
     try {
       setSaving(true);
       const safeName = (editingItem.name || '').toLowerCase().replace(/\s+/g, '-');
+      const safeId = editingItem.id || safeName || `item-${Date.now()}`;
+
       if (activeTab === 'genres') {
-        const item = { ...editingItem, id: editingItem.id || editingItem.slug || safeName || `genre-${Date.now()}` };
+        const item: CmsGenre = {
+          id: safeId,
+          name: editingItem.name,
+          slug: editingItem.slug || safeName,
+          description: editingItem.description || '',
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsGenre(item);
+        onShowMessage(`Saved genre "${item.name}".`);
       } else if (activeTab === 'statuses') {
-        const item = { ...editingItem, id: editingItem.id || editingItem.slug || safeName || `status-${Date.now()}` };
+        const item: CmsStatus = {
+          id: safeId,
+          name: editingItem.name,
+          slug: editingItem.slug || safeName,
+          description: editingItem.description || '',
+          badgeColor: editingItem.badgeColor || '#10B981',
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsStatus(item);
+        onShowMessage(`Saved status "${item.name}".`);
       } else if (activeTab === 'years') {
-        const item = { ...editingItem, id: (editingItem.year || new Date().getFullYear()).toString() };
+        const item: CmsYear = {
+          id: safeId || String(editingItem.year),
+          year: Number(editingItem.year) || 2026,
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsYear(item);
+        onShowMessage(`Saved year ${item.year}.`);
       } else if (activeTab === 'ratings') {
-        await saveCmsRatingRange(editingItem);
+        const item: CmsRatingRange = {
+          id: safeId,
+          label: editingItem.label,
+          minRating: Number(editingItem.minRating) || 8.0,
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
+        await saveCmsRatingRange(item);
+        onShowMessage(`Saved rating filter "${item.label}".`);
       } else if (activeTab === 'types') {
-        const item = { ...editingItem, id: editingItem.id || editingItem.slug || safeName || `type-${Date.now()}` };
+        const item: CmsType = {
+          id: safeId,
+          name: editingItem.name,
+          slug: editingItem.slug || safeName,
+          description: editingItem.description || '',
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsType(item);
+        onShowMessage(`Saved format "${item.name}".`);
       } else if (activeTab === 'languages') {
-        const item = { ...editingItem, id: editingItem.id || editingItem.shortCode || (editingItem.name || '').toLowerCase() || `lang-${Date.now()}` };
+        const item: CmsLanguage = {
+          id: safeId,
+          name: editingItem.name,
+          shortCode: editingItem.shortCode || 'HI',
+          badgeName: editingItem.badgeName || editingItem.name,
+          displayOrder: Number(editingItem.displayOrder) || 1,
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsLanguage(item);
+        onShowMessage(`Saved audio option "${item.name}".`);
       } else if (activeTab === 'studios') {
-        const item = { ...editingItem, id: editingItem.id || editingItem.slug || safeName || `studio-${Date.now()}` };
+        const item: CmsStudio = {
+          id: safeId,
+          name: editingItem.name,
+          slug: editingItem.slug || safeName,
+          description: editingItem.description || '',
+          website: editingItem.website || '',
+          enabled: editingItem.enabled ?? true,
+        };
         await saveCmsStudio(item);
+        onShowMessage(`Saved studio "${item.name}".`);
       }
 
-      await logAdminActivity(
-        user?.uid || '',
-        user?.email || '',
-        `Saved Taxonomy Item (${activeTab})`,
-        activeTab,
-        editingItem.id || '',
-        JSON.stringify(editingItem)
-      );
-
-      onShowMessage(`Saved ${activeTab} item successfully!`);
       setEditingItem(null);
       await loadAll();
     } catch (err: any) {
-      onShowMessage(`Error: ${err.message}`);
+      onShowMessage(`Save error: ${err.message}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const handleDeleteConfirm = async () => {
     if (!itemToDelete) return;
-
     try {
       setDeleting(true);
       if (activeTab === 'genres') await deleteCmsGenre(itemToDelete.id);
@@ -192,365 +245,365 @@ export const AdminTaxonomyView: React.FC<AdminTaxonomyViewProps> = ({
       else if (activeTab === 'languages') await deleteCmsLanguage(itemToDelete.id);
       else if (activeTab === 'studios') await deleteCmsStudio(itemToDelete.id);
 
-      await logAdminActivity(
-        user?.uid || '',
-        user?.email || '',
-        `Deleted Taxonomy Item (${activeTab})`,
-        activeTab,
-        itemToDelete.id,
-        itemToDelete.name
-      );
-
-      onShowMessage(`Deleted "${itemToDelete.name}"`);
+      onShowMessage(`Deleted "${itemToDelete.name}".`);
       setItemToDelete(null);
       await loadAll();
     } catch (err: any) {
-      onShowMessage(`Error: ${err.message}`);
+      onShowMessage(`Delete error: ${err.message}`);
     } finally {
       setDeleting(false);
     }
   };
 
+  const getAddActionLabel = () => {
+    switch (activeTab) {
+      case 'genres': return 'Add genre';
+      case 'statuses': return 'Add status';
+      case 'years': return 'Add year';
+      case 'ratings': return 'Add rating';
+      case 'types': return 'Add format';
+      case 'languages': return 'Add audio';
+      case 'studios': return 'Add studio';
+      default: return 'Add item';
+    }
+  };
+
+  const tabsConfig = [
+    { id: 'genres', label: `Genres (${genres.length})` },
+    { id: 'statuses', label: `Statuses (${statuses.length})` },
+    { id: 'years', label: `Years (${years.length})` },
+    { id: 'ratings', label: `Ratings (${ratings.length})` },
+    { id: 'types', label: `Formats (${types.length})` },
+    { id: 'languages', label: `Audio (${languages.length})` },
+    { id: 'studios', label: `Studios (${studios.length})` },
+  ];
+
   return (
     <AdminLayout currentTab="taxonomy" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 uppercase tracking-wider">
-              <Tag className="w-4 h-4" />
-              <span>Taxonomies & Categorization CMS</span>
+      <div className="space-y-6 min-w-0">
+        {/* Page Header (Primary action label adapts to active tab) */}
+        <AdminPageHeader
+          title="Taxonomy & Metadata"
+          description="Manage catalog genres, statuses, years, ratings, formats, and audio tags"
+          primaryAction={{
+            label: getAddActionLabel(),
+            icon: Plus,
+            onClick: handleOpenNew,
+          }}
+        />
+
+        {/* Taxonomy Segmented Tabs */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-2.5 overflow-x-auto no-scrollbar">
+          <AdminSegmentedTabs
+            tabs={tabsConfig}
+            activeTab={activeTab}
+            onChange={(tab) => setActiveTab(tab as TaxonomyTab)}
+          />
+        </div>
+
+        {/* Taxonomy Items List */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] overflow-hidden">
+          {loading ? (
+            <div className="p-4 space-y-3">
+              <AdminSkeleton variant="text" count={6} />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Metadata, Genres & Filters Manager
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Create, reorder, edit, and toggle all public dropdown filter options with zero hardcoded code.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleOpenNew}
-            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-xs font-bold text-white shadow-lg shadow-emerald-500/30 rounded-xl transition-all flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New {activeTab.slice(0, -1).toUpperCase()}</span>
-          </button>
-        </div>
-
-        {/* Taxonomy Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none bg-[#0B1322] border border-white/5 p-2 rounded-2xl">
-          {(
-            [
-              { id: 'genres', label: 'Genres', icon: Tag, count: genres.length },
-              { id: 'statuses', label: 'Statuses', icon: Radio, count: statuses.length },
-              { id: 'years', label: 'Years', icon: Calendar, count: years.length },
-              { id: 'ratings', label: 'Ratings', icon: Sparkles, count: ratings.length },
-              { id: 'types', label: 'Types (TV/Movie)', icon: Layers, count: types.length },
-              { id: 'languages', label: 'Audio Languages', icon: Globe, count: languages.length },
-              { id: 'studios', label: 'Studios', icon: Sliders, count: studios.length },
-            ] as const
-          ).map((tab) => {
-            const Icon = tab.icon;
-            const isCurrent = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                  isCurrent
-                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-                    : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
-                <span className="text-[10px] opacity-70">({tab.count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Content Table / Cards */}
-        {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading taxonomy entries...</div>
-        ) : (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-6">
+          ) : (
             <div className="divide-y divide-white/5">
-              {/* GENRES */}
+              {activeTab === 'genres' && genres.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No genres configured" actionLabel="Add genre" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'genres' &&
                 genres.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4 group">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white group-hover:text-emerald-400">
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] text-[#94A3B8] font-mono">/{item.slug}</span>
-                        {item.enabled ? (
-                          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded">
-                            Active
-                          </span>
-                        ) : (
-                          <span className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded">
-                            Disabled
-                          </span>
-                        )}
-                      </div>
-                      {item.description && (
-                        <p className="text-[11px] text-[#94A3B8] truncate mt-0.5">{item.description}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.name}
+                    meta={`/${item.slug} · Display Order: ${item.displayOrder || 1}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit genre',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.name })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Genre"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete genre',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.name }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* STATUSES */}
+              {activeTab === 'statuses' && statuses.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No statuses configured" actionLabel="Add status" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'statuses' &&
                 statuses.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-3.5 h-3.5 rounded-full"
-                        style={{ backgroundColor: item.badgeColor || '#10B981' }}
-                      />
-                      <div>
-                        <div className="text-xs font-bold text-white">{item.name}</div>
-                        <div className="text-[11px] text-[#94A3B8]">{item.description}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.name}
+                    meta={`Slug: /${item.slug} · Color: ${item.badgeColor || '#10B981'}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit status',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.name })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Status"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete status',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.name }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* YEARS */}
+              {activeTab === 'years' && years.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No release years configured" actionLabel="Add year" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'years' &&
                 years.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-white font-mono">{item.year}</span>
-                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                        {item.enabled ? 'Enabled' : 'Hidden'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.year.toString() })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Year"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={String(item.year)}
+                    meta={`Year tag for catalog filtering · Order: ${item.displayOrder || 1}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit year',
+                        icon: Edit2,
+                        onClick: () => {
+                          setEditingItem(item);
+                          setIsNew(false);
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete year',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: String(item.year) }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* RATINGS */}
+              {activeTab === 'ratings' && ratings.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No rating thresholds configured" actionLabel="Add rating" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'ratings' &&
                 ratings.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-xs font-bold text-white">{item.label}</div>
-                      <div className="text-[11px] text-[#94A3B8]">Min Score: {item.minRating}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.label}
+                    meta={`Minimum Score: ${item.minRating} · Order: ${item.displayOrder || 1}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit rating',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.label })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Rating"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete rating',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.label }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* TYPES */}
+              {activeTab === 'types' && types.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No formats configured" actionLabel="Add format" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'types' &&
                 types.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-xs font-bold text-white">{item.name}</div>
-                      <div className="text-[11px] text-[#94A3B8]">{item.description}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.name}
+                    meta={item.description || `Format /${item.slug}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit format',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.name })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Type"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete format',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.name }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* LANGUAGES */}
+              {activeTab === 'languages' && languages.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No audio options configured" actionLabel="Add audio" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'languages' &&
                 languages.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-xs font-bold text-white flex items-center gap-2">
-                        <span>{item.name}</span>
-                        <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-mono font-bold">
-                          {item.badgeName}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-[#94A3B8]">Code: {item.shortCode}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.name}
+                    meta={`Badge: ${item.badgeName} · Code: ${item.shortCode}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit audio',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.name })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Language"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete audio',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.name }),
+                      },
+                    ]}
+                  />
                 ))}
 
-              {/* STUDIOS */}
+              {activeTab === 'studios' && studios.length === 0 && (
+                <div className="p-8">
+                  <AdminEmptyState title="No studios configured" actionLabel="Add studio" onAction={handleOpenNew} />
+                </div>
+              )}
               {activeTab === 'studios' &&
                 studios.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="text-xs font-bold text-white">{item.name}</div>
-                      <div className="text-[11px] text-[#94A3B8]">{item.description}</div>
-                      {item.website && (
-                        <a
-                          href={item.website}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] text-[#1683FF] hover:underline"
-                        >
-                          {item.website}
-                        </a>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
+                  <AdminListRow
+                    key={item.id}
+                    id={item.id}
+                    title={item.name}
+                    meta={item.website ? `${item.website} · /${item.slug}` : `Studio /${item.slug}`}
+                    status={item.enabled ? 'live' : 'draft'}
+                    onClick={() => {
+                      setEditingItem(item);
+                      setIsNew(false);
+                    }}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit studio',
+                        icon: Edit2,
+                        onClick: () => {
                           setEditingItem(item);
                           setIsNew(false);
-                        }}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, name: item.name })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Delete Studio"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete studio',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setItemToDelete({ id: item.id, name: item.name }),
+                      },
+                    ]}
+                  />
                 ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Simple Edit / Add Modal */}
+        {/* Edit / Create Item Drawer / Modal */}
         {editingItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="relative w-full max-w-md bg-[#0B1322] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="relative w-full max-w-md bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white">
-                  {isNew ? `Add New ${activeTab.slice(0, -1)}` : `Edit ${activeTab.slice(0, -1)}`}
+                <h3 className="text-sm font-semibold text-white">
+                  {isNew ? getAddActionLabel() : `Edit ${activeTab.slice(0, -1)}`}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
-                  className="text-[#94A3B8] hover:text-white"
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-3">
-                {activeTab !== 'years' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Title / Name</label>
+              <form onSubmit={handleSave} className="space-y-4">
+                {activeTab !== 'years' ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Name / Label <span className="text-[#1E88FF]">*</span>
+                    </label>
                     <input
                       type="text"
+                      required
                       value={editingItem.name || editingItem.label || ''}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -560,142 +613,156 @@ export const AdminTaxonomyView: React.FC<AdminTaxonomyViewProps> = ({
                           setEditingItem({
                             ...editingItem,
                             name: val,
-                            slug: val.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                            slug: editingItem.slug || val.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
                           });
                         }
                       }}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                      required
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
                     />
                   </div>
-                )}
-
-                {activeTab === 'years' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Year (Number)</label>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Release Year <span className="text-[#1E88FF]">*</span>
+                    </label>
                     <input
                       type="number"
-                      value={editingItem.year || 2026}
-                      onChange={(e) =>
-                        setEditingItem({
-                          ...editingItem,
-                          year: parseInt(e.target.value, 10) || 2026,
-                        })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
                       required
+                      min="1950"
+                      max="2035"
+                      value={editingItem.year || 2026}
+                      onChange={(e) => setEditingItem({ ...editingItem, year: parseInt(e.target.value, 10) || 2026 })}
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white font-mono outline-none"
                     />
                   </div>
                 )}
 
-                {activeTab === 'languages' && (
-                  <>
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-[#94A3B8]">Short Code (e.g. hi, ja, en)</label>
-                      <input
-                        type="text"
-                        value={editingItem.shortCode || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, shortCode: e.target.value })}
-                        className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-[#94A3B8]">Badge Label (e.g. HINDI DUB)</label>
-                      <input
-                        type="text"
-                        value={editingItem.badgeName || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, badgeName: e.target.value })}
-                        className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'statuses' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Badge Color Hex</label>
+                {editingItem.slug !== undefined && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      URL Slug
+                    </label>
                     <input
                       type="text"
-                      value={editingItem.badgeColor || '#10B981'}
-                      onChange={(e) => setEditingItem({ ...editingItem, badgeColor: e.target.value })}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      value={editingItem.slug || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, '-') })}
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm font-mono text-white outline-none"
                     />
                   </div>
                 )}
 
                 {activeTab === 'ratings' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Minimum Rating Score</label>
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Minimum Rating Score (e.g. 8.5)
+                    </label>
                     <input
                       type="number"
                       step="0.1"
+                      min="0"
+                      max="10"
                       value={editingItem.minRating || 8.0}
-                      onChange={(e) =>
-                        setEditingItem({
-                          ...editingItem,
-                          minRating: parseFloat(e.target.value) || 8.0,
-                        })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                      onChange={(e) => setEditingItem({ ...editingItem, minRating: parseFloat(e.target.value) || 0 })}
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
                     />
                   </div>
                 )}
 
-                {(activeTab === 'genres' || activeTab === 'types' || activeTab === 'studios') && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Description</label>
+                {activeTab === 'languages' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-white mb-1.5">
+                        Badge Text (e.g. HIN)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingItem.badgeName || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, badgeName: e.target.value })}
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-white mb-1.5">
+                        Short Code (e.g. hi)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingItem.shortCode || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, shortCode: e.target.value })}
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'studios' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Website URL
+                    </label>
+                    <input
+                      type="url"
+                      value={editingItem.website || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, website: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm font-mono text-white outline-none"
+                    />
+                  </div>
+                )}
+
+                {editingItem.description !== undefined && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Description / Notes
+                    </label>
                     <textarea
                       rows={2}
                       value={editingItem.description || ''}
                       onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 resize-none"
+                      className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white outline-none"
                     />
                   </div>
                 )}
 
-                {/* Enabled Toggle */}
-                <div className="flex items-center gap-2 pt-2">
-                  <input
-                    type="checkbox"
-                    id="tax-enabled"
+                <div className="pt-2 border-t border-white/5">
+                  <AdminToggle
                     checked={editingItem.enabled ?? true}
-                    onChange={(e) => setEditingItem({ ...editingItem, enabled: e.target.checked })}
-                    className="rounded accent-emerald-500"
+                    onChange={(checked) => setEditingItem({ ...editingItem, enabled: checked })}
+                    label="Enabled in Public Filters"
+                    description="If turned off, this tag will be hidden from public filter dropdowns."
                   />
-                  <label htmlFor="tax-enabled" className="text-xs font-semibold text-white">
-                    Visible & Enabled on Public Site
-                  </label>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
                   <button
                     type="button"
                     onClick={() => setEditingItem(null)}
-                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl"
+                    className="h-10 px-4 rounded-[10px] border border-white/10 hover:border-white/20 text-[#CBD5E1] hover:text-white text-xs font-medium transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-xs font-bold text-white rounded-xl shadow-lg shadow-emerald-500/30 flex items-center gap-1.5"
+                    className="h-10 px-4 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{saving ? 'Saving...' : 'Save Item'}</span>
+                    {saving ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
-        {/* Delete Modal */}
-        <ConfirmModal
-          isOpen={!!itemToDelete}
-          title={`Delete ${activeTab.slice(0, -1)} Item?`}
-          message={itemToDelete ? `Are you sure you want to delete "${itemToDelete.name}" from ${activeTab}?` : ''}
-          confirmLabel={deleting ? 'Deleting...' : 'Delete Item'}
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setItemToDelete(null)}
+
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={Boolean(itemToDelete)}
+          onClose={() => setItemToDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          title={`Delete "${itemToDelete?.name}"?`}
+          consequence="This item will be removed from your catalog taxonomies."
+          confirmLabel="Delete"
+          isLoading={deleting}
         />
       </div>
     </AdminLayout>

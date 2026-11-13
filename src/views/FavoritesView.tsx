@@ -1,34 +1,47 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/auth';
 import type { FavoriteItem } from '../types/library';
 import { getFavorites, removeFavorite } from '../lib/firestore/user-activity';
-import { Heart, Trash2, Play, Film } from 'lucide-react';
+import { EmptyState, ErrorState } from '../components/common/FeedbackStates';
+import { usePageSeo } from '../hooks/usePageSeo';
+import { Heart, Play } from 'lucide-react';
 
 interface FavoritesViewProps {
   navigate: (path: string) => void;
   onShowMessage?: (msg: string) => void;
 }
 
+const FALLBACK_POSTER =
+  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80';
+
 export const FavoritesView: React.FC<FavoritesViewProps> = ({ navigate, onShowMessage }) => {
   const { user } = useAuth();
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchFavorites = async () => {
+  usePageSeo({
+    title: 'Favorite Anime | ZYNOX ANIME',
+    description: 'Your personal collection of favorite anime series and movies.',
+  });
+
+  const fetchFavorites = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const items = await getFavorites(user?.uid || null);
       setFavorites(items);
     } catch (err) {
       console.error('Favorites fetch error:', err);
+      setError('Failed to load your favorite anime collection. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.uid]);
 
   useEffect(() => {
     fetchFavorites();
-  }, [user?.uid]);
+  }, [fetchFavorites]);
 
   const handleRemove = async (animeId: string, title: string) => {
     await removeFavorite(user?.uid || null, animeId);
@@ -37,86 +50,106 @@ export const FavoritesView: React.FC<FavoritesViewProps> = ({ navigate, onShowMe
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/5 pb-6">
-        <div>
-          <h1 className="text-2xl sm:text-4xl font-black text-[#F5F9FF] flex items-center gap-3 tracking-tight">
-            <Heart className="w-7 h-7 text-rose-500 fill-rose-500" />
-            <span>Favorite Anime</span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-5">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
+            <Heart className="w-6 h-6 sm:w-7 sm:h-7 text-rose-500 fill-rose-500 shrink-0" />
+            <span className="truncate">Favorite Anime</span>
           </h1>
-          <p className="text-xs sm:text-sm text-[#A9B8CC] mt-1">
-            Your personal collection of top rated and loved anime titles
+          <p className="text-xs sm:text-sm text-[#94A3B8] mt-1">
+            Your personal collection of favorite anime titles.
           </p>
         </div>
+
+        {!loading && favorites.length > 0 && (
+          <span className="text-xs font-medium text-[#94A3B8] shrink-0">
+            {favorites.length} {favorites.length === 1 ? 'title' : 'titles'}
+          </span>
+        )}
       </div>
 
       {/* Content */}
       {loading ? (
-        <div className="py-24 text-center text-xs text-[#A9B8CC]">Loading favorites...</div>
-      ) : favorites.length === 0 ? (
-        <div className="text-center py-20 bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-8 max-w-md mx-auto space-y-4 shadow-xl">
-          <Heart className="w-12 h-12 mx-auto text-[#6E7F95]" />
-          <h3 className="text-lg font-bold text-[#F5F9FF]">No favorites yet</h3>
-          <p className="text-xs text-[#A9B8CC] leading-relaxed">
-            Click the heart icon on any anime card or detail page to add it to your favorite collection.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/browse')}
-            className="px-5 py-2.5 bg-[#0066FF] hover:bg-[#0052cc] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#0066FF]/30"
-          >
-            Browse Anime
-          </button>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="space-y-2">
+              <div className="aspect-[2/3] rounded-xl bg-[#0B1324] border border-white/10 animate-pulse" />
+              <div className="h-3.5 w-3/4 rounded bg-white/5 animate-pulse" />
+            </div>
+          ))}
         </div>
+      ) : error ? (
+        <ErrorState
+          title="Could Not Load Favorites"
+          message={error}
+          onRetry={fetchFavorites}
+        />
+      ) : favorites.length === 0 ? (
+        <EmptyState
+          icon={<Heart className="w-7 h-7 text-rose-400" />}
+          title="No favorites yet"
+          description="Tap the heart icon on any anime detail page to save it to your favorites."
+          actionLabel="Browse Anime"
+          onAction={() => navigate('/browse')}
+        />
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3">
           {favorites.map((item) => (
             <div
               key={item.animeId}
+              role="button"
+              tabIndex={0}
               onClick={() => navigate(`/anime/${item.animeSlug}`)}
-              className="group relative cursor-pointer flex flex-col transition-transform duration-200 hover:-translate-y-1 select-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigate(`/anime/${item.animeSlug}`);
+                }
+              }}
+              className="group relative cursor-pointer flex flex-col select-none min-w-0"
             >
-              <div className="relative aspect-[2/3] bg-[#081426] rounded-lg sm:rounded-xl overflow-hidden border border-white/5 group-hover:border-[#1683FF]/40 transition-colors shadow-sm">
-                {item.animePoster ? (
-                  <img
-                    src={item.animePoster}
-                    alt={item.animeTitle}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                ) : (
-                  <Film className="w-8 h-8 m-auto mt-14 text-[#6E7F95]" />
-                )}
+              <div className="relative aspect-[2/3] bg-[#0B1324] rounded-xl overflow-hidden border border-white/10 group-hover:border-[#1E88FF]/50 transition-colors">
+                <img
+                  src={item.animePoster || FALLBACK_POSTER}
+                  alt={item.animeTitle}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    if (target.src !== FALLBACK_POSTER) target.src = FALLBACK_POSTER;
+                  }}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
 
-                <div className="absolute top-1.5 right-1.5 z-10">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(item.animeId, item.animeTitle);
-                    }}
-                    className="p-1 bg-rose-500 text-white rounded-md shadow-md transition-transform hover:scale-110"
-                    title="Remove from favorites"
-                  >
-                    <Heart className="w-2.5 h-2.5 fill-white" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(item.animeId, item.animeTitle);
+                  }}
+                  className="absolute top-2 right-2 z-10 w-8 h-8 bg-black/70 hover:bg-rose-600 text-rose-400 hover:text-white rounded-full flex items-center justify-center transition-colors cursor-pointer border border-white/10"
+                  aria-label={`Remove ${item.animeTitle} from favorites`}
+                >
+                  <Heart className="w-3.5 h-3.5 fill-current" />
+                </button>
 
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                  <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg">
-                    <Play className="w-3 h-3 fill-white ml-0.5" />
+                  <div className="w-9 h-9 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-lg">
+                    <Play className="w-4 h-4 fill-white ml-0.5" />
                   </div>
                 </div>
               </div>
 
-              <div className="pt-1.5 flex flex-col gap-0.5">
-                <h4 className="font-bold text-[11px] sm:text-xs text-white group-hover:text-[#00CFFF] transition-colors truncate leading-tight">
+              <div className="pt-2 flex flex-col gap-0.5 min-w-0">
+                <h4 className="font-semibold text-xs text-white group-hover:text-[#1E88FF] transition-colors truncate leading-tight">
                   {item.animeTitle}
                 </h4>
 
-                {item.genres && (
-                  <p className="text-[10px] text-[#94A3B8] truncate">
+                {item.genres && item.genres.length > 0 && (
+                  <p className="text-[11px] text-[#94A3B8] truncate">
                     {item.genres.slice(0, 2).join(' • ')}
                   </p>
                 )}

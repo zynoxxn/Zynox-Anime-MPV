@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../lib/auth';
 import type { CommentItem } from '../../types/library';
 import {
@@ -9,16 +9,8 @@ import {
 import { CommentComposer } from './CommentComposer';
 import { CommentItemCard } from './CommentItemCard';
 import { ReportCommentModal } from './ReportCommentModal';
-import {
-  MessageSquare,
-  Sparkles,
-  ArrowUpDown,
-  Loader2,
-  AlertCircle,
-  Clock,
-  Heart,
-  TrendingUp,
-} from 'lucide-react';
+import { getSiteSettings } from '../../lib/firestore/site-settings';
+import { ChevronDown, Check, X } from 'lucide-react';
 
 interface CommentSectionProps {
   targetType: 'anime' | 'episode';
@@ -30,6 +22,14 @@ interface CommentSectionProps {
   onShowMessage: (msg: string) => void;
   navigate?: (path: string) => void;
 }
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'most_liked', label: 'Top Liked' },
+  { value: 'oldest', label: 'Oldest' },
+] as const;
+
+type SortOptionValue = (typeof SORT_OPTIONS)[number]['value'];
 
 export const CommentSection: React.FC<CommentSectionProps> = ({
   targetType,
@@ -43,9 +43,23 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
 }) => {
   const { user } = useAuth();
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [hasIntersected, setHasIntersected] = useState(false);
+  const [commentsEnabled, setCommentsEnabled] = useState(true);
+
+  useEffect(() => {
+    getSiteSettings().then((cfg) => {
+      if (cfg.enableComments === false || cfg.enableCommunityComments === false) {
+        setCommentsEnabled(false);
+      }
+    });
+  }, []);
+
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<'newest' | 'most_liked' | 'oldest'>('newest');
+  const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortOptionValue>('newest');
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [likedCommentIds, setLikedCommentIds] = useState<Set<string>>(new Set());
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
   const [displayLimit, setDisplayLimit] = useState(10);
@@ -54,9 +68,33 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [selectedCommentForReport, setSelectedCommentForReport] = useState<CommentItem | null>(null);
 
-  // Fetch comments and blocked users
+  // Lazy loading observer: only fetch comments when nearing viewport
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setHasIntersected(true);
+      return;
+    }
+    const currentRef = containerRef.current;
+    if (!currentRef) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setHasIntersected(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '300px' }
+    );
+
+    observer.observe(currentRef);
+    return () => observer.disconnect();
+  }, []);
+
+  // Fetch comments and user data
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       let blocks: string[] = [];
       let likes = new Set<string>();
@@ -82,16 +120,30 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
       });
 
       setComments(items);
-    } catch (err) {
-      console.warn('Failed to load comment discussions:', err);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load comments');
     } finally {
       setLoading(false);
     }
   }, [animeId, targetType, episodeNumber, sortBy, user?.uid]);
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (hasIntersected) {
+      fetchAll();
+    }
+  }, [hasIntersected, fetchAll]);
+
+  // Lock body scroll on phone when sort dropdown sheet is open
+  useEffect(() => {
+    if (sortDropdownOpen && window.innerWidth < 640) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [sortDropdownOpen]);
 
   const handleReportClick = (comment: CommentItem) => {
     setSelectedCommentForReport(comment);
@@ -107,78 +159,117 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     setComments((prev) => prev.filter((c) => c.id !== deletedId));
   };
 
-  const handleNewCommentAdded = () => {
-    fetchAll();
+  const handleNewCommentAdded = (_id: string, optimisticData?: any) => {
+    if (optimisticData) {
+      setComments((prev) => [optimisticData, ...prev]);
+    } else {
+      fetchAll();
+    }
   };
 
+  const currentSortLabel = SORT_OPTIONS.find((s) => s.value === sortBy)?.label || 'Newest';
   const visibleComments = comments.slice(0, displayLimit);
   const hasMore = comments.length > displayLimit;
 
   return (
-    <div className="space-y-6">
-      {/* Section Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center text-[#1683FF]">
-            <MessageSquare className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>{targetType === 'episode' ? `Episode ${episodeNumber} Discussion` : 'Community Comments'}</span>
-              <span className="px-2 py-0.5 bg-white/10 text-zinc-300 text-xs rounded-full font-mono">
-                {comments.length}
-              </span>
-            </h3>
-            <p className="text-xs text-zinc-400">
-              Share your thoughts, episode reactions, and theories
-            </p>
-          </div>
+    <div
+      ref={containerRef}
+      className="border-t border-white/[0.08] pt-5 sm:pt-6 px-4 sm:px-6 max-w-[800px] w-full mx-auto space-y-4"
+    >
+      {/* 1. Header (One Line): "Comments" + count pill on left, compact sort dropdown on right */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-bold text-white tracking-tight">Comments</h3>
+          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-white/10 text-zinc-300">
+            {comments.length}
+          </span>
         </div>
 
-        {/* Sort Tabs */}
-        <div className="flex items-center bg-[#050A14] border border-white/10 p-1 rounded-xl text-xs shrink-0 self-start sm:self-auto">
+        {/* Custom Sort Dropdown */}
+        <div className="relative">
           <button
             type="button"
-            onClick={() => setSortBy('newest')}
-            className={`px-3 py-1 rounded-lg flex items-center gap-1.5 transition-all ${
-              sortBy === 'newest'
-                ? 'bg-[#1683FF] text-white font-bold shadow-sm'
-                : 'text-zinc-400 hover:text-white'
-            }`}
+            onClick={() => setSortDropdownOpen(!sortDropdownOpen)}
+            className="h-8 px-3 rounded-lg bg-[#0B1324] hover:bg-[#101A30] border border-white/10 text-zinc-300 hover:text-white text-[13px] font-medium flex items-center gap-1.5 transition-colors"
+            aria-label="Sort comments"
           >
-            <Clock className="w-3 h-3" />
-            <span>Newest</span>
+            <span>{currentSortLabel}</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-150 ${
+                sortDropdownOpen ? 'rotate-180' : ''
+              }`}
+            />
           </button>
 
-          <button
-            type="button"
-            onClick={() => setSortBy('most_liked')}
-            className={`px-3 py-1 rounded-lg flex items-center gap-1.5 transition-all ${
-              sortBy === 'most_liked'
-                ? 'bg-[#1683FF] text-white font-bold shadow-sm'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Heart className="w-3 h-3" />
-            <span>Top Liked</span>
-          </button>
+          {sortDropdownOpen && (
+            <>
+              {/* Desktop Dropdown (>=640px) */}
+              <div
+                className="hidden sm:block fixed inset-0 z-20"
+                onClick={() => setSortDropdownOpen(false)}
+              />
+              <div className="hidden sm:block absolute right-0 top-full mt-1.5 w-36 bg-[#101A30] border border-white/10 rounded-xl shadow-xl p-1 z-30 animate-in fade-in zoom-in-95 space-y-0.5">
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setSortBy(opt.value);
+                      setSortDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-[13px] rounded-lg flex items-center justify-between transition-colors ${
+                      sortBy === opt.value
+                        ? 'bg-[#1E88FF]/15 text-[#1E88FF] font-semibold'
+                        : 'text-zinc-300 hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {sortBy === opt.value && <Check className="w-3.5 h-3.5 text-[#1E88FF]" />}
+                  </button>
+                ))}
+              </div>
 
-          <button
-            type="button"
-            onClick={() => setSortBy('oldest')}
-            className={`px-3 py-1 rounded-lg flex items-center gap-1.5 transition-all ${
-              sortBy === 'oldest'
-                ? 'bg-[#1683FF] text-white font-bold shadow-sm'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <TrendingUp className="w-3 h-3" />
-            <span>Oldest</span>
-          </button>
+              {/* Phone Bottom Sheet (<640px) */}
+              <div className="sm:hidden fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+                <div className="fixed inset-0" onClick={() => setSortDropdownOpen(false)} />
+                <div className="relative w-full max-w-lg bg-[#0B1324] border-t border-white/10 rounded-t-2xl p-4 pb-[calc(16px+env(safe-area-inset-bottom))] space-y-1.5 z-10 animate-in slide-in-from-bottom duration-200">
+                  <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+                  <div className="flex items-center justify-between px-2 pb-2 border-b border-white/5">
+                    <span className="text-sm font-semibold text-zinc-300">Sort comments by</span>
+                    <button
+                      type="button"
+                      onClick={() => setSortDropdownOpen(false)}
+                      className="p-1 text-zinc-400 hover:text-white rounded-md"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {SORT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setSortBy(opt.value);
+                        setSortDropdownOpen(false);
+                      }}
+                      className={`w-full h-12 px-3 text-sm rounded-xl flex items-center justify-between transition-colors ${
+                        sortBy === opt.value
+                          ? 'bg-[#1E88FF]/15 text-[#1E88FF] font-semibold'
+                          : 'text-zinc-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {sortBy === opt.value && <Check className="w-4 h-4 text-[#1E88FF]" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Comment Composer */}
+      {/* 2. Compact Comment Input (expands on focus/tap) */}
       <CommentComposer
         targetType={targetType}
         animeId={animeId}
@@ -188,52 +279,70 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
         episodeNumber={episodeNumber}
         onSuccess={handleNewCommentAdded}
         onShowMessage={onShowMessage}
+        navigate={navigate}
       />
 
-      {/* Comments List Feed */}
-      {loading ? (
-        <div className="py-12 text-center text-zinc-400 flex flex-col items-center justify-center gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-[#1683FF]" />
-          <span className="text-xs">Loading community discussions...</span>
-        </div>
-      ) : comments.length === 0 ? (
-        <div className="bg-[#050A14]/70 border border-white/5 rounded-2xl p-8 text-center space-y-2">
-          <MessageSquare className="w-8 h-8 mx-auto text-zinc-600" />
-          <div className="text-sm font-bold text-white">No comments yet</div>
-          <p className="text-xs text-zinc-400 max-w-sm mx-auto">
-            Be the first to start the conversation on this {targetType === 'episode' ? 'episode' : 'anime'}!
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {visibleComments.map((comment) => (
-            <CommentItemCard
-              key={comment.id}
-              comment={comment}
-              userLiked={likedCommentIds.has(comment.id!)}
-              blockedUserIds={blockedUserIds}
-              onReportClick={handleReportClick}
-              onUserBlocked={handleUserBlocked}
-              onCommentDeleted={handleCommentDeleted}
-              onShowMessage={onShowMessage}
-              navigate={navigate}
-            />
-          ))}
+      {/* 3. Comments List / Skeletons / Empty / Error */}
+      <div className="pt-1">
+        {loading && !comments.length ? (
+          <div className="space-y-4 py-2">
+            {[1, 2, 3].map((n) => (
+              <div key={n} className="flex items-start gap-3 py-3 border-b border-white/[0.04]">
+                <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 w-28 bg-white/10 rounded animate-pulse" />
+                  <div className="h-3 w-3/4 bg-white/5 rounded animate-pulse" />
+                  <div className="h-3 w-1/2 bg-white/5 rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? (
+          <div className="py-8 text-center text-sm text-zinc-400">
+            <span>Failed to load comments.</span>
+            <button
+              type="button"
+              onClick={fetchAll}
+              className="text-[#1E88FF] hover:underline font-semibold ml-2"
+            >
+              Retry
+            </button>
+          </div>
+        ) : comments.length === 0 ? (
+          <div className="py-8 text-center text-zinc-500 text-sm">
+            No comments yet — be the first!
+          </div>
+        ) : (
+          <div>
+            {visibleComments.map((comment) => (
+              <CommentItemCard
+                key={comment.id}
+                comment={comment}
+                userLiked={likedCommentIds.has(comment.id!)}
+                blockedUserIds={blockedUserIds}
+                onReportClick={handleReportClick}
+                onUserBlocked={handleUserBlocked}
+                onCommentDeleted={handleCommentDeleted}
+                onShowMessage={onShowMessage}
+                navigate={navigate}
+              />
+            ))}
 
-          {/* Load More Button */}
-          {hasMore && (
-            <div className="pt-2 text-center">
-              <button
-                type="button"
-                onClick={() => setDisplayLimit((prev) => prev + 10)}
-                className="px-6 py-2.5 bg-[#050A14] hover:bg-[#0D1B2E] border border-white/10 hover:border-[#1683FF]/40 text-xs font-bold text-white rounded-xl transition-all shadow-md"
-              >
-                Load More Comments ({comments.length - displayLimit} remaining)
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="pt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => setDisplayLimit((prev) => prev + 10)}
+                  className="h-9 px-5 bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-xs font-semibold rounded-xl transition-colors border border-white/10"
+                >
+                  Load more comments ({comments.length - displayLimit} remaining)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Report Modal */}
       <ReportCommentModal

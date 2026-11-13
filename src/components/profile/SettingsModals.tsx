@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Bell, Shield, Check } from 'lucide-react';
+import { AdminToggle } from '../admin/AdminToggle';
 
 interface NotificationSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowMessage: (msg: string) => void;
 }
+
+const NOTIF_STORAGE_KEY = 'zynox_notif_prefs';
+const PRIVACY_STORAGE_KEY = 'zynox_privacy_prefs';
 
 export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
   isOpen,
@@ -17,102 +21,111 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
   const [communityReplies, setCommunityReplies] = useState(true);
   const [newsletter, setNewsletter] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const saved = localStorage.getItem(NOTIF_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.newEpisodes === 'boolean') setNewEpisodes(parsed.newEpisodes);
+        if (typeof parsed.watchlistAlerts === 'boolean') setWatchlistAlerts(parsed.watchlistAlerts);
+        if (typeof parsed.communityReplies === 'boolean') setCommunityReplies(parsed.communityReplies);
+        if (typeof parsed.newsletter === 'boolean') setNewsletter(parsed.newsletter);
+      }
+    } catch {
+      // ignore
+    }
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSave = () => {
+    try {
+      localStorage.setItem(
+        NOTIF_STORAGE_KEY,
+        JSON.stringify({ newEpisodes, watchlistAlerts, communityReplies, newsletter })
+      );
+    } catch {
+      // ignore
+    }
     onShowMessage('Notification preferences updated!');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#081426] border border-white/10 rounded-2xl w-full max-w-md p-6 relative shadow-2xl space-y-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[#0B1324] border border-white/10 rounded-2xl w-full max-w-md p-6 relative shadow-2xl space-y-5"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Close notification settings"
+          className="absolute top-4 right-4 w-8 h-8 rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center text-[#00CFFF]">
+        <div className="flex items-center gap-3 pr-8">
+          <div className="w-10 h-10 rounded-xl bg-[#1E88FF]/15 border border-[#1E88FF]/30 flex items-center justify-center text-[#1E88FF] shrink-0">
             <Bell className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-base font-bold text-[#F8FAFC]">Notification Settings</h3>
-            <p className="text-xs text-[#94A3B8]">Manage what alerts you receive.</p>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-white truncate">Notification Settings</h3>
+            <p className="text-xs text-[#94A3B8] truncate">Manage what alerts you receive.</p>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">New Episode Releases</div>
-              <div className="text-[11px] text-[#94A3B8]">Get alerted when followed animes release episodes</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={newEpisodes}
-              onChange={(e) => setNewEpisodes(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Watchlist Updates</div>
-              <div className="text-[11px] text-[#94A3B8]">Notify me about changes to titles in my watchlist</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={watchlistAlerts}
-              onChange={(e) => setWatchlistAlerts(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Community Discussion Replies</div>
-              <div className="text-[11px] text-[#94A3B8]">When other otaku reply to your comments</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={communityReplies}
-              onChange={(e) => setCommunityReplies(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Seasonal Anime Newsletter</div>
-              <div className="text-[11px] text-[#94A3B8]">Weekly digest of top trending series and schedules</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={newsletter}
-              onChange={(e) => setNewsletter(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
+        <div className="space-y-2 bg-[#101A30] border border-white/10 rounded-xl p-3.5 divide-y divide-white/5">
+          <AdminToggle
+            checked={newEpisodes}
+            onChange={setNewEpisodes}
+            label="New Episode Releases"
+            description="Get alerted when followed anime release episodes"
+          />
+          <AdminToggle
+            checked={watchlistAlerts}
+            onChange={setWatchlistAlerts}
+            label="Watchlist Updates"
+            description="Notify about changes to titles in your watchlist"
+          />
+          <AdminToggle
+            checked={communityReplies}
+            onChange={setCommunityReplies}
+            label="Community Replies"
+            description="When other viewers reply to your comments"
+          />
+          <AdminToggle
+            checked={newsletter}
+            onChange={setNewsletter}
+            label="Seasonal Digest"
+            description="Weekly digest of trending series and schedules"
+          />
         </div>
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex gap-2.5 pt-1">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2.5 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-semibold text-[#94A3B8] transition-colors"
+            className="flex-1 h-10 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-semibold text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
           >
             Close
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white text-xs font-bold transition-all shadow-lg shadow-[#1683FF]/30 flex items-center justify-center gap-2"
+            className="flex-1 h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
-            <Check className="w-4 h-4" />
+            <Check className="w-4 h-4 shrink-0" />
             <span>Save Preferences</span>
           </button>
         </div>
@@ -136,89 +149,106 @@ export const PrivacySettingsModal: React.FC<PrivacySettingsModalProps> = ({
   const [showWatchlist, setShowWatchlist] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const saved = localStorage.getItem(PRIVACY_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.publicProfile === 'boolean') setPublicProfile(parsed.publicProfile);
+        if (typeof parsed.showWatchlist === 'boolean') setShowWatchlist(parsed.showWatchlist);
+        if (typeof parsed.showHistory === 'boolean') setShowHistory(parsed.showHistory);
+      }
+    } catch {
+      // ignore
+    }
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSave = () => {
+    try {
+      localStorage.setItem(
+        PRIVACY_STORAGE_KEY,
+        JSON.stringify({ publicProfile, showWatchlist, showHistory })
+      );
+    } catch {
+      // ignore
+    }
     onShowMessage('Privacy preferences saved!');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-[#081426] border border-white/10 rounded-2xl w-full max-w-md p-6 relative shadow-2xl space-y-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[#0B1324] border border-white/10 rounded-2xl w-full max-w-md p-6 relative shadow-2xl space-y-5"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Close privacy settings"
+          className="absolute top-4 right-4 w-8 h-8 rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#1683FF]/20 border border-[#1683FF]/40 flex items-center justify-center text-[#00CFFF]">
+        <div className="flex items-center gap-3 pr-8">
+          <div className="w-10 h-10 rounded-xl bg-[#1E88FF]/15 border border-[#1E88FF]/30 flex items-center justify-center text-[#1E88FF] shrink-0">
             <Shield className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="text-base font-bold text-[#F8FAFC]">Privacy Settings</h3>
-            <p className="text-xs text-[#94A3B8]">Control your profile visibility to other viewers.</p>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-white truncate">Privacy Settings</h3>
+            <p className="text-xs text-[#94A3B8] truncate">
+              Control your profile visibility to other viewers.
+            </p>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Public Otaku Profile</div>
-              <div className="text-[11px] text-[#94A3B8]">Allow others to view your profile link</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={publicProfile}
-              onChange={(e) => setPublicProfile(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Share Watchlist Publicly</div>
-              <div className="text-[11px] text-[#94A3B8]">Display your saved animes on your public profile</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={showWatchlist}
-              onChange={(e) => setShowWatchlist(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 bg-[#030712] rounded-xl border border-white/5 cursor-pointer">
-            <div>
-              <div className="text-xs font-semibold text-[#F8FAFC]">Share Watch History</div>
-              <div className="text-[11px] text-[#94A3B8]">Show recently watched episode badges publicly</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={showHistory}
-              onChange={(e) => setShowHistory(e.target.checked)}
-              className="accent-[#1683FF] w-4 h-4 cursor-pointer"
-            />
-          </label>
+        <div className="space-y-2 bg-[#101A30] border border-white/10 rounded-xl p-3.5 divide-y divide-white/5">
+          <AdminToggle
+            checked={publicProfile}
+            onChange={setPublicProfile}
+            label="Public Profile"
+            description="Allow others to view your profile page"
+          />
+          <AdminToggle
+            checked={showWatchlist}
+            onChange={setShowWatchlist}
+            label="Share Watchlist Publicly"
+            description="Display your saved anime on your public profile"
+          />
+          <AdminToggle
+            checked={showHistory}
+            onChange={setShowHistory}
+            label="Share Watch History"
+            description="Show recently watched activity publicly"
+          />
         </div>
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex gap-2.5 pt-1">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2.5 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-semibold text-[#94A3B8] transition-colors"
+            className="flex-1 h-10 px-4 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-semibold text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
           >
             Close
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-white text-xs font-bold transition-all shadow-lg shadow-[#1683FF]/30 flex items-center justify-center gap-2"
+            className="flex-1 h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
           >
-            <Check className="w-4 h-4" />
+            <Check className="w-4 h-4 shrink-0" />
             <span>Save Settings</span>
           </button>
         </div>

@@ -1,28 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import type { Episode } from '../../types/episode';
 import type { Anime } from '../../types/anime';
-import { getAllEpisodesByAnimeId, deleteEpisode, updateEpisode, deleteEpisodesBySeason } from '../../lib/firestore/episodes';
-import { getAllAnimes, cleanAnimeTitle } from '../../lib/firestore/anime';
+import {
+  getAllEpisodesByAnimeId,
+  deleteEpisode,
+  updateEpisode,
+  createEpisode,
+} from '../../lib/firestore/episodes';
+import { getAllAnimes } from '../../lib/firestore/anime';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
-import { ConfirmModal } from '../../components/ConfirmModal';
 import {
-  PlusCircle,
-  Edit,
-  Trash2,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSelect,
+  AdminListRow,
+  AdminConfirmDialog,
+  AdminEmptyState,
+  AdminErrorState,
+  AdminSkeleton,
+} from '../../components/admin';
+import {
+  Plus,
   Tv,
   Film,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Play,
-  Search,
-  Server,
-  Layers,
   Download,
+  Copy,
+  Trash2,
+  ExternalLink,
   ListPlus,
-  Clock,
 } from 'lucide-react';
 
 interface AdminEpisodeListViewProps {
@@ -44,28 +51,44 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [selectedAnimeId, setSelectedAnimeId] = useState<string>(initialAnimeId || qAnimeId || 'all');
-  const [selectedSeason, setSelectedSeason] = useState<number | 'all'>(
-    qSeason ? parseInt(qSeason, 10) || 'all' : 'all'
-  );
+  const [selectedSeason, setSelectedSeason] = useState<string>(qSeason || 'all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [targetDeleteEp, setTargetDeleteEp] = useState<Episode | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const timeoutTimerRef = useRef<any>(null);
 
   const fetchInitialData = async () => {
     try {
       setLoading(true);
       setError(null);
+
+      // 8-second timeout safeguard to prevent hanging in skeleton state
+      if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
+      timeoutTimerRef.current = setTimeout(() => {
+        setLoading((curLoading) => {
+          if (curLoading) {
+            setError('Loading episodes timed out. Please check your network and retry.');
+            return false;
+          }
+          return curLoading;
+        });
+      }, 8000);
+
       const [animeList, epList] = await Promise.all([
-        getAllAnimes(),
-        getAllEpisodesByAnimeId(selectedAnimeId === 'all' ? undefined : selectedAnimeId),
+        getAllAnimes().catch(() => []),
+        getAllEpisodesByAnimeId(selectedAnimeId === 'all' ? undefined : selectedAnimeId).catch(() => []),
       ]);
+
+      if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
       setAnimes(animeList);
       setEpisodes(epList);
-    } catch (err: any) {
-      console.error('Error fetching admin episodes:', err);
-      setError('Failed to load episodes list.');
+    } catch {
+      if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
+      setError('Failed to load episodes list. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,20 +96,29 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
 
   useEffect(() => {
     fetchInitialData();
+    return () => {
+      if (timeoutTimerRef.current) clearTimeout(timeoutTimerRef.current);
+    };
   }, [selectedAnimeId]);
 
-  const handleTogglePublish = async (ep: Episode) => {
-    if (!ep.id) return;
+  const handleDuplicateEpisode = async (ep: Episode) => {
     try {
-      const nextStatus = !ep.published;
-      await updateEpisode(ep.id, { published: nextStatus });
-      setEpisodes((prev) =>
-        prev.map((e) => (e.id === ep.id ? { ...e, published: nextStatus } : e))
-      );
-      onShowMessage(`Episode marked as ${nextStatus ? 'Published' : 'Draft'}.`);
-    } catch (err: any) {
-      console.error('Failed to update published status:', err);
-      setError('Failed to update episode published status.');
+      const duplicated: Omit<Episode, 'id'> = {
+        ...ep,
+        episodeNumber: (ep.episodeNumber || 1) + 1,
+        title: `${ep.title || 'Episode'} (Copy)`,
+        published: false,
+      };
+      delete (duplicated as any).id;
+      const createdId = await createEpisode(duplicated);
+      const newEp: Episode = {
+        ...duplicated,
+        id: createdId,
+      };
+      setEpisodes((prev) => [newEp, ...prev]);
+      onShowMessage(`Duplicated as Episode ${newEp.episodeNumber}.`);
+    } catch {
+      onShowMessage('Failed to duplicate episode.');
     }
   };
 
@@ -101,352 +133,212 @@ export const AdminEpisodeListView: React.FC<AdminEpisodeListViewProps> = ({
         'Deleted Episode',
         'Episode',
         targetDeleteEp.id,
-        `Ep ${targetDeleteEp.episodeNumber} - ${targetDeleteEp.title || ''}`
+        `EP ${targetDeleteEp.episodeNumber} - ${targetDeleteEp.title}`
       );
       setEpisodes((prev) => prev.filter((e) => e.id !== targetDeleteEp.id));
-      onShowMessage('Episode deleted successfully.');
-    } catch (err: any) {
-      console.error('Failed to delete episode:', err);
-      setError('Failed to delete episode.');
+      onShowMessage(`Episode ${targetDeleteEp.episodeNumber} deleted.`);
+    } catch {
+      onShowMessage('Failed to delete episode.');
     } finally {
       setIsDeleting(false);
       setTargetDeleteEp(null);
     }
   };
 
-  const handleDeleteSeasonEpisodes = async () => {
-    if (selectedAnimeId === 'all' || selectedSeason === 'all') return;
-    if (
-      !window.confirm(
-        `Are you sure you want to delete all episodes for Season ${selectedSeason}? You can then re-add clean episodes (Ep 1, Ep 2...) via Bulk Add.`
-      )
-    ) {
-      return;
-    }
-    try {
-      setLoading(true);
-      const count = await deleteEpisodesBySeason(selectedAnimeId, selectedSeason);
-      onShowMessage(`Deleted ${count} episodes for Season ${selectedSeason}.`);
-      await fetchInitialData();
-    } catch (err: any) {
-      console.error('Failed to delete season episodes:', err);
-      onShowMessage(err.message || 'Failed to delete season episodes');
-    } finally {
-      setLoading(false);
-    }
+  // Compute server count safely across sub/dub/direct video
+  const getServerCount = (ep: Episode) => {
+    const allSources = ep.sources || ep.videoSources || [];
+    const directCount = ep.videoUrl ? 1 : 0;
+    return allSources.length + directCount;
   };
 
-  const getAnimeTitle = (animeId: string): string => {
-    const found = animes.find((a) => a.id === animeId || a.slug === animeId);
-    return found ? found.title : animeId;
-  };
+  // Filtered episodes
+  const filteredEpisodes = useMemo(() => {
+    return episodes.filter((ep) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        (ep.title || '').toLowerCase().includes(q) ||
+        String(ep.episodeNumber).includes(q) ||
+        (ep.animeTitle || '').toLowerCase().includes(q);
 
-  const selectedAnime = animes.find((a) => a.id === selectedAnimeId || a.slug === selectedAnimeId);
+      const epSeason = ep.seasonNumber || ep.season || 1;
+      const matchesSeason = selectedSeason === 'all' || String(epSeason) === selectedSeason;
 
-  const availableSeasons = React.useMemo(() => {
-    const set = new Set<number>();
-    if (selectedAnime?.seasonsList) {
-      selectedAnime.seasonsList.forEach((s) => {
-        if (s.seasonNumber) set.add(Number(s.seasonNumber));
-      });
-    }
-    episodes.forEach((ep) => {
-      set.add(Number(ep.seasonNumber || ep.season || 1));
+      return matchesSearch && matchesSeason;
     });
-    return Array.from(set).sort((a, b) => a - b);
-  }, [episodes, selectedAnime]);
+  }, [episodes, searchQuery, selectedSeason]);
 
-  const filtered = episodes.filter((ep) => {
-    const titleMatch = (ep.title || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const numMatch = ep.episodeNumber.toString().includes(searchQuery);
-    const epSeason = Number(ep.seasonNumber || ep.season || 1);
-    const seasonMatch = selectedSeason === 'all' || epSeason === selectedSeason;
-    return (titleMatch || numMatch) && seasonMatch;
-  });
+  // Current selected anime title
+  const currentAnime = animes.find((a) => (a.id === selectedAnimeId || a.slug === selectedAnimeId));
 
   return (
     <AdminLayout currentTab="episodes" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-5 sm:p-6 rounded-2xl">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white">
-              Episodes
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              {episodes.length} total episodes {selectedSeason !== 'all' && `(Season ${selectedSeason})`}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            <button
-              type="button"
-              onClick={() => {
-                let url = '/admin/downloads';
-                if (selectedAnimeId !== 'all') {
-                  url += `?animeId=${selectedAnimeId}`;
-                  if (selectedSeason !== 'all') {
-                    url += `&season=${selectedSeason}`;
-                  }
-                }
+      <div className="space-y-6 min-w-0">
+        {/* Page Header (ONE primary button: "Add episode") */}
+        <AdminPageHeader
+          title={currentAnime ? `${currentAnime.title} — Episodes` : 'Episodes'}
+          description={`${episodes.length} streamable episodes loaded`}
+          primaryAction={{
+            label: 'Add episode',
+            icon: Plus,
+            onClick: () => {
+              const url = selectedAnimeId !== 'all' ? `/admin/episodes/new?animeId=${selectedAnimeId}` : '/admin/episodes/new';
+              navigate(url);
+            },
+          }}
+          secondaryActions={[
+            {
+              label: 'Bulk import',
+              icon: ListPlus,
+              onClick: () => {
+                const url = selectedAnimeId !== 'all' ? `/admin/episodes/bulk?animeId=${selectedAnimeId}` : '/admin/episodes/bulk';
                 navigate(url);
-              }}
-              className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black border border-amber-500/30 text-xs font-bold rounded-xl shadow-md shadow-amber-500/10 flex items-center gap-2 transition-all self-start sm:self-auto cursor-pointer"
-              title="Bulk Episode Downloads Manager (Zip 1, Zip 2, 360p, 480p, 720p, 1080p)"
-            >
-              <Download className="w-4 h-4" />
-              <span>Downloads</span>
-            </button>
+              },
+            },
+          ]}
+        />
 
-            <button
-              type="button"
-              onClick={() => {
-                let url = '/admin/episodes/bulk';
-                if (selectedAnimeId !== 'all') {
-                  url += `?animeId=${selectedAnimeId}`;
-                  if (selectedSeason !== 'all') {
-                    url += `&season=${selectedSeason}`;
-                  }
-                }
-                navigate(url);
-              }}
-              className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-md shadow-cyan-500/20 flex items-center gap-2 transition-all self-start sm:self-auto cursor-pointer"
-              title="Bulk upload multiple episodes at once"
-            >
-              <ListPlus className="w-4 h-4" />
-              <span>Bulk Add</span>
-            </button>
+        {error && (
+          <AdminErrorState
+            message={error}
+            onRetry={fetchInitialData}
+          />
+        )}
 
-            <button
-              type="button"
-              onClick={() => {
-                let url = '/admin/episodes/new';
-                if (selectedAnimeId !== 'all') {
-                  url += `?animeId=${selectedAnimeId}`;
-                  if (selectedSeason !== 'all') {
-                    url += `&season=${selectedSeason}`;
-                  }
-                }
-                navigate(url);
-              }}
-              className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold rounded-xl shadow-md shadow-cyan-500/20 flex items-center gap-2 transition-all self-start sm:self-auto cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Add Episode</span>
-            </button>
+        {/* Filter Bar: Search + (Anime & Season selects side-by-side on tablet+, stacked on phone) */}
+        <div className="space-y-3">
+          <AdminSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by episode number or title..."
+          />
 
-            {selectedAnimeId !== 'all' && selectedSeason !== 'all' && (
-              <button
-                type="button"
-                onClick={handleDeleteSeasonEpisodes}
-                className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                title={`Delete all Season ${selectedSeason} episodes to start fresh`}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete S{selectedSeason} Eps</span>
-              </button>
-            )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <AdminSelect
+                value={selectedAnimeId}
+                onChange={(val) => setSelectedAnimeId(String(val))}
+                options={[
+                  { value: 'all', label: 'All Anime Series' },
+                  ...animes.map((a) => ({
+                    value: a.id || a.slug,
+                    label: a.title,
+                  })),
+                ]}
+                sheetTitle="Filter by Anime"
+              />
+            </div>
+
+            <div>
+              <AdminSelect
+                value={selectedSeason}
+                onChange={(val) => setSelectedSeason(String(val))}
+                options={[
+                  { value: 'all', label: 'All Seasons' },
+                  { value: '1', label: 'Season 1' },
+                  { value: '2', label: 'Season 2' },
+                  { value: '3', label: 'Season 3' },
+                  { value: '4', label: 'Season 4' },
+                ]}
+                sheetTitle="Filter by Season"
+              />
+            </div>
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Filter bar */}
-        <div className="bg-[#0B1322] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              name="admin_episode_search"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder="Search episodes by title or episode number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#050A14] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-            />
-          </div>
-
-          <div className="w-full sm:w-64">
-            <select
-              value={selectedAnimeId}
-              onChange={(e) => {
-                setSelectedAnimeId(e.target.value);
-                setSelectedSeason('all');
-              }}
-              className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-            >
-              <option value="all">All Anime Series ({episodes.length} eps)</option>
-              {animes.map((a) => (
-                <option key={a.id || a.slug} value={a.id || a.slug}>
-                  {a.title}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {availableSeasons.length > 1 && (
-            <div className="w-full sm:w-44">
-              <select
-                value={selectedSeason}
-                onChange={(e) =>
-                  setSelectedSeason(e.target.value === 'all' ? 'all' : Number(e.target.value))
+        {/* Episodes List Container */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] overflow-hidden">
+          {loading ? (
+            <div className="p-4 space-y-3">
+              <AdminSkeleton variant="text" count={6} />
+            </div>
+          ) : filteredEpisodes.length === 0 ? (
+            <div className="p-8">
+              <AdminEmptyState
+                icon={Tv}
+                title={
+                  searchQuery || selectedSeason !== 'all' || selectedAnimeId !== 'all'
+                    ? 'No episodes match your filters'
+                    : 'No episodes yet — add the first one'
                 }
-                className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-              >
-                <option value="all">All Seasons ({episodes.length})</option>
-                {availableSeasons.map((s) => {
-                  const meta = selectedAnime?.seasonsList?.find(
-                    (sl) => Number(sl.seasonNumber) === s
-                  );
-                  return (
-                    <option key={s} value={s}>
-                      {meta?.title || `Season ${s}`}
-                    </option>
-                  );
-                })}
-              </select>
+                description={
+                  searchQuery || selectedSeason !== 'all' || selectedAnimeId !== 'all'
+                    ? 'Try clearing the search query or selecting all seasons.'
+                    : 'Start uploading episodes, stream server embeds, and download mirrors.'
+                }
+                actionLabel="Add episode"
+                onAction={() => {
+                  const url = selectedAnimeId !== 'all' ? `/admin/episodes/new?animeId=${selectedAnimeId}` : '/admin/episodes/new';
+                  navigate(url);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filteredEpisodes.map((ep) => {
+                const epId = ep.id || `ep-${ep.episodeNumber}`;
+                const serverCount = getServerCount(ep);
+                const seasonNum = ep.seasonNumber || ep.season || 1;
+                const parentAnime = animes.find((a) => a.id === ep.animeId || a.slug === ep.animeId || a.slug === ep.animeSlug);
+                const animeName = parentAnime?.title || ep.animeTitle || 'Anime';
+
+                return (
+                  <AdminListRow
+                    key={epId}
+                    id={epId}
+                    title={`EP ${ep.episodeNumber} · ${ep.title || `Episode ${ep.episodeNumber}`}`}
+                    meta={`${animeName} · Season ${seasonNum} · ${serverCount} ${serverCount === 1 ? 'server' : 'servers'}`}
+                    thumbnail={ep.thumbnail || parentAnime?.poster}
+                    thumbnailType="episode"
+                    status={ep.published === false ? 'draft' : ep.status || 'live'}
+                    onClick={() => navigate(`/admin/episodes/edit/${epId}`)}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit episode',
+                        icon: Tv,
+                        onClick: () => navigate(`/admin/episodes/edit/${epId}`),
+                      },
+                      {
+                        id: 'duplicate',
+                        label: 'Duplicate',
+                        icon: Copy,
+                        onClick: () => handleDuplicateEpisode(ep),
+                      },
+                      {
+                        id: 'view',
+                        label: 'Watch episode',
+                        icon: ExternalLink,
+                        onClick: () => {
+                          const slug = parentAnime?.slug || ep.animeSlug || ep.animeId;
+                          navigate(`/anime/${slug}/episode/${ep.episodeNumber}`);
+                        },
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete episode',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setTargetDeleteEp(ep),
+                      },
+                    ]}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Episodes Table */}
-        {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading episode catalog...</div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8]">
-            No episodes found. Select another anime or add a new episode.
-          </div>
-        ) : (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl overflow-hidden">
-            <div className="divide-y divide-white/5">
-              {filtered.map((ep) => {
-                const animeObj = animes.find((a) => a.id === ep.animeId || a.slug === ep.animeId);
-                const thumbUrl =
-                  ep.thumbnail ||
-                  animeObj?.banner ||
-                  animeObj?.poster ||
-                  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80';
-
-                return (
-                <div
-                  key={ep.id}
-                  className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors group"
-                >
-                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                    <div className="w-14 h-10 rounded-lg bg-[#050A14] border border-white/10 shrink-0 overflow-hidden relative">
-                      <img
-                        src={thumbUrl}
-                        alt={ep.title || 'Ep'}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          if (animeObj?.poster && target.src !== animeObj.poster) {
-                            target.src = animeObj.poster;
-                          }
-                        }}
-                      />
-                    </div>
-
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
-                          EP {ep.episodeNumber}
-                        </span>
-                        {(ep.status === 'upcoming' || ep.isUpcoming) && (
-                          <span className="font-mono text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5 text-amber-400" />
-                            Upcoming {ep.airDate ? `(${ep.airDate})` : ''}
-                          </span>
-                        )}
-                        <h3 className="text-xs font-bold text-white truncate group-hover:text-cyan-400 transition-colors">
-                          {ep.title || `Episode ${ep.episodeNumber}`}
-                        </h3>
-                      </div>
-
-                      <div className="text-[11px] text-[#94A3B8] flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-white truncate max-w-[200px]">
-                          {cleanAnimeTitle(getAnimeTitle(ep.animeId))}
-                        </span>
-                        <span>•</span>
-                        <span>Season {ep.seasonNumber || 1}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 text-emerald-400">
-                          <Server className="w-3 h-3" />
-                          {ep.videoSources?.length || (ep.videoUrl ? 1 : 0)} servers active
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 pt-3 md:pt-0 w-full md:w-auto justify-end border-t border-white/5 md:border-t-0">
-                    <button
-                      type="button"
-                      onClick={() => handleTogglePublish(ep)}
-                      className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                        ep.published
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}
-                    >
-                      {ep.published ? (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      ) : (
-                        <XCircle className="w-3.5 h-3.5" />
-                      )}
-                      <span>{ep.published ? 'Live' : 'Draft'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/admin/downloads?animeId=${ep.animeId}&season=${ep.seasonNumber || 1}`)}
-                      className="p-1.5 sm:p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-black transition-colors cursor-pointer"
-                      title="Manage Downloads (Zip, 360p-1080p)"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/admin/episodes/edit/${ep.id}`)}
-                      className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-cyan-500 text-white transition-colors cursor-pointer"
-                      title="Edit Episode"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setTargetDeleteEp(ep)}
-                      className="p-1.5 sm:p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors cursor-pointer"
-                      title="Delete Episode"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Delete Confirmation Modal */}
-        <ConfirmModal
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
           isOpen={Boolean(targetDeleteEp)}
-          title="Delete Episode"
-          message={`Are you sure you want to permanently delete Episode ${targetDeleteEp?.episodeNumber} (${targetDeleteEp?.title || ''})?`}
-          confirmLabel={isDeleting ? 'Deleting...' : 'Delete Episode'}
-          isDestructive={true}
+          onClose={() => setTargetDeleteEp(null)}
           onConfirm={handleConfirmDelete}
-          onCancel={() => setTargetDeleteEp(null)}
+          title={`Delete Episode ${targetDeleteEp?.episodeNumber}?`}
+          consequence="This will permanently delete this episode and its stream links from the player."
+          confirmLabel="Delete episode"
+          isLoading={isDeleting}
         />
       </div>
     </AdminLayout>

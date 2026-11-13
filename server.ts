@@ -52,6 +52,47 @@ async function startServer() {
   // Google Drive Profile Pictures (PFPs) API route
   app.use('/api/drive-avatars', driveAvatarsRouter);
 
+  // Dynamic SEO endpoints (/robots.txt and /sitemap.xml)
+  app.get('/robots.txt', (req, res) => {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    res.type('text/plain');
+    res.send(
+      [
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /admin',
+        'Disallow: /api/admin',
+        '',
+        `Sitemap: ${origin}/sitemap.xml`,
+      ].join('\n')
+    );
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const today = new Date().toISOString().split('T')[0];
+    const staticRoutes = [
+      { path: '/', changefreq: 'daily', priority: '1.0' },
+      { path: '/browse', changefreq: 'daily', priority: '0.9' },
+      { path: '/schedule', changefreq: 'daily', priority: '0.8' },
+      { path: '/requests', changefreq: 'weekly', priority: '0.6' },
+      { path: '/about', changefreq: 'monthly', priority: '0.4' },
+      { path: '/dmca', changefreq: 'monthly', priority: '0.3' },
+      { path: '/terms', changefreq: 'monthly', priority: '0.3' },
+      { path: '/privacy', changefreq: 'monthly', priority: '0.3' },
+    ];
+    const urls = staticRoutes
+      .map(
+        (r) =>
+          `  <url>\n    <loc>${origin}${r.path}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${r.changefreq}</changefreq>\n    <priority>${r.priority}</priority>\n  </url>`
+      )
+      .join('\n');
+    res.type('application/xml');
+    res.send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`
+    );
+  });
+
   // 5. Global safe error handling middleware (Never leak technical stack traces to clients)
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (res.headersSent) {

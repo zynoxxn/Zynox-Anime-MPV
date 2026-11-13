@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../lib/auth';
 import { searchAndFilterAnimes, cleanAnimeTitle } from '../lib/firestore/anime';
 import {
@@ -9,11 +9,11 @@ import {
 import type { Anime } from '../types/anime';
 import type { AppNotification } from '../types/library';
 import { getOptimizedImageUrl } from '../lib/image-optimizer';
+import { isValidSafeUrl } from '../lib/security';
 import {
   Search,
   Bookmark,
   History,
-  Heart,
   Bell,
   Menu,
   X,
@@ -21,7 +21,6 @@ import {
   CheckCheck,
   Film,
   Star,
-  Layers,
   LogOut,
   User as UserIcon,
   Flame,
@@ -29,13 +28,14 @@ import {
   Settings,
   ChevronDown,
   Tag,
-  Clock,
   Play,
   ChevronRight,
   ArrowRight,
 } from 'lucide-react';
-import { getCmsGenres, DEFAULT_GENRES } from '../lib/firestore/cms';
-import type { CmsGenre } from '../types/cms';
+import { getCmsGenres, DEFAULT_GENRES, getCmsNavigation, DEFAULT_NAVIGATION } from '../lib/firestore/cms';
+import type { CmsGenre, CmsNavigationItem } from '../types/cms';
+import { getCachedSiteSettings, getSiteSettings } from '../lib/firestore/site-settings';
+import type { SiteConfig } from '../types/library';
 
 interface HeaderProps {
   currentPath: string;
@@ -64,8 +64,10 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
   const [mobileGenresOpen, setMobileGenresOpen] = useState(false);
   const genresDropdownRef = useRef<HTMLDivElement>(null);
   const [genresList, setGenresList] = useState<CmsGenre[]>(DEFAULT_GENRES);
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>(getCachedSiteSettings);
+  const [navItems, setNavItems] = useState<CmsNavigationItem[]>(DEFAULT_NAVIGATION);
 
-  // Load genres from CMS
+  // Load genres, site settings and navigation from CMS
   useEffect(() => {
     let isMounted = true;
     getCmsGenres()
@@ -74,9 +76,29 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
           setGenresList(data.filter((g) => g.enabled !== false));
         }
       })
-      .catch((err) => console.warn('Failed to load genres in header:', err));
+      .catch(() => {});
+
+    getSiteSettings().then((cfg) => {
+      if (isMounted) setSiteConfig(cfg);
+    });
+
+    getCmsNavigation().then((items) => {
+      if (isMounted && items && items.length > 0) {
+        setNavItems(items);
+      }
+    });
+
+    const handleSettingsUpdate = (e: Event) => {
+      const custom = e as CustomEvent<Partial<SiteConfig>>;
+      if (custom.detail && isMounted) {
+        setSiteConfig((prev) => ({ ...prev, ...custom.detail }));
+      }
+    };
+    window.addEventListener('zynox:settings-updated', handleSettingsUpdate);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('zynox:settings-updated', handleSettingsUpdate);
     };
   }, []);
 
@@ -85,15 +107,21 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  // Keyboard shortcut listener ('/' or 'Cmd/Ctrl+K')
+  // Keyboard shortcuts ('/' or 'Cmd/Ctrl+K' to search, 'Escape' closes all drawers/menus)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setMobileSearchOpen(false);
+        setMobileMenuOpen(false);
+        setProfileDropdownOpen(false);
+        setNotifOpen(false);
+        setGenresDropdownOpen(false);
+        return;
+      }
+
       const activeTag = document.activeElement?.tagName?.toLowerCase() || '';
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
-        if (e.key === 'Escape') {
-          setSearchOpen(false);
-          setMobileSearchOpen(false);
-        }
         return;
       }
 
@@ -127,8 +155,8 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
         const results = await searchAndFilterAnimes({ query: searchQuery.trim() });
         setSearchResults(results.slice(0, 8));
         setSearchOpen(true);
-      } catch (err) {
-        console.error('Search error:', err);
+      } catch {
+        // ignore transient search error
       } finally {
         setSearchLoading(false);
       }
@@ -170,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
       .then((data) => {
         if (isMounted) setNotifications(data);
       })
-      .catch((err) => console.warn('Failed to load notifications:', err));
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -213,7 +241,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
       );
     }
     setNotifOpen(false);
-    if (notif.link) {
+    if (notif.link && isValidSafeUrl(notif.link)) {
       if (notif.link.startsWith('http://') || notif.link.startsWith('https://')) {
         window.location.href = notif.link;
       } else {
@@ -237,33 +265,51 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
     ? userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'User'
     : 'Sign In';
 
-  // Desktop navigation links
-  const centerNavLinks = [
-    { label: 'Home', path: '/', isActive: currentPath === '/' },
-    { label: 'Anime', path: '/browse', isActive: currentPath === '/browse' && !window.location.search },
-    { label: 'Movies', path: '/browse?type=Movie', isActive: currentPath.includes('type=Movie') },
-    { label: 'TV Series', path: '/browse?type=TV', isActive: currentPath.includes('type=TV') },
-    { label: 'Schedule', path: '/schedule', isActive: currentPath === '/schedule' },
-  ];
+  const centerNavLinks = useMemo(() => {
+    const headerItems = (navItems || [])
+      .filter((n) => n.targetLocation === 'header' || !n.targetLocation)
+      .filter((n) => n.enabled !== false)
+      .filter((n) => (n.requiresAuth ? Boolean(user) : true))
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+
+    if (headerItems.length === 0) {
+      return [
+        { label: 'Home', path: '/', isActive: currentPath === '/' },
+        { label: 'Browse', path: '/browse', isActive: currentPath === '/browse' && !window.location.search },
+        { label: 'Movies', path: '/browse?type=Movie', isActive: currentPath.includes('type=Movie') },
+        { label: 'TV', path: '/browse?type=TV', isActive: currentPath.includes('type=TV') },
+        { label: 'Schedule', path: '/schedule', isActive: currentPath === '/schedule' },
+        { label: 'Top Rated', path: '/browse?sort=popular', isActive: currentPath.includes('sort=popular') || currentPath.includes('sort=rating') },
+      ];
+    }
+
+    return headerItems.map((n) => ({
+      label: n.title,
+      path: n.url,
+      isActive: n.url === '/' ? currentPath === '/' : currentPath.startsWith(n.url),
+    }));
+  }, [navItems, currentPath, user]);
+
+  const logoSrc =
+    siteConfig.logoUrl || '/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png';
+  const siteName = siteConfig.siteName || 'ZYNOX ANIME';
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40 w-full bg-[#050A14]/40 border-b border-white/10 backdrop-blur-md transition-all select-none">
+      <header className="fixed top-0 left-0 right-0 z-40 w-full bg-[#050A14]/30 supports-[backdrop-filter]:bg-[#050A14]/25 border-b border-white/[0.08] backdrop-blur-xl transition-all select-none">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3 sm:gap-6">
-          
-          {/* 1. LEFT: Hamburger Menu (Mobile) + zynox anime Branding */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Mobile Hamburger Menu Toggle (Section 28) */}
+          {/* 1. LEFT: Hamburger Menu (Mobile) + Brand Logo */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-1 text-[#CBD5E1] hover:text-white rounded-lg hover:bg-[#07111F] transition-colors"
+              aria-label="Open navigation menu"
+              className="lg:hidden p-2 -ml-1 text-[#CBD5E1] hover:text-white rounded-lg hover:bg-[#101A30] transition-colors cursor-pointer shrink-0"
               title="Open Navigation"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Brand Logo: ZYNOX ANIME */}
             <button
               id="btn-header-home"
               type="button"
@@ -272,18 +318,19 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 setMobileSearchOpen(false);
                 navigate('/');
               }}
-              className="flex items-center gap-1.5 focus:outline-none cursor-pointer group py-1"
+              aria-label={`${siteName} home`}
+              className="flex items-center gap-1.5 cursor-pointer group py-1 min-w-0"
             >
               <img
-                src="/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png"
-                alt="ZYNOX ANIME"
-                className="h-7 xs:h-8 sm:h-9 md:h-10 w-auto object-contain drop-shadow-[0_0_12px_rgba(22,131,255,0.4)] group-hover:brightness-110 group-hover:scale-[1.02] transition-all"
+                src={logoSrc}
+                alt={siteName}
+                className="h-7 xs:h-8 sm:h-9 md:h-10 w-auto object-contain group-hover:brightness-110 transition-all"
               />
             </button>
           </div>
 
-          {/* 2. CENTER: Desktop Clean Navigation Links with Genre Dropdown */}
-          <nav className="hidden lg:flex items-center gap-6 text-[14px] font-semibold">
+          {/* 2. CENTER: Desktop Navigation Links with Genre Dropdown */}
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold" aria-label="Main navigation">
             {centerNavLinks.slice(0, 4).map((link) => {
               const active = link.isActive;
               return (
@@ -291,15 +338,13 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   key={link.label}
                   type="button"
                   onClick={() => navigate(link.path)}
-                  className={`relative py-1 transition-colors cursor-pointer ${
-                    active
-                      ? 'text-[#1683FF] font-bold'
-                      : 'text-[#CBD5E1] hover:text-white'
+                  className={`relative py-1 transition-colors cursor-pointer whitespace-nowrap ${
+                    active ? 'text-[#1E88FF] font-bold' : 'text-[#CBD5E1] hover:text-white'
                   }`}
                 >
                   <span>{link.label}</span>
                   {active && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1683FF] rounded-full shadow-sm shadow-[#1683FF]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1E88FF] rounded-full" />
                   )}
                 </button>
               );
@@ -310,35 +355,32 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               <button
                 id="btn-nav-genres"
                 type="button"
+                aria-expanded={genresDropdownOpen}
                 onClick={() => setGenresDropdownOpen((prev) => !prev)}
-                className={`relative py-1 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                className={`relative py-1 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   genresDropdownOpen || currentPath.toLowerCase().includes('genre')
-                    ? 'text-[#1683FF] font-bold'
+                    ? 'text-[#1E88FF] font-bold'
                     : 'text-[#CBD5E1] hover:text-white'
                 }`}
               >
                 <span>Genre</span>
                 <ChevronDown
                   className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    genresDropdownOpen ? 'rotate-180 text-[#1683FF]' : 'text-[#94A3B8]'
+                    genresDropdownOpen ? 'rotate-180 text-[#1E88FF]' : 'text-[#94A3B8]'
                   }`}
                 />
                 {(genresDropdownOpen || currentPath.toLowerCase().includes('genre')) && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1683FF] rounded-full shadow-sm shadow-[#1683FF]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1E88FF] rounded-full" />
                 )}
               </button>
 
-              {/* Popover Dropdown with all requested Genres */}
               {genresDropdownOpen && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-[500px] bg-[#050A14]/98 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-[500px] bg-[#0B1324] border border-white/10 rounded-2xl shadow-2xl p-4 z-50">
                   <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
                     <div className="flex items-center gap-2">
-                      <Tag className="w-4 h-4 text-[#1683FF]" />
+                      <Tag className="w-4 h-4 text-[#1E88FF]" />
                       <span className="text-xs font-bold text-white tracking-wide uppercase">
-                        All Genres
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1683FF]/15 text-[#1683FF] border border-[#1683FF]/30">
-                        {genresList.length} Total
+                        All Genres ({genresList.length})
                       </span>
                     </div>
                     <button
@@ -347,13 +389,12 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setGenresDropdownOpen(false);
                         navigate('/browse');
                       }}
-                      className="text-[11px] font-semibold text-[#1683FF] hover:underline"
+                      className="text-xs font-semibold text-[#1E88FF] hover:text-[#3B9BFF] hover:underline cursor-pointer whitespace-nowrap"
                     >
                       Browse Catalog &rarr;
                     </button>
                   </div>
 
-                  {/* 3-Column Genre Grid */}
                   <div className="grid grid-cols-3 gap-1.5 max-h-[320px] overflow-y-auto no-scrollbar pr-0.5">
                     {genresList.map((g) => {
                       const isSelected =
@@ -367,16 +408,16 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                             setGenresDropdownOpen(false);
                             navigate(`/browse?genre=${encodeURIComponent(g.name)}`);
                           }}
-                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-left transition-all group ${
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors group cursor-pointer ${
                             isSelected
-                              ? 'bg-[#1683FF] text-white font-bold shadow-md shadow-[#1683FF]/20'
-                              : 'text-[#CBD5E1] hover:text-white bg-[#081222]/80 hover:bg-[#1683FF]/15 border border-white/5 hover:border-[#1683FF]/30'
+                              ? 'bg-[#1E88FF] text-white font-bold'
+                              : 'text-[#CBD5E1] hover:text-white bg-[#101A30] hover:bg-[#16223D] border border-white/5 hover:border-[#1E88FF]/40'
                           }`}
                         >
                           <span className="truncate">{g.name}</span>
                           <span
                             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                              isSelected ? 'bg-white' : 'bg-[#1683FF]/60 group-hover:bg-[#1683FF]'
+                              isSelected ? 'bg-white' : 'bg-[#1E88FF]/60 group-hover:bg-[#1E88FF]'
                             }`}
                           />
                         </button>
@@ -387,7 +428,6 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               )}
             </div>
 
-            {/* SCHEDULE LINK */}
             {centerNavLinks.slice(4).map((link) => {
               const active = link.isActive;
               return (
@@ -395,15 +435,13 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   key={link.label}
                   type="button"
                   onClick={() => navigate(link.path)}
-                  className={`relative py-1 transition-colors cursor-pointer ${
-                    active
-                      ? 'text-[#1683FF] font-bold'
-                      : 'text-[#CBD5E1] hover:text-white'
+                  className={`relative py-1 transition-colors cursor-pointer whitespace-nowrap ${
+                    active ? 'text-[#1E88FF] font-bold' : 'text-[#CBD5E1] hover:text-white'
                   }`}
                 >
                   <span>{link.label}</span>
                   {active && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1683FF] rounded-full shadow-sm shadow-[#1683FF]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1E88FF] rounded-full" />
                   )}
                 </button>
               );
@@ -411,8 +449,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
           </nav>
 
           {/* 3. RIGHT: Search Bar + Notifications + Profile Avatar */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Desktop Direct Search Input (Section 09) */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div ref={searchRef} className="relative hidden md:block w-64 lg:w-80">
               <form onSubmit={handleSearchSubmit} className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
@@ -431,37 +468,37 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   onFocus={() => {
                     if (searchQuery.trim()) setSearchOpen(true);
                   }}
-                  className="w-full h-10 bg-[#07111F] hover:bg-[#081426] focus:bg-[#081426] border border-[#2196FF]/25 focus:border-[#1683FF] text-xs text-white rounded-xl pl-9 pr-8 focus:outline-none transition-all placeholder:text-[#94A3B8]"
+                  className="w-full h-10 bg-[#0B1324]/60 focus:bg-[#101A30]/90 backdrop-blur-md border border-white/10 focus:border-[#1E88FF] text-xs text-white rounded-xl pl-9 pr-8 focus:outline-none transition-colors placeholder:text-[#94A3B8]"
                 />
                 {searchQuery && (
                   <button
                     type="button"
+                    aria-label="Clear search"
                     onClick={() => {
                       setSearchQuery('');
                       setSearchOpen(false);
                     }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8] hover:text-white rounded-md transition-colors"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8] hover:text-white rounded-md transition-colors cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </form>
 
-              {/* Desktop Live Search Dropdown - Large & Spacious */}
+              {/* Desktop Live Search Dropdown */}
               {searchOpen && (
-                <div className="absolute top-full right-0 w-[420px] sm:w-[480px] lg:w-[520px] mt-2.5 bg-[#081426]/98 border border-[#1683FF]/35 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in backdrop-blur-2xl ring-1 ring-black/60">
-                  {/* Dropdown Header */}
-                  <div className="px-4 py-2.5 bg-[#050A14]/85 border-b border-white/5 flex items-center justify-between">
+                <div className="absolute top-full right-0 w-[420px] sm:w-[480px] lg:w-[520px] mt-2.5 bg-[#0B1324] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+                  <div className="px-4 py-2.5 bg-[#050A14] border-b border-white/10 flex items-center justify-between">
                     <span className="text-xs font-bold text-[#CBD5E1] flex items-center gap-1.5">
-                      <Search className="w-3.5 h-3.5 text-[#1683FF]" />
+                      <Search className="w-3.5 h-3.5 text-[#1E88FF]" />
                       Live Search Results {searchResults.length > 0 && `(${searchResults.length})`}
                     </span>
-                    <span className="text-[10px] text-[#64748B]">Press Enter for all results</span>
+                    <span className="text-[11px] text-[#94A3B8]">Press Enter for all results</span>
                   </div>
 
                   {searchLoading ? (
                     <div className="p-8 text-center text-xs text-[#CBD5E1] flex items-center justify-center gap-2.5">
-                      <div className="w-4 h-4 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-[#1E88FF] border-t-transparent rounded-full animate-spin" />
                       <span className="font-semibold">Searching anime database...</span>
                     </div>
                   ) : searchResults.length > 0 ? (
@@ -475,10 +512,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           <div
                             key={`hdr-sr-${anime.id || anime.slug}-${idx}`}
                             onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
-                            className="p-3 sm:p-3.5 flex items-center gap-3.5 hover:bg-[#0B1B32] cursor-pointer transition-all group"
+                            className="p-3 sm:p-3.5 flex items-center gap-3.5 hover:bg-[#101A30] cursor-pointer transition-colors group"
                           >
-                            {/* Large Poster Thumbnail */}
-                            <div className="relative w-14 sm:w-16 h-20 sm:h-22 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 group-hover:border-[#1683FF]/60 shadow-md transition-all">
+                            <div className="relative w-14 sm:w-16 aspect-[3/4] rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 group-hover:border-[#1E88FF]/60 transition-colors">
                               {anime.poster ? (
                                 <img
                                   src={getOptimizedImageUrl(anime.poster, { width: 150, fallbackType: 'poster' })}
@@ -486,7 +522,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                   loading="lazy"
                                   decoding="async"
                                   referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  className="w-full h-full object-cover"
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-[#050A14] text-[#64748B]">
@@ -494,46 +530,39 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                 </div>
                               )}
 
-                              {/* Hover Play Button Overlay */}
                               <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                <div className="w-7 h-7 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-md">
+                                <div className="w-7 h-7 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md">
                                   <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
                                 </div>
                               </div>
 
-                              {/* Upcoming Badge on top-left of thumb */}
                               {isUpcoming && (
-                                <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[8px] font-black uppercase shadow leading-none">
+                                <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[9px] font-bold uppercase leading-none">
                                   Upcoming
                                 </div>
                               )}
                             </div>
 
-                            {/* Middle Information Details */}
                             <div className="flex-1 min-w-0 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#00CFFF] transition-colors leading-snug line-clamp-1">
+                                <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#3B9BFF] transition-colors leading-snug line-clamp-1">
                                   {cleanAnimeTitle(anime.title)}
                                 </h4>
                                 {anime.activeSeasonNumber && (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[10px] font-black border border-[#1683FF]/30 shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#3B9BFF] text-[10px] font-bold border border-[#1E88FF]/30 shrink-0">
                                     S{anime.activeSeasonNumber}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Subtitle / Alternate title or Genres */}
                               {altTitle ? (
-                                <p className="text-xs text-[#94A3B8] line-clamp-1">
-                                  {altTitle}
-                                </p>
+                                <p className="text-xs text-[#94A3B8] line-clamp-1">{altTitle}</p>
                               ) : anime.genres && anime.genres.length > 0 ? (
                                 <p className="text-xs text-[#94A3B8] line-clamp-1">
                                   {anime.genres.slice(0, 3).join(' • ')}
                                 </p>
                               ) : null}
 
-                              {/* Metadata Badges Row */}
                               <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
                                 {ratingStr && (
                                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 text-[10px] font-bold">
@@ -551,27 +580,25 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                   • {anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : '12+ Eps'}
                                 </span>
                                 {anime.audioLanguage && (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] border border-[#1683FF]/25 text-[10px] font-bold">
+                                  <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/15 text-[#3B9BFF] border border-[#1E88FF]/25 text-[10px] font-bold">
                                     {anime.audioLanguage}
                                   </span>
                                 )}
                               </div>
                             </div>
 
-                            {/* Right Arrow */}
-                            <ChevronRight className="w-4 h-4 text-[#64748B] group-hover:text-[#00CFFF] group-hover:translate-x-0.5 transition-all shrink-0 ml-1 hidden sm:block" />
+                            <ChevronRight className="w-4 h-4 text-[#64748B] group-hover:text-[#3B9BFF] transition-colors shrink-0 ml-1 hidden sm:block" />
                           </div>
                         );
                       })}
 
-                      {/* View all results button */}
                       <button
                         type="button"
                         onClick={() => {
                           setSearchOpen(false);
                           navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
                         }}
-                        className="w-full py-3 bg-[#050A14] hover:bg-[#1683FF]/20 text-xs sm:text-sm font-bold text-[#1683FF] hover:text-[#00CFFF] text-center transition-all border-t border-white/5 flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-[#050A14] hover:bg-[#101A30] text-xs sm:text-sm font-bold text-[#1E88FF] hover:text-[#3B9BFF] text-center transition-colors border-t border-white/10 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <span>View all results for &quot;{searchQuery}&quot;</span>
                         <ArrowRight className="w-4 h-4" />
@@ -580,7 +607,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   ) : (
                     <div className="p-8 text-center text-xs text-[#94A3B8] space-y-1">
                       <p className="font-semibold text-white">No anime found for &quot;{searchQuery}&quot;</p>
-                      <p className="text-[11px] text-[#64748B]">Try searching with a different keyword or Romanized title</p>
+                      <p className="text-[11px] text-[#94A3B8]">Try searching with a different keyword or Romanized title</p>
                     </div>
                   )}
                 </div>
@@ -590,12 +617,13 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
             {/* Mobile Search Toggle Icon */}
             <button
               type="button"
+              aria-label="Open search"
               onClick={() => {
                 const next = !mobileSearchOpen;
                 setMobileSearchOpen(next);
                 if (next) setTimeout(() => mobileSearchInputRef.current?.focus(), 80);
               }}
-              className="md:hidden p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#07111F] transition-colors"
+              className="md:hidden p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] transition-colors cursor-pointer"
               title="Search"
             >
               <Search className="w-5 h-5" />
@@ -606,25 +634,27 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               <div ref={notifRef} className="relative">
                 <button
                   type="button"
+                  aria-label="Notifications"
+                  aria-expanded={notifOpen}
                   onClick={() => setNotifOpen((prev) => !prev)}
-                  className="relative p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#07111F] border border-transparent hover:border-white/10 transition-all"
+                  className="relative p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] border border-transparent hover:border-white/10 transition-colors cursor-pointer"
                   title="Notifications"
                 >
                   <Bell className="w-5 h-5" />
                   {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#1683FF] rounded-full ring-2 ring-[#050A14]" />
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#1E88FF] rounded-full ring-2 ring-[#050A14]" />
                   )}
                 </button>
 
                 {notifOpen && (
-                  <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-[#081426] border border-[#1683FF]/30 rounded-2xl shadow-2xl p-3 z-50 backdrop-blur-2xl space-y-2">
+                  <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-[#0B1324] border border-white/10 rounded-2xl shadow-2xl p-3 z-50 space-y-2">
                     <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                       <span className="text-xs font-bold text-white">Notifications</span>
                       {unreadCount > 0 && (
                         <button
                           type="button"
                           onClick={handleMarkAllNotificationsRead}
-                          className="text-[10px] text-[#1683FF] hover:underline flex items-center gap-1 font-semibold"
+                          className="text-[11px] text-[#1E88FF] hover:text-[#3B9BFF] hover:underline flex items-center gap-1 font-semibold cursor-pointer whitespace-nowrap"
                         >
                           <CheckCheck className="w-3 h-3" />
                           <span>Mark all read</span>
@@ -632,41 +662,56 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       )}
                     </div>
 
-                    <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+                    <div className="max-h-64 overflow-y-auto divide-y divide-white/5 space-y-1">
                       {notifications.length === 0 ? (
                         <div className="text-center py-6 text-xs text-[#94A3B8]">
                           No notifications yet.
                         </div>
                       ) : (
-                        notifications.map((n) => (
+                        notifications.slice(0, 8).map((n) => (
                           <div
                             key={n.id}
                             onClick={() => handleNotificationClick(n)}
                             className={`p-2 rounded-xl cursor-pointer transition-colors ${
                               n.read
                                 ? 'text-[#94A3B8] hover:bg-white/5'
-                                : 'bg-[#1683FF]/10 text-white hover:bg-[#1683FF]/20 border border-[#1683FF]/20'
+                                : 'bg-[#1E88FF]/10 text-white hover:bg-[#1E88FF]/20 border border-[#1E88FF]/20'
                             }`}
                           >
-                            <div className="text-xs font-bold text-white flex items-center justify-between">
-                              <span>{n.title}</span>
-                              {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#1683FF]" />}
+                            <div className="text-xs font-bold text-white flex items-center justify-between gap-2">
+                              <span className="truncate">{n.title}</span>
+                              {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#1E88FF] shrink-0" />}
                             </div>
-                            <p className="text-[10px] text-[#CBD5E1] mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-[11px] text-[#CBD5E1] mt-0.5 line-clamp-2">{n.message}</p>
                           </div>
                         ))
                       )}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotifOpen(false);
+                          navigate('/notifications');
+                        }}
+                        className="w-full py-1.5 text-center text-xs font-semibold text-[#1E88FF] hover:text-[#3B9BFF] hover:bg-[#101A30] rounded-lg transition-colors cursor-pointer"
+                      >
+                        View all notifications
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Circular Profile Button (Section 10) */}
+            {/* Circular Profile Button */}
             <div ref={profileDropdownRef} className="relative">
               <button
                 id="btn-header-profile"
                 type="button"
+                aria-label={user ? `${displayName} account menu` : 'Sign in'}
+                aria-expanded={user ? profileDropdownOpen : undefined}
                 onClick={() => {
                   if (!user) {
                     navigate('/login');
@@ -674,10 +719,10 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setProfileDropdownOpen((prev) => !prev);
                   }
                 }}
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#07111F] hover:bg-[#081426] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-all cursor-pointer overflow-hidden p-0.5 ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B1324] hover:bg-[#101A30] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-colors cursor-pointer overflow-hidden p-0.5 ${
                   user
-                    ? 'border-2 border-[#1683FF] hover:border-[#00CFFF] shadow-md shadow-[#1683FF]/30 hover:shadow-[#00CFFF]/50'
-                    : 'border border-white/10 hover:border-[#1683FF]/50 shadow-md'
+                    ? 'border-2 border-[#1E88FF] hover:border-[#3B9BFF]'
+                    : 'border border-white/10 hover:border-[#1E88FF]/60'
                 }`}
                 title={user ? displayName : 'Sign In'}
               >
@@ -690,10 +735,8 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       className="w-full h-full object-cover rounded-full"
                     />
                   ) : (
-                    <div className="w-full h-full rounded-full bg-gradient-to-br from-[#1683FF] to-[#00CFFF] p-[2px]">
-                      <div className="w-full h-full rounded-full bg-[#07111F] flex items-center justify-center text-xs font-bold text-[#00CFFF]">
-                        {displayName.charAt(0).toUpperCase()}
-                      </div>
+                    <div className="w-full h-full rounded-full bg-[#1E88FF]/20 flex items-center justify-center text-xs font-bold text-[#1E88FF]">
+                      {displayName.charAt(0).toUpperCase()}
                     </div>
                   )
                 ) : (
@@ -701,11 +744,10 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 )}
               </button>
 
-              {/* Profile Dropdown Menu */}
               {profileDropdownOpen && user && (
-                <div className="absolute right-0 mt-2 w-56 bg-[#081426] border border-[#1683FF]/30 rounded-2xl shadow-2xl p-2 z-50 backdrop-blur-2xl text-xs space-y-1">
+                <div className="absolute right-0 mt-2 w-56 bg-[#0B1324] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 text-xs space-y-1">
                   <div className="px-3 py-2 border-b border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-[#1683FF] shadow-sm shadow-[#1683FF]/30 shrink-0 bg-[#050A14]">
+                    <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-[#1E88FF] shrink-0 bg-[#050A14]">
                       {userProfile?.avatar || user.photoURL ? (
                         <img
                           src={userProfile?.avatar || user.photoURL || ''}
@@ -714,14 +756,14 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           className="w-full h-full object-cover rounded-full"
                         />
                       ) : (
-                        <div className="w-full h-full bg-[#1683FF]/20 flex items-center justify-center font-bold text-[#00CFFF]">
+                        <div className="w-full h-full bg-[#1E88FF]/20 flex items-center justify-center font-bold text-[#1E88FF]">
                           {displayName.charAt(0).toUpperCase()}
                         </div>
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-white truncate">{displayName}</p>
-                      <p className="text-[10px] text-[#94A3B8] truncate">{user.email}</p>
+                      <p className="text-[11px] text-[#94A3B8] truncate">{user.email}</p>
                     </div>
                   </div>
 
@@ -731,9 +773,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       setProfileDropdownOpen(false);
                       navigate('/profile');
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#0B1B32] transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] transition-colors text-left cursor-pointer"
                   >
-                    <UserIcon className="w-4 h-4 text-[#1683FF]" />
+                    <UserIcon className="w-4 h-4 text-[#1E88FF]" />
                     <span>My Profile</span>
                   </button>
 
@@ -743,9 +785,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       setProfileDropdownOpen(false);
                       navigate('/watchlist');
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#0B1B32] transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] transition-colors text-left cursor-pointer"
                   >
-                    <Bookmark className="w-4 h-4 text-[#1683FF]" />
+                    <Bookmark className="w-4 h-4 text-[#1E88FF]" />
                     <span>Watchlist</span>
                   </button>
 
@@ -755,9 +797,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       setProfileDropdownOpen(false);
                       navigate('/history');
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#0B1B32] transition-colors text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] transition-colors text-left cursor-pointer"
                   >
-                    <History className="w-4 h-4 text-[#1683FF]" />
+                    <History className="w-4 h-4 text-[#1E88FF]" />
                     <span>Watch History</span>
                   </button>
 
@@ -768,18 +810,18 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setProfileDropdownOpen(false);
                         navigate('/admin');
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#1683FF] font-bold hover:bg-[#1683FF]/15 transition-colors text-left"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#1E88FF] font-bold hover:bg-[#1E88FF]/15 transition-colors text-left cursor-pointer"
                     >
-                      <Settings className="w-4 h-4 text-[#1683FF]" />
+                      <Settings className="w-4 h-4 text-[#1E88FF]" />
                       <span>Admin Dashboard</span>
                     </button>
                   )}
 
-                  <div className="pt-1 border-t border-white/5">
+                  <div className="pt-1 border-t border-white/10">
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left font-semibold"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left font-semibold cursor-pointer"
                     >
                       <LogOut className="w-4 h-4" />
                       <span>Sign Out</span>
@@ -791,9 +833,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
           </div>
         </div>
 
-        {/* Mobile Live Search Overlay (Expanded when search icon is clicked) */}
+        {/* Mobile Live Search Overlay */}
         {mobileSearchOpen && (
-          <div className="md:hidden px-3 pb-3 pt-1 border-t border-white/5 bg-[#050A14]">
+          <div className="md:hidden px-3 pb-3 pt-2 border-t border-white/10 bg-[#050A14]">
             <form onSubmit={handleSearchSubmit} className="relative w-full">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
               <input
@@ -807,31 +849,31 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 placeholder="Search anime..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-10 bg-[#07111F] border border-[#2196FF]/30 text-xs text-white rounded-xl pl-9 pr-9 focus:outline-none focus:border-[#1683FF]"
+                className="w-full h-10 bg-[#0B1324] border border-white/15 text-xs text-white rounded-xl pl-9 pr-9 focus:outline-none focus:border-[#1E88FF]"
               />
               <button
                 type="button"
+                aria-label="Close search"
                 onClick={() => setMobileSearchOpen(false)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8]"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8] hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </form>
 
-            {/* Mobile Dropdown Search Results - Large & Spacious */}
             {searchQuery.trim() && (
-              <div className="mt-2.5 bg-[#081426] border border-[#1683FF]/30 rounded-2xl overflow-hidden shadow-2xl max-h-[70vh] overflow-y-auto divide-y divide-white/5">
-                <div className="px-3.5 py-2 bg-[#050A14] border-b border-white/5 flex items-center justify-between text-xs">
+              <div className="mt-2.5 bg-[#0B1324] border border-white/10 rounded-2xl overflow-hidden shadow-2xl max-h-[70vh] overflow-y-auto divide-y divide-white/5">
+                <div className="px-3.5 py-2 bg-[#050A14] border-b border-white/10 flex items-center justify-between text-xs">
                   <span className="font-bold text-[#CBD5E1] flex items-center gap-1.5">
-                    <Search className="w-3.5 h-3.5 text-[#1683FF]" />
+                    <Search className="w-3.5 h-3.5 text-[#1E88FF]" />
                     Live Results {searchResults.length > 0 && `(${searchResults.length})`}
                   </span>
-                  <span className="text-[10px] text-[#64748B]">Tap to open</span>
+                  <span className="text-[11px] text-[#94A3B8]">Tap to open</span>
                 </div>
 
                 {searchLoading ? (
                   <div className="p-6 text-center text-xs text-[#CBD5E1] flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-[#1E88FF] border-t-transparent rounded-full animate-spin" />
                     <span>Searching anime...</span>
                   </div>
                 ) : searchResults.length > 0 ? (
@@ -844,10 +886,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         <div
                           key={`mob-sr-${anime.id || anime.slug}-${idx}`}
                           onClick={() => handleSelectAnime(anime.slug, anime.activeSeasonNumber)}
-                          className="p-3 flex items-center gap-3 hover:bg-[#0B1B32] active:bg-[#0B1B32] cursor-pointer"
+                          className="p-3 flex items-center gap-3 hover:bg-[#101A30] cursor-pointer"
                         >
-                          {/* Large Mobile Poster */}
-                          <div className="relative w-14 h-20 rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10 shadow-md">
+                          <div className="relative w-14 aspect-[3/4] rounded-xl bg-[#050A14] shrink-0 overflow-hidden border border-white/10">
                             {anime.poster ? (
                               <img
                                 src={getOptimizedImageUrl(anime.poster, { width: 150, fallbackType: 'poster' })}
@@ -863,7 +904,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                               </div>
                             )}
                             {isUpcoming && (
-                              <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[8px] font-black uppercase shadow leading-none">
+                              <div className="absolute top-1 left-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[9px] font-bold uppercase leading-none">
                                 Upcoming
                               </div>
                             )}
@@ -875,17 +916,15 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                 {cleanAnimeTitle(anime.title)}
                               </h4>
                               {anime.activeSeasonNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/20 text-[#00CFFF] text-[9px] font-black border border-[#1683FF]/30">
+                                <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#3B9BFF] text-[10px] font-bold border border-[#1E88FF]/30">
                                   S{anime.activeSeasonNumber}
                                 </span>
                               )}
                             </div>
 
-                            {altTitle ? (
-                              <p className="text-xs text-[#94A3B8] line-clamp-1">
-                                {altTitle}
-                              </p>
-                            ) : null}
+                            {altTitle && (
+                              <p className="text-xs text-[#94A3B8] line-clamp-1">{altTitle}</p>
+                            )}
 
                             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#94A3B8]">
                               {anime.rating && (
@@ -897,7 +936,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                               <span>• {anime.year || 2024}</span>
                               {anime.totalEpisodes && <span>• {anime.totalEpisodes} Eps</span>}
                               {anime.audioLanguage && (
-                                <span className="px-1.5 py-0.5 rounded bg-[#1683FF]/15 text-[#00CFFF] text-[9px] font-bold">
+                                <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/15 text-[#3B9BFF] text-[10px] font-bold">
                                   {anime.audioLanguage}
                                 </span>
                               )}
@@ -915,7 +954,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setMobileSearchOpen(false);
                         navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
                       }}
-                      className="w-full py-3 bg-[#050A14] text-xs font-bold text-[#1683FF] hover:text-[#00CFFF] text-center flex items-center justify-center gap-1.5 border-t border-white/5"
+                      className="w-full py-3 bg-[#050A14] text-xs font-bold text-[#1E88FF] hover:text-[#3B9BFF] text-center flex items-center justify-center gap-1.5 border-t border-white/10 cursor-pointer"
                     >
                       <span>View all results for &quot;{searchQuery}&quot;</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -934,19 +973,17 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
 
       {/* Mobile Slide-Out Drawer Navigation */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-50 lg:hidden flex" role="dialog" aria-modal="true" aria-label="Mobile navigation">
           <div
             onClick={() => setMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm"
           />
 
-          {/* Drawer Panel */}
-          <div className="relative w-64 max-w-[80vw] h-full bg-[#050A14] border-r border-white/5 p-4 flex flex-col justify-between z-10 shadow-2xl animate-in slide-in-from-left duration-200">
+          <div className="relative w-64 max-w-[82vw] h-full bg-[#050A14] border-r border-white/10 p-4 flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
             <div className="space-y-6">
-              {/* Header inside drawer */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <div
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <button
+                  type="button"
                   className="flex items-center cursor-pointer py-0.5"
                   onClick={() => {
                     setMobileMenuOpen(false);
@@ -954,21 +991,21 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   }}
                 >
                   <img
-                    src="/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png"
-                    alt="ZYNOX ANIME"
-                    className="h-8 w-auto object-contain drop-shadow-[0_0_10px_rgba(22,131,255,0.4)]"
+                    src={logoSrc}
+                    alt={siteName}
+                    className="h-8 w-auto object-contain"
                   />
-                </div>
+                </button>
                 <button
                   type="button"
+                  aria-label="Close navigation menu"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/5"
+                  className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/5 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Navigation Items */}
               <nav className="space-y-1">
                 {[
                   { label: 'Home', path: '/', icon: Film },
@@ -984,10 +1021,8 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setMobileMenuOpen(false);
                         navigate(item.path);
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                        active
-                          ? 'bg-[#1683FF] text-white font-bold'
-                          : 'text-[#CBD5E1] hover:bg-[#07111F]'
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors text-left cursor-pointer ${
+                        active ? 'bg-[#1E88FF] text-white font-bold' : 'text-[#CBD5E1] hover:bg-[#101A30]'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" />
@@ -996,28 +1031,27 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   );
                 })}
 
-                {/* Mobile Expandable Genre Menu */}
                 <div className="pt-0.5">
                   <button
                     type="button"
                     onClick={() => setMobileGenresOpen((prev) => !prev)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-[#CBD5E1] hover:bg-[#07111F] transition-all text-left"
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-[#CBD5E1] hover:bg-[#101A30] transition-colors text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
-                      <Tag className="w-4 h-4 shrink-0 text-[#1683FF]" />
+                      <Tag className="w-4 h-4 shrink-0 text-[#1E88FF]" />
                       <span className={mobileGenresOpen || currentPath.toLowerCase().includes('genre') ? 'text-white font-bold' : ''}>
                         Genres ({genresList.length})
                       </span>
                     </div>
                     <ChevronDown
                       className={`w-4 h-4 text-[#94A3B8] transition-transform duration-200 ${
-                        mobileGenresOpen ? 'rotate-180 text-[#1683FF]' : ''
+                        mobileGenresOpen ? 'rotate-180 text-[#1E88FF]' : ''
                       }`}
                     />
                   </button>
 
                   {mobileGenresOpen && (
-                    <div className="grid grid-cols-2 gap-1.5 p-2 bg-[#07111F] rounded-xl my-1 max-h-56 overflow-y-auto border border-white/5 animate-in slide-in-from-top-1 duration-150">
+                    <div className="grid grid-cols-2 gap-1.5 p-2 bg-[#0B1324] rounded-xl my-1 max-h-56 overflow-y-auto border border-white/10">
                       {genresList.map((g) => {
                         const isSelected =
                           currentPath.toLowerCase().includes(encodeURIComponent(g.name.toLowerCase())) ||
@@ -1031,15 +1065,15 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                               setMobileGenresOpen(false);
                               navigate(`/browse?genre=${encodeURIComponent(g.name)}`);
                             }}
-                            className={`px-2.5 py-1.5 text-[11px] font-medium rounded-lg text-left truncate transition-colors flex items-center gap-1.5 ${
+                            className={`px-2.5 py-1.5 text-[11px] font-medium rounded-lg text-left truncate transition-colors flex items-center gap-1.5 cursor-pointer ${
                               isSelected
-                                ? 'bg-[#1683FF] text-white font-bold'
-                                : 'text-[#CBD5E1] hover:text-white hover:bg-[#1683FF]/20'
+                                ? 'bg-[#1E88FF] text-white font-bold'
+                                : 'text-[#CBD5E1] hover:text-white hover:bg-[#101A30]'
                             }`}
                           >
                             <span
                               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                isSelected ? 'bg-white' : 'bg-[#1683FF]/70'
+                                isSelected ? 'bg-white' : 'bg-[#1E88FF]/70'
                               }`}
                             />
                             <span className="truncate">{g.name}</span>
@@ -1066,10 +1100,8 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setMobileMenuOpen(false);
                         navigate(item.path);
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                        active
-                          ? 'bg-[#1683FF] text-white font-bold'
-                          : 'text-[#CBD5E1] hover:bg-[#07111F]'
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors text-left cursor-pointer ${
+                        active ? 'bg-[#1E88FF] text-white font-bold' : 'text-[#CBD5E1] hover:bg-[#101A30]'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" />
@@ -1080,8 +1112,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               </nav>
             </div>
 
-            {/* Bottom Actions */}
-            <div className="pt-4 border-t border-white/5 space-y-2">
+            <div className="pt-4 border-t border-white/10 space-y-2">
               {isAdmin && (
                 <button
                   type="button"
@@ -1089,7 +1120,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setMobileMenuOpen(false);
                     navigate('/admin');
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-[#1683FF] bg-[#1683FF]/10 rounded-xl"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-[#1E88FF] bg-[#1E88FF]/15 rounded-xl cursor-pointer"
                 >
                   <Settings className="w-4 h-4" />
                   <span>Admin Panel</span>
@@ -1103,7 +1134,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setMobileMenuOpen(false);
                     handleLogout();
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-rose-400 hover:bg-rose-500/10 rounded-xl"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-rose-400 hover:bg-rose-500/10 rounded-xl cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Sign Out</span>
@@ -1115,7 +1146,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setMobileMenuOpen(false);
                     navigate('/login');
                   }}
-                  className="w-full py-2 bg-[#1683FF] text-white text-xs font-bold rounded-xl text-center shadow-lg shadow-[#1683FF]/25"
+                  className="w-full py-2.5 bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold rounded-xl text-center transition-colors cursor-pointer"
                 >
                   Sign In / Register
                 </button>

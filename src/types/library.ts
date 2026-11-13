@@ -231,4 +231,17 @@ export interface SiteConfig {
   disclaimerText: string;
   enableRequests: boolean;
   heroAnimeSlug?: string;
+  logoUrl?: string;
+  faviconUrl?: string;
+  primaryColor?: string;
+  themeAccent?: string;
+  themeShape?: string;
+  themeFont?: string;
+  maintenanceMode?: boolean;
+  maintenanceMessage?: string;
+  enableComments?: boolean;
+  enableCommunityComments?: boolean;
+  enableRegistration?: boolean;
+  trendingMode?: 'auto' | 'manual';
+  popularMode?: 'auto' | 'manual';
 }

@@ -2,7 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ==========================================
+    // ZYNOX ANIME — HARDENED ZERO-TRUST RULES
+    // ==========================================
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,118 +14,136 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
+    function userDocExists() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return userDocExists()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'user';
+    }
+
+    function isSuperAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email != null && (request.auth.token.email == 'zairoxmax2.0@gmail.com' || request.auth.token.email.lower() == 'zairoxmax2.0@gmail.com')) ||
-        request.auth.token.admin == true ||
-        request.auth.token.role == 'admin' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        (request.auth.token.email != null &&
+         request.auth.token.email_verified == true &&
+         request.auth.token.email.lower() == 'zairoxmax2.0@gmail.com') ||
+        userRole() == 'super_admin'
       );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isAuthenticated() && (
+          request.auth.token.admin == true ||
+          request.auth.token.role in ['admin', 'super_admin'] ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+          userRole() in ['admin', 'super_admin']
+        )
+      );
+    }
+
+    function isEditorOrAdmin() {
+      return isAdmin() || (isAuthenticated() && userRole() == 'editor');
     }
 
     function isModeratorOrAdmin() {
-      return isAdmin() || (
-        isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator'
-      );
+      return isAdmin() || (isAuthenticated() && userRole() == 'moderator');
     }
 
-    // Default deny
+    function isStaff() {
+      return isAdmin() || (isAuthenticated() && userRole() in ['editor', 'moderator']);
+    }
+
+    function isValidViewsIncrement() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
+        request.resource.data.viewsCount is int &&
+        request.resource.data.viewsCount >= resource.data.get('viewsCount', 0) &&
+        request.resource.data.viewsCount <= resource.data.get('viewsCount', 0) + 5;
+    }
+
+    // Default deny catch-all
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Admins registry - completely protected from standard client writes
+    // Admins registry - completely protected from client writes
     match /admins/{userId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
-    // User profile documents (readable for public profiles, comment authors, and avatars)
+    // User profile documents: single-doc get allowed for public profiles/avatars; full listing restricted to admins
     match /users/{userId} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if isAdmin();
       allow create: if isAuthenticated() &&
         request.auth.uid == userId &&
         request.resource.data.uid == userId &&
         (!('role' in request.resource.data) || request.resource.data.role == 'user') &&
-        (!('status' in request.resource.data) || request.resource.data.status == 'active');
+        (!('status' in request.resource.data) || request.resource.data.status == 'active') &&
+        (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100)) &&
+        (!('bio' in request.resource.data) || request.resource.data.bio == null || (request.resource.data.bio is string && request.resource.data.bio.size() <= 500));
       allow update: if isAuthenticated() && (
-        isAdmin() ||
+        isSuperAdmin() ||
+        (isAdmin() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid'])) ||
         (request.auth.uid == userId &&
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'createdAt', 'status']))
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'createdAt', 'status']) &&
+         (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100)) &&
+         (!('bio' in request.resource.data) || request.resource.data.bio == null || (request.resource.data.bio is string && request.resource.data.bio.size() <= 500)))
       );
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // Anime catalog (supports anime, Anime, animes)
+    // Anime catalog (public reads ONLY published items; editors/admins can read & manage all)
     match /anime/{animeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      // Allow admin full update, or rate-controlled view counter increment (+1 to +5)
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
     match /Anime/{animeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
     match /animes/{animeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
 
-    // Episodes collection (supports episodes, Episodes, episode)
+    // Episodes collection (public reads ONLY published episodes; editors/admins manage all)
     match /episodes/{episodeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
     match /Episodes/{episodeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
     match /episode/{episodeId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewsCount']) &&
-        request.resource.data.viewsCount is int &&
-        request.resource.data.viewsCount >= resource.data.viewsCount &&
-        request.resource.data.viewsCount <= resource.data.viewsCount + 5
+      allow read: if resource.data.get('published', true) != false || isEditorOrAdmin();
+      allow create, delete: if isEditorOrAdmin();
+      allow update: if isEditorOrAdmin() || (
+        resource.data.get('published', true) != false && isValidViewsIncrement()
       );
     }
 
-    // Watch Progress (Continue Watching) - Strict User Isolation
+    // Watch Progress - Strict User Isolation
     match /watchProgress/{progressId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
@@ -169,7 +190,11 @@ service cloud.firestore {
     // Notifications - Strict Recipient Protection
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId is string &&
+        request.resource.data.userId.size() <= 128 &&
+        (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() <= 200)) &&
+        (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() <= 1000));
       allow update: if isAuthenticated() && (
         (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])) ||
         isAdmin()
@@ -177,48 +202,77 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // Community Anime Requests - Size Capped and Controlled (Publicly readable community board)
+    // Community Anime Requests - Bounded size and enforced pending initial state
     match /animeRequests/{requestId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAny(['title', 'animeTitle']) &&
+        (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 200)) &&
+        (!('animeTitle' in request.resource.data) || (request.resource.data.animeTitle is string && request.resource.data.animeTitle.size() >= 1 && request.resource.data.animeTitle.size() <= 200)) &&
+        (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
+        (!('status' in request.resource.data) || request.resource.data.status == 'pending') &&
+        (!('userId' in request.resource.data) || request.resource.data.userId == null || (isAuthenticated() && request.resource.data.userId == request.auth.uid));
+      allow update, delete: if isModeratorOrAdmin();
+    }
+    match /requests/{requestId} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasAny(['title', 'animeTitle']) &&
         (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
         (!('status' in request.resource.data) || request.resource.data.status == 'pending');
-      allow update, delete: if isAdmin();
+      allow update, delete: if isModeratorOrAdmin();
     }
 
     // Video Episode Problem Reports
     match /episodeReports/{reportId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if isModeratorOrAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if request.resource.data.keys().hasAny(['issueType', 'reason']) &&
+        (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
+        (!('status' in request.resource.data) || request.resource.data.status == 'open') &&
+        (!('userId' in request.resource.data) || request.resource.data.userId == null || (isAuthenticated() && request.resource.data.userId == request.auth.uid));
+      allow update, delete: if isModeratorOrAdmin();
+    }
+    match /reports/{reportId} {
+      allow read: if isModeratorOrAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if request.resource.data.keys().hasAny(['issueType', 'reason']) &&
         (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000)) &&
         (!('status' in request.resource.data) || request.resource.data.status == 'open');
-      allow update, delete: if isAdmin();
+      allow update, delete: if isModeratorOrAdmin();
     }
 
     // Community Discussions & Comments
     match /comments/{commentId} {
-      allow read: if true;
+      allow read: if resource.data.get('isHidden', false) != true ||
+        isModeratorOrAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.content is string &&
+        request.resource.data.content.size() >= 1 &&
         request.resource.data.content.size() <= 1000 &&
-        (!('likesCount' in request.resource.data) || request.resource.data.likesCount == 0);
+        (!('likesCount' in request.resource.data) || request.resource.data.likesCount == 0) &&
+        (!('isHidden' in request.resource.data) || request.resource.data.isHidden == false);
       allow update: if isAuthenticated() && (
         (resource.data.userId == request.auth.uid &&
          request.resource.data.userId == request.auth.uid &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'isEdited', 'updatedAt']) &&
          request.resource.data.content is string &&
+         request.resource.data.content.size() >= 1 &&
          request.resource.data.content.size() <= 1000) ||
         isModeratorOrAdmin() ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount']) &&
          request.resource.data.likesCount is int &&
-         (request.resource.data.likesCount == resource.data.likesCount + 1 ||
-          request.resource.data.likesCount == resource.data.likesCount - 1))
+         (request.resource.data.likesCount == resource.data.get('likesCount', 0) + 1 ||
+          request.resource.data.likesCount == resource.data.get('likesCount', 0) - 1)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['repliesCount']) &&
+         request.resource.data.repliesCount is int &&
+         request.resource.data.repliesCount == resource.data.get('repliesCount', 0) + 1) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportsCount']) &&
+         request.resource.data.reportsCount is int &&
+         request.resource.data.reportsCount == resource.data.get('reportsCount', 0) + 1)
       );
       allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isModeratorOrAdmin());
     }
 
-    // Comment Likes - Binary Action (Create/Delete only, No update)
+    // Comment Likes
     match /commentLikes/{likeId} {
       allow read: if true;
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
@@ -261,106 +315,106 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // CMS Collections (Homepage, Hero Banners, Schedule, Seasons, Taxonomies, Nav, Footer, SEO, Legal)
+    // CMS Collections
     match /cms_homepage_sections/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsHomepageSections/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_hero_banners/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsHeroBanners/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_schedule/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsSchedule/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_seasons/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsSeasons/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_genres/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsGenres/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_statuses/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsStatuses/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_years/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsYears/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_rating_ranges/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsRatingRanges/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsRatings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_types/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsTypes/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_languages/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsLanguages/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_studios/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsStudios/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_navigation/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsNavigation/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_announcements/{docId} {
       allow read: if true;
@@ -372,59 +426,61 @@ service cloud.firestore {
     }
     match /cms_seo_settings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsSeoSettings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_legal_pages/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsLegalPages/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_footer_config/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsFooterConfig/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_avatars/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cmsAvatars/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isEditorOrAdmin();
     }
     match /cms_config/{docId} {
       allow read: if true;
-      allow write: if isAdmin() || isModeratorOrAdmin();
+      allow write: if isEditorOrAdmin() || isModeratorOrAdmin();
     }
     match /cmsConfig/{docId} {
       allow read: if true;
-      allow write: if isAdmin() || isModeratorOrAdmin();
+      allow write: if isEditorOrAdmin() || isModeratorOrAdmin();
     }
 
-    // Admin Audit / Activity Logs - IMMUTABLE (Create & Read only by Admin; updates/deletions strictly forbidden)
+    // Admin Audit / Activity Logs - IMMUTABLE
     match /admin_activity_logs/{logId} {
-      allow read: if isAdmin() || isModeratorOrAdmin();
-      allow create: if isAdmin() || isModeratorOrAdmin();
+      allow read: if isStaff();
+      allow create: if isStaff();
       allow update, delete: if false;
     }
     match /cmsAdminLogs/{logId} {
-      allow read: if isAdmin() || isModeratorOrAdmin();
-      allow create: if isAdmin() || isModeratorOrAdmin();
+      allow read: if isStaff();
+      allow create: if isStaff();
       allow update, delete: if false;
     }
     match /security_events/{eventId} {
       allow read: if isAdmin();
-      allow create: if true;
+      allow create: if request.resource.data.keys().hasAll(['eventType']) &&
+        request.resource.data.eventType is string &&
+        request.resource.data.eventType.size() <= 100;
       allow update, delete: if false;
     }
   }

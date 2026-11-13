@@ -125,7 +125,7 @@ export const ScheduledCard: React.FC<ScheduledCardProps> = ({
 
         {/* Center Play Button Overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
-          <div className="w-9 h-9 rounded-full bg-[#1683FF] text-white flex items-center justify-center shadow-lg shadow-[#1683FF]/30 transform scale-90 group-hover:scale-105 transition-transform duration-200">
+          <div className="w-9 h-9 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md transform scale-90 group-hover:scale-105 transition-transform duration-200">
             <Play className="w-4 h-4 fill-white ml-0.5" />
           </div>
         </div>

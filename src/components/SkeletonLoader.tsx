@@ -102,7 +102,7 @@ export const MobileEpisodeRowSkeleton: React.FC = () => (
  * Full Hero Carousel Banner Skeleton
  */
 export const HeroSkeleton: React.FC = () => (
-  <div className="w-full h-[360px] sm:h-[440px] md:h-[500px] bg-[#07111F] border border-white/10 rounded-2xl sm:rounded-3xl animate-pulse p-5 sm:p-8 md:p-12 flex flex-col justify-end relative overflow-hidden shadow-2xl">
+  <div className="w-full aspect-[16/10] sm:aspect-video min-h-[300px] sm:min-h-[360px] md:min-h-[440px] lg:min-h-[500px] max-h-[600px] bg-[#07111F] border border-white/10 rounded-2xl animate-pulse p-4 sm:p-6 md:p-8 flex flex-col justify-end relative overflow-hidden shadow-xl">
     {/* Ambient radial glow background effect */}
     <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/70 to-transparent z-10" />
 

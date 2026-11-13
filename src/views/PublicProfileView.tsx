@@ -1,18 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import type { UserProfile } from '../types/user';
 import type { AnimeFollowItem, UserBadge } from '../types/library';
 import { getUserProfileById } from '../lib/firestore/admin-users';
 import { getUserFollowedAnimes } from '../lib/firestore/follows';
 import { calculateUserBadges } from '../lib/badges';
 import { UserBadgePill } from '../components/community/UserBadgePill';
+import { EmptyState, ErrorState } from '../components/common/FeedbackStates';
+import { usePageSeo } from '../hooks/usePageSeo';
 import {
-  User,
   ShieldCheck,
   Calendar,
   Sparkles,
   ArrowLeft,
-  Loader2,
-  AlertCircle,
   Bell,
   Award,
 } from 'lucide-react';
@@ -23,10 +22,12 @@ interface PublicProfileViewProps {
   onShowMessage?: (msg: string) => void;
 }
 
+const FALLBACK_POSTER =
+  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=400&auto=format&fit=crop&q=80';
+
 export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
   userId,
   navigate,
-  onShowMessage,
 }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [followedAnimes, setFollowedAnimes] = useState<AnimeFollowItem[]>([]);
@@ -34,72 +35,83 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchPublicData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [profData, follows] = await Promise.all([
-          getUserProfileById(userId),
-          getUserFollowedAnimes(userId),
-        ]);
+  const displayName =
+    profile?.displayName || profile?.email?.split('@')[0] || 'Zynox Member';
 
-        if (!profData) {
-          if (isMounted) setError('User profile not found.');
-          return;
-        }
+  usePageSeo({
+    title: profile ? `${displayName} | ZYNOX ANIME` : 'User Profile | ZYNOX ANIME',
+    description: profile?.bio || `Community profile for ${displayName} on ZYNOX ANIME.`,
+  });
 
-        if (isMounted) {
-          setProfile(profData);
-          setFollowedAnimes(follows);
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigate('/');
+    }
+  };
 
-          const computedBadges = calculateUserBadges({
-            watchlistCount: 3,
-            completedCount: 1,
-            favoritesCount: 2,
-            historyCount: 5,
-            commentsCount: 3,
-            role: profData.role,
-            createdAt: profData.createdAt,
-          });
-          setBadges(computedBadges);
-        }
-      } catch (err: any) {
-        if (isMounted) {
-          console.error('Error fetching public user profile:', err);
-          setError('Failed to load user profile.');
-        }
-      } finally {
-        if (isMounted) setLoading(false);
+  const fetchPublicData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [profData, follows] = await Promise.all([
+        getUserProfileById(userId),
+        getUserFollowedAnimes(userId),
+      ]);
+
+      if (!profData) {
+        setError('User profile not found.');
+        return;
       }
-    };
 
-    fetchPublicData();
-    return () => {
-      isMounted = false;
-    };
+      setProfile(profData);
+      setFollowedAnimes(follows);
+
+      const computedBadges = calculateUserBadges({
+        watchlistCount: follows.length,
+        completedCount: 0,
+        favoritesCount: 0,
+        historyCount: 0,
+        commentsCount: 0,
+        role: profData.role,
+        createdAt: profData.createdAt,
+      });
+      setBadges(computedBadges);
+    } catch (err) {
+      console.error('Error fetching public user profile:', err);
+      setError('Failed to load user profile. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [userId]);
+
+  useEffect(() => {
+    fetchPublicData();
+  }, [fetchPublicData]);
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-24 flex flex-col items-center justify-center text-[#A9B8CC] gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00A8FF]" />
-        <p className="text-xs font-semibold">Loading community profile...</p>
+      <div className="max-w-4xl mx-auto px-3 sm:px-6 py-8 space-y-6">
+        <div className="h-44 rounded-2xl bg-[#0B1324] border border-white/10 animate-pulse" />
+        <div className="h-56 rounded-2xl bg-[#0B1324] border border-white/10 animate-pulse" />
       </div>
     );
   }
 
   if (error || !profile) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-16 text-center">
-        <div className="bg-red-500/10 border border-red-500/20 text-red-300 p-6 rounded-2xl">
-          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
-          <h2 className="text-base font-bold mb-1">{error || 'User Not Found'}</h2>
+      <div className="max-w-xl mx-auto px-4 py-12 space-y-4">
+        <ErrorState
+          title={error === 'User profile not found.' ? 'User Not Found' : 'Profile Unavailable'}
+          message={error || 'User profile not found.'}
+          onRetry={error !== 'User profile not found.' ? fetchPublicData : undefined}
+        />
+        <div className="flex justify-center">
           <button
             type="button"
-            onClick={() => navigate(-1 as any)}
-            className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+            onClick={handleGoBack}
+            className="h-10 px-4 bg-[#0B1324] hover:bg-[#101A30] border border-white/10 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Go Back</span>
@@ -113,133 +125,159 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
   const formatJoinDate = (ts: any) => {
     if (!ts) return 'Member';
-    const date = ts.toDate ? ts.toDate() : new Date(ts);
-    return `Joined ${date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+    try {
+      const date = ts.toDate ? ts.toDate() : new Date(ts);
+      if (isNaN(date.getTime())) return 'Member';
+      return `Joined ${date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+    } catch {
+      return 'Member';
+    }
   };
 
+  const roleStr = String(profile.role || 'user').toLowerCase();
+  const isStaff =
+    roleStr === 'super_admin' ||
+    roleStr === 'superadmin' ||
+    roleStr === 'admin' ||
+    roleStr === 'editor' ||
+    roleStr === 'moderator';
+
+  const roleBadgeText =
+    roleStr === 'super_admin' || roleStr === 'superadmin'
+      ? 'Super Admin'
+      : roleStr === 'admin'
+      ? 'Admin'
+      : roleStr === 'editor'
+      ? 'Editor'
+      : 'Moderator';
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-      {/* Back Button */}
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
       <button
         type="button"
-        onClick={() => navigate(-1 as any)}
-        className="inline-flex items-center gap-2 text-xs font-bold text-[#A9B8CC] hover:text-white transition-colors"
+        onClick={handleGoBack}
+        className="inline-flex items-center gap-2 text-xs font-semibold text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back</span>
       </button>
 
-      {/* Profile Header Card */}
-      <div className="bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-[#0066FF]/20 border border-[#00A8FF]/40 overflow-hidden flex items-center justify-center text-[#00D9FF] text-2xl font-black shadow-lg shadow-[#00A8FF]/20 shrink-0">
-              {profile.avatar ? (
-                <img
-                  src={profile.avatar}
-                  alt={profile.displayName || 'User avatar'}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                initial
+      {/* Profile Card */}
+      <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-5 sm:p-6 space-y-5">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#101A30] border-2 border-[#1E88FF] overflow-hidden flex items-center justify-center text-[#1E88FF] text-2xl font-black shrink-0">
+            {profile.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={displayName}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              initial
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black text-white truncate">
+                {displayName}
+              </h1>
+
+              {isStaff && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#1E88FF]/15 border border-[#1E88FF]/30 rounded-full text-[11px] text-[#1E88FF] font-semibold shrink-0">
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>{roleBadgeText}</span>
+                </span>
               )}
             </div>
 
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl sm:text-2xl font-black text-[#F5F9FF]">
-                  {profile.displayName || profile.email?.split('@')[0] || 'Zynox Member'}
-                </h1>
-
-                {profile.role === 'admin' && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#00A8FF]/20 border border-[#00A8FF]/40 rounded-full text-[10px] text-[#00D9FF] font-bold">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>Admin</span>
-                  </span>
-                )}
-                {profile.role === 'moderator' && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-500/20 border border-blue-500/40 rounded-full text-[10px] text-blue-400 font-bold">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>Moderator</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-[#A9B8CC] mt-1">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>{formatJoinDate(profile.createdAt)}</span>
-              </div>
+            <div className="flex items-center gap-1.5 text-xs text-[#94A3B8]">
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              <span>{formatJoinDate(profile.createdAt)}</span>
             </div>
           </div>
         </div>
 
         {/* Bio */}
-        {profile.bio ? (
-          <div className="bg-[#0D1B2E] border border-white/5 rounded-2xl p-4 text-xs text-[#A9B8CC] leading-relaxed">
-            {profile.bio}
-          </div>
-        ) : (
-          <div className="bg-[#0D1B2E] border border-white/5 rounded-2xl p-4 text-xs text-[#6E7F95] italic">
-            No bio provided yet.
+        <div className="bg-[#101A30] border border-white/5 rounded-xl p-4 text-xs sm:text-sm text-[#CBD5E1] leading-relaxed">
+          {profile.bio ? (
+            profile.bio
+          ) : (
+            <span className="text-[#64748B] italic">No bio provided yet.</span>
+          )}
+        </div>
+
+        {/* Community Badges */}
+        {badges.length > 0 && (
+          <div className="space-y-2.5 pt-2 border-t border-white/10">
+            <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider">
+              <Award className="w-4 h-4 text-[#1E88FF]" />
+              <span>Community Badges</span>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {badges.map((b) => (
+                <UserBadgePill key={b.id} badge={b} size="md" />
+              ))}
+            </div>
           </div>
         )}
-
-        {/* Earned Community Badges */}
-        <div className="space-y-3 pt-2 border-t border-white/5">
-          <div className="flex items-center gap-2 text-xs font-bold text-[#F5F9FF] uppercase tracking-wider">
-            <Award className="w-4 h-4 text-[#00A8FF]" />
-            <span>Community Badges &amp; Achievements</span>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {badges.map((b) => (
-              <UserBadgePill key={b.id} badge={b} size="md" />
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Followed Anime Section */}
-      <div className="bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
-        <div className="flex items-center justify-between border-b border-white/5 pb-3">
-          <div className="flex items-center gap-2">
-            <Bell className="w-4 h-4 text-[#00A8FF]" />
-            <h2 className="text-base font-bold text-[#F5F9FF]">Followed Anime Series</h2>
+      <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="w-4 h-4 text-[#1E88FF] shrink-0" />
+            <h2 className="text-sm sm:text-base font-bold text-white truncate">
+              Followed Anime
+            </h2>
           </div>
-          <span className="text-xs text-[#A9B8CC] font-mono">
+          <span className="text-xs text-[#94A3B8] font-mono shrink-0">
             {followedAnimes.length} titles
           </span>
         </div>
 
         {followedAnimes.length === 0 ? (
-          <p className="text-xs text-[#6E7F95] py-4 text-center">
-            This user hasn&apos;t followed any anime series yet.
-          </p>
+          <EmptyState
+            icon={<Sparkles className="w-6 h-6 text-[#1E88FF]" />}
+            title="No followed anime"
+            description="This user has not followed any anime series yet."
+            className="p-6 sm:p-8"
+          />
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
             {followedAnimes.map((fa) => (
               <div
                 key={fa.id || fa.animeId}
+                role="button"
+                tabIndex={0}
                 onClick={() => navigate(`/anime/${fa.animeSlug}`)}
-                className="bg-[#0D1B2E] border border-white/5 hover:border-[#00A8FF]/50 rounded-2xl overflow-hidden cursor-pointer group transition-all shadow-lg hover:bg-[#11243C]"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(`/anime/${fa.animeSlug}`);
+                  }
+                }}
+                className="bg-[#101A30] border border-white/10 hover:border-[#1E88FF]/50 rounded-xl overflow-hidden cursor-pointer group transition-colors min-w-0"
               >
-                <div className="aspect-[3/4] bg-[#06101F] relative overflow-hidden">
-                  {fa.animePoster ? (
-                    <img
-                      src={fa.animePoster}
-                      alt={fa.animeTitle}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#6E7F95]">
-                      <Sparkles className="w-8 h-8" />
-                    </div>
-                  )}
+                <div className="aspect-[2/3] bg-[#050A14] relative overflow-hidden">
+                  <img
+                    src={fa.animePoster || FALLBACK_POSTER}
+                    alt={fa.animeTitle}
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (target.src !== FALLBACK_POSTER) target.src = FALLBACK_POSTER;
+                    }}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
                 </div>
-                <div className="p-3">
-                  <div className="text-xs font-bold text-[#F5F9FF] group-hover:text-[#00D9FF] truncate transition-colors">
+                <div className="p-2.5">
+                  <div className="text-xs font-semibold text-white group-hover:text-[#1E88FF] truncate transition-colors">
                     {fa.animeTitle}
                   </div>
                 </div>

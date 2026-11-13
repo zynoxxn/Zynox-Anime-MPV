@@ -1,0 +1,146 @@
+ROLE
+You are a senior full-stack engineer and product designer. REBUILD the complete ZYNOX ANIME Admin Panel (every /admin route) as a clean, fast, modern, NO-CODE CMS that visually matches the public website. The owner is not a coder: every part of the website (content, homepage, menus, footer, branding/colors, legal pages, SEO, popups, users, comments, avatars, settings) must be controllable from this panel with simple forms, toggles, dropdowns and drag-and-drop. No JSON, no code, no Markdown syntax in the UI.
+
+══════════ SECTION 0 — RULES TO AVOID MISTAKES (READ FIRST, FOLLOW STRICTLY) ══════════
+0.1 FIRST read the whole existing project. List every current admin route/view/component and every Firestore collection and field you find. Reuse existing collection names and field names EXACTLY. Never rename, delete or restructure existing data. New fields must be optional with safe defaults. Existing data (anime, episodes, downloads, schedule, users, comments, settings, avatars, audit logs) must keep working with zero migration.
+0.2 Keep my tech stack, Firebase project (Auth, Firestore, Storage), routes and all public-site behavior. Do NOT change any public page unless a section below says so. If an old route exists, keep it working (redirect to the new page).
+0.3 Work in PHASES (Section 12). Do ONLY the phase I ask for, then STOP and wait. Do not start the next phase by yourself.
+0.4 Output COMPLETE working code. No "rest of the code here", no "// TODO", no placeholders, no pseudo-code. When you edit a file, give the full final file content.
+0.5 After finishing a phase, run the type-check/build mentally and fix errors BEFORE replying. Final answer must have 0 TypeScript errors, 0 console errors, 0 warnings, no unused imports, no broken imports.
+0.6 Never use the browser-native <select> popup, native checkbox, native date picker styling, alert(), confirm() or prompt(). Use the shared custom components from Section 1.
+0.7 Never hardcode data that should come from Firestore. Never show fake numbers. If data is missing, show a clean empty state.
+0.8 Every button, link, form, modal, tab and menu you create must actually work. Every async action needs loading state, success toast and error toast.
+0.9 Keep the existing security: admin-only access, Firestore rules, 30-minute idle lock, anti brute-force, audit trail. Add role checks in the UI and tell me the exact Firestore rules to deploy.
+0.10 Layout safety on EVERY screen from 320px to 1920px: no horizontal page scroll, no overlap, no cut text, no wrapped button labels, no element outside the viewport. Use min-w-0 on every flex child with text, truncate/line-clamp for long text, flex-wrap where needed, and dvh (not vh) for heights.
+0.11 Test mentally with WORST-CASE data: very long titles/slugs/URLs/emails (60+ chars), 0 items, 1 item, 500 items, missing images, missing timestamps, Hindi text, 6+ genres.
+0.12 At the end of each phase give: (a) list of files created/modified, (b) Firestore rules/indexes to deploy, (c) the self-test checklist with real results.
+
+══════════ SECTION 1 — DESIGN SYSTEM (shared, build once, use everywhere) ══════════
+Colors (CSS variables): background #050A14, surface #0B1324, elevated #101A30, border rgba(255,255,255,0.08), text #FFFFFF, muted #94A3B8. ONE primary color: electric blue #1E88FF. Success #22C55E, warning #F59E0B, danger #EF4444 are ONLY for status badges, toasts and destructive actions. REMOVE the random purple/cyan/pink/orange/green primary buttons currently used on different pages: every primary button is blue, every secondary button is outlined/ghost, every destructive button is red outline (solid red only inside a confirm dialog).
+Typography: same UI font as the public site (Inter/Roboto). Page title 22px bold, section title 16px semibold, body 14px, helper/meta 12px muted. Radius 12px (cards) / 10px (inputs, buttons). Flat surfaces, ONE subtle border, no glows, no large gradients, no big uppercase "CMS" eyebrow labels.
+Shared components (create once in a /components/admin folder):
+- PageHeader: title (22px, single line, truncate) + optional one-line description (muted, hidden on phone) + ONE primary action button on the right (icon-only on phone if label is long).
+- SegmentedTabs: horizontally scrollable, scroll-snap, labels single-line (whitespace-nowrap), count shown as small muted pill, active tab auto-scrolls into view, right edge fade. Tabs never wrap or get cut.
+- SearchInput (44px high, clear X), FilterBar (chips + custom Select), SortableList (drag handle + up/down buttons for touch), ListRow, DataTable (desktop sortable, bulk select) that becomes ListRows on phone.
+- Select (custom dropdown on desktop, bottom sheet on phone, same style as the public Explore sort: 48px rows, selected row blue with check icon, keyboard accessible, never the native popup). Use it for EVERY dropdown (role, status, year, layout, source, etc.).
+- Toggle (custom switch, 44x24) with a label to the LEFT and the switch on the right. No native checkboxes anywhere.
+- StatusBadge (Live/Draft/Upcoming/Banned/Admin etc.; small pill 22px high), RowMenu ("⋯" popover on desktop, bottom sheet on phone), ConfirmDialog (title, plain-language consequence, red confirm button; for dangerous actions require typing a keyword), Drawer (right side 420px on desktop) / BottomSheet (phone, max-height 88dvh, drag handle, fixed header and footer, only the content scrolls), Toast, Skeleton (exact final sizes), EmptyState (icon + one line + one action), ErrorState (message + Retry), ImageUploader (Firebase Storage upload with progress bar, type/size validation, paste-URL option, live preview, crop, fallback placeholder), ColorField (6 preset swatches + custom hex input that is fully visible), RichTextEditor (see Section 9), StickySaveBar, GlobalSearch (Ctrl/Cmd+K), Breadcrumbs, HelpTip (small "?" that shows a one-line explanation).
+Button rules: height 40px desktop / 44px phone, whitespace-nowrap (labels NEVER wrap into 2 lines), icon + label, ≤1 primary button per section, secondary buttons collapse to icon-only (with aria-label and tooltip) on narrow widths. Remove duplicate buttons (for example the same Save/Cancel/Publish at the top AND bottom of a form: keep one sticky bar).
+Forms: label above input, helper text below (12px), inline validation errors in red, required marker, trimmed input, URL/slug validation, double-submit prevention, unsaved-changes warning on leave, autosave draft locally every 10s. Inputs never truncate their placeholder: long values use a textarea or wrap; inputs have a visible clear/paste button where useful.
+Every list/page has 3 states: skeleton loading, compact empty state, error with Retry. Images: lazy-loaded, fixed aspect-ratio box, onError fallback (never a black box, never alt text). Accessibility: AA contrast, visible focus ring, aria labels, keyboard navigation, minimum tap target 44px.
+
+══════════ SECTION 2 — LAYOUT & NAVIGATION ══════════
+- Desktop ≥1024px: fixed left sidebar 260px (collapsible to 72px icons), top bar (breadcrumbs, global search Ctrl/Cmd+K, "View site", profile menu). Content max-width 1280px, padding 24-32px.
+- Tablet 768-1023px: icon sidebar + top bar. Phone <768px: compact top bar (menu, page title, search, profile) + fixed bottom navigation (Home, Library, Episodes, Site, More). "More" opens a bottom sheet listing all other modules. Bottom bar uses safe-area padding; the sticky save bar sits ABOVE it and never covers inputs (page bottom padding = bar heights + 16px).
+- New simplified menu (replace the 22-item list; keep old routes as redirects):
+  1. Dashboard
+  2. Library: Anime, Episodes, Schedule, Categories (Genres, Statuses, Years, Ratings)
+  3. Homepage: Layout & Sections, Hero Banners, Popups & Notices
+  4. Community: Requests, Reports (Broken streams + flagged comments), Users, Avatars
+  5. Site: Branding & Theme, Menus & Footer, SEO, Legal Pages, Settings
+  6. System: Activity Logs
+- Remove the cluttered header icon row (search, plus, external, logout): keep Search, "View site", Profile menu (with Logout). The big "+" quick-add becomes a "+ New" menu (Anime, Episode, Bulk episodes, Hero banner, Notice).
+- Remember last tab, filters and scroll position per page. Unsaved-changes guard on all forms.
+- Roles: Super Admin (everything), Admin (everything except Users roles/Settings danger zone), Editor (Library, Homepage, Site content), Moderator (Community only). Hide menu items the role cannot access and enforce in Firestore rules.
+
+══════════ SECTION 3 — DASHBOARD ══════════
+- 4 stat cards (Anime, Episodes, Users, Views last 7 days) in a 2x2 grid on phone / 4 across on desktop. Use Firestore count() aggregation or a stats document; never read whole collections. Remove the useless "Requests 0" and "Notice DISABLED" cards (they appear in "Needs attention" only when relevant).
+- Quick actions row: Add Anime, Add Episode, Bulk Episodes, Edit Homepage (blue primary only for Add Anime, others outlined).
+- "Needs attention" list (tap opens the exact item): anime with no episodes, episodes with no server, missing poster, pending requests, broken-stream reports, flagged comments.
+- Views chart (7/30 days toggle), Recent anime (compact rows: 40px thumbnail with fallback, title truncate, one meta line, status badge, "⋯" menu), Recent activity (5 human-readable lines).
+- Replace the big "Top-Level Security Shield" card with a small "Security: Protected" pill linking to Activity Logs. Never display full admin emails in big text; mask as "za…@gmail.com" with a reveal tap.
+
+══════════ SECTION 4 — LIBRARY ══════════
+4.1 ANIME LIST
+- Search, filters (status, type, published/draft) in a single row with custom Selects, sort. Row = poster 48x64 (fallback icon), title (truncate), ONE meta line "TV · Ongoing · 2026 · Hindi Dub" (truncate; this line must never collide with buttons), StatusBadge, "⋯" menu (Edit, Episodes, Downloads, Duplicate, Publish/Unpublish, Delete). NEVER show 3-4 separate buttons per row. Desktop: real table with sortable columns and bulk actions (publish, unpublish, delete). Slugs are shown only in the edit page, not in the list.
+4.2 ANIME WORKSPACE (tap a row, or "+ New Anime" in create mode)
+- Header: back, poster thumb, title, StatusBadge, ONE Save button (appears in the sticky bar only when something changed: "Save draft" / "Publish"). Tabs: Details · Seasons · Episodes · Downloads. This REPLACES the separate Create/Edit/Seasons/Artwork/SEO tabs and the duplicate Downloads pages.
+- Details tab = accordion sections, only the first open by default, 1 column on phone / 2 on desktop:
+  a) Basics: English title*, Japanese title, slug (auto from title, uniqueness check, editable), synopsis* (textarea, counter).
+  b) Artwork: Poster* and Banner via ImageUploader (upload to Firebase Storage, progress, crop, paste URL, preview), Trailer URL (validated).
+  c) Classification: type (TV/Movie/OVA/Special), status (from Categories), year, season, studio, total episodes, rating, audio languages (multi-select chips), genres (chips from Categories + custom).
+  d) Schedule: release day, air time (time picker), "Create/update schedule slot automatically" toggle.
+  e) Promotion: Trending, Popular, Featured toggles (with one-line explanations).
+  f) SEO: meta title/description/keywords with "Auto-generate" and a Google-style preview.
+  g) Visibility: Published / Draft toggle.
+- Seasons tab: ONE "Add season" button (remove duplicate "Quick Setup" and "Setup Default" buttons and the long explanatory text), season cards (name, order, episode count) with drag reorder, rename, delete (confirm and show how many episodes are affected).
+- Episodes tab and Downloads tab are embedded versions of 4.3 and 4.4 filtered to this anime.
+4.3 EPISODES
+- List: search + custom Selects for anime and season (remember last choice), compact rows: thumbnail 16:9 with fallback, "EP 12 · Title", anime name, StatusBadge (Live/Upcoming/Draft), CORRECT server count ("2 servers": count ALL sub and dub servers/embeds; fix the current "0 servers active" bug), "⋯" menu (Edit, Duplicate, Downloads, Delete). Pagination 20 per page. Remove the 4-icon row per episode.
+- Add/Edit Episode in a Drawer/full-screen sheet with accordion sections: Basics (anime, season, episode number defaults to next number, title, duration, thumbnail with "Use anime banner/poster" shortcuts, description), Status (Released / Upcoming + release date-time), Servers (Sub list and Dub list; each row: label, URL, default star, Test button, drag reorder, delete), Downloads (quality rows 480p/720p/1080p with URL + file size, "Add mirror"), Skip Intro/Outro (mm:ss). Do NOT silently switch the season: default to the latest season and show a small hint if a season is full.
+- BULK EPISODES: a table (Ep, Title, Embed URL, Download URL) with a "Paste list" box (one URL per line or CSV), auto-numbering, URL validation with row-level errors, preview before saving, progress bar while saving, ONE "Save all" button in the sticky bar, "Delete season episodes" only inside a danger menu with typed confirmation. Replace the 12 tall form cards.
+4.4 DOWNLOADS
+- Inside the anime workspace and episode drawer. Old /admin/downloads becomes a simple Anime → Season picker that opens that tab. Batch/zip packages per season: list rows with name, URL, size; "Add zip" button label never wraps. "Save All" lives in the sticky bar. Validate URLs and show filled/empty quality badges.
+4.5 SCHEDULE
+- SegmentedTabs: All · Mon … Sun (counts, one-line labels). Slot rows: thumbnail, title, "Wed · 21:00 · EP 12", audio chip, StatusBadge, "⋯" menu. "Add slot" opens a sheet (anime, day, time, episode, status override). "Auto-sync from anime" is an outlined button (icon + short label "Sync") with a confirmation explaining what it will overwrite.
+4.6 CATEGORIES (merge Genres, Statuses, Years, Ratings)
+- One page with SegmentedTabs: Genres · Statuses · Years · Ratings. Each tab = list with drag handle, name, Active Toggle, edit (sheet), delete (confirm; blocked with a clear message if the item is used by anime). Genres: slug auto-generated, short description, "Adult (18+)" flag. Statuses: color dot picker from 6 presets. Years: "Generate range" (from–to) instead of adding one by one. Ratings: label + minimum score. Fix typos ("Add New STATUSE" → "Add status"). Button label per tab: "Add genre", "Add status", "Add year", "Add rating" (outlined/blue, never green).
+
+══════════ SECTION 5 — HOMEPAGE CONTROL ══════════
+5.1 LAYOUT & SECTIONS
+- Sortable list of homepage sections (touch-friendly drag handle + up/down buttons). Collapsed row: drag handle, section title, short source label, visibility Toggle, chevron. Expanded: title, subtitle (textarea, no cut text), content source (custom Select), layout (custom Select), max items (stepper), status. No inline tiny dropdowns, no cut placeholders.
+- "Discovery algorithms" (Trending mode, Popular mode) becomes a compact accordion at the top with two clear Selects and one-line help.
+- Save in the sticky bar ("Save changes" + "Reset to default"). Live preview: desktop = side panel with a mini preview, phone = full-screen preview sheet.
+- Section keys must match the public Home: Hero, Continue Watching, Trending, Top 10, Latest Episodes, Popular, Recently Added, Explore by Genre, Weekly Schedule, plus any existing extra sections.
+5.2 HERO BANNERS
+- Sortable list of compact cards (banner thumbnail 16:9, anime title, Active Toggle, "⋯" menu). Editor sheet: pick an anime (auto-fills title, synopsis, genres, poster), banner image via ImageUploader, button labels and links (e.g. "Watch Episode 1"), start/end date, order, active. Show the final hero preview (phone and desktop) at the top of the sheet. Long slugs/URLs truncate. Button labels never wrap.
+5.3 POPUPS & NOTICES (merge Site Pop-up Notice + Announcements into ONE page, remove the duplicate page)
+- SegmentedTabs: Opening popup · Top banner/announcements.
+- Opening popup: enable Toggle, title, message (textarea), optional button (label + link, e.g. Join Telegram), delay (stepper 0–20 s), show frequency (Once / Daily / Always), start and expiry date, color: 6 preset swatches + custom hex (ColorField, fully visible), accent theme limited to the same 6 presets (remove the 11-color grid and the duplicated Accent Theme section). Labels in English only (remove mixed Hindi labels) unless I ask for Hindi. Live 1:1 preview always visible (side panel on desktop, collapsible card on phone). ONE Save button in the sticky bar. Remove duplicate "Disabled/Save/Preview Live" button rows.
+- Announcements: list with pin, audience, expiry, active Toggle, "Add announcement" sheet.
+5.4 BRANDING & THEME (NEW, no-code design control)
+- Site name, tagline, logo (upload), favicon, footer logo, wordmark text. Theme: primary color (6 presets + custom hex), accent color, card radius (Sharp / Rounded), font choice (3 safe options), default theme (dark). Values are saved to Firestore and applied on the public site via CSS variables. Show a live mini preview (card, button, chip) before saving. "Reset to default" button.
+5.5 MENUS & FOOTER
+- SegmentedTabs: Header menu · Footer. Header menu: SortableList (label, link, icon picker, "Logged-in only" Toggle, Visible Toggle), "Add link" sheet. Show only label + link in the row (remove "Icon: Home • Target: header" noise). Footer tabs: Links (columns), Socials (Telegram, Instagram, Discord, email), Text (about text, copyright, disclaimer), A–Z directory Toggle, popular genres toggle. Live preview strip at the top.
+
+══════════ SECTION 6 — SITE SETTINGS, SEO, LEGAL ══════════
+6.1 SETTINGS (simple groups as cards: General, Features, Player, Contact & Links, Maintenance, Backup, Developer)
+- General: site name/tagline (link to Branding), default audio language, adult content gate Toggle.
+- Features (Toggles with one-line explanation): allow anime requests, enable comments, enable user registration, enable watchlist/history.
+- Player: autoplay next episode, remember progress, default server.
+- Contact & Links: contact email, Telegram, Instagram, Discord.
+- Maintenance: maintenance mode Toggle + message + "Allow admins to bypass".
+- Backup: Export data (JSON per collection) and Import (validated, with preview and confirmation).
+- Developer (collapsed, Super Admin only, red outline, "Danger zone"): "Seed Catalog" must NOT be one click. It needs a ConfirmDialog that explains it will add sample data and requires typing SEED; it must never overwrite existing documents (create only missing ones) and must log to Activity Logs. Also "Clear cache".
+- ONE Save button in the sticky bar (blue, not purple); disabled until something changes.
+6.2 SEO
+- SegmentedTabs: General · Templates · Social · Verification · Preview. Long title templates use textareas (never a cut single-line input) with variable chips ({title}, {siteName}, {epNumber}) that insert on tap and a live example below. Homepage title/description with character counters (title ≤ 60, description 140-160, color hint green/amber/red). Open Graph default image via ImageUploader (not a plain URL field), Twitter/X handle, Google verification token (helper text, validate format), robots/sitemap Toggles + "Regenerate sitemap" button. Google SERP preview card (title, URL, description). Save in the sticky bar (blue).
+6.3 LEGAL PAGES
+- Left list (phone: dropdown at top) of pages: DMCA, Disclaimer, Terms, Privacy, About, Contact, Community Guidelines (list rows with a "Published" badge and last updated date). Editor = RichTextEditor with a toolbar (Heading 2/3, Bold, Italic, Bullet list, Numbered list, Link, Quote, Undo/Redo) and a "Preview" toggle. NO raw Markdown shown by default (add an "Advanced: Markdown" toggle for experts; convert both ways without data loss and keep existing stored Markdown content rendering correctly). "Last updated" date is automatic. Sanitize output (no scripts). Buttons: Save (sticky), "View on site". Replace the single "Save All Legal Content" button with per-page Save + unsaved indicator.
+
+══════════ SECTION 7 — COMMUNITY ══════════
+7.1 REQUESTS: list rows (title, requester, date, StatusBadge), custom Select filter, status flow Pending → Approved → In progress → Done / Rejected, reply note, "Create anime draft from request" action, bulk actions. Compact empty state (one line, not a huge box).
+7.2 REPORTS (merge "Broken Streams" and "Flagged Comments" into one page called Reports): SegmentedTabs "Streams" and "Comments" with short labels (no wrapped text, count as pill). Broken streams: anime/episode/server, number of reports, last reported time, buttons "Open episode" and "Mark fixed" (in "⋯" menu), bulk resolve. Flagged comments: comment text (clamped), author, reason, actions Approve / Delete / Warn / Ban (RowMenu). Use calm colors: only the count pill uses red (remove the big solid pink active tab).
+7.3 USERS: SearchInput + role filter Select. Row = avatar 40px, name (truncate), email (truncate, middle-ellipsis), small role badge, "⋯" menu. Remove the always-visible role dropdown, "Active" block-icon button and trash button from every row. Row menu / detail drawer contains: Change role (custom Select), Ban user / Unban user (clear wording, ConfirmDialog with reason), Delete account (typed confirmation), Copy UID, View activity. Rules: never allow changing or deleting the last Super Admin, never allow a user to demote themselves; all role/ban/delete actions are written to Activity Logs and enforced in Firestore rules.
+7.4 AVATARS: top bar with "Add avatar" (blue), "Bulk upload" and "⋯" (Add by URLs, Reset defaults). Drive Sync becomes a compact collapsible card: status pill ("Connected"), folder name only (the full folder ID and the long helper text are hidden under "Details"), buttons "Sync now" and "Save to database" (merge into one flow: Sync → Review → Save). Grid of avatars (4 columns phone, 8 desktop, circular 64px image, no individual copy/delete icons). Tap = select (blue ring + check, large visible checkbox badge); selection mode shows a sticky action bar ("3 selected · Delete · Copy URL · Clear"). "Delete all" is removed from the main screen and exists only in the "⋯" danger menu with typed confirmation. Fallback for broken images.
+
+══════════ SECTION 8 — ACTIVITY LOGS ══════════
+- Human-readable rows: icon by module, sentence ("You deleted anime 'Blue Box'", "Admin updated Site popup"), time-ago ("2h ago", full date on tap/tooltip), small module badge. Map raw action keys (update_popup_notice, cms_popup_notice, etc.) to friendly sentences; unknown keys fall back to a cleaned title-case text.
+- FIX "Invalid Date": the date parser must accept Firestore Timestamp (toDate()), {seconds,nanoseconds}, ISO string, number (ms) and a missing value (show "—"); NEVER display "Invalid Date". Write createdAt with serverTimestamp() for new logs.
+- Filters: module (custom Select), admin, date range; search; pagination 25 per page ("Load more"); tap a row to open a detail drawer (before/after summary if available); Export CSV; logs are read-only (no delete UI). Mask emails (za…@gmail.com).
+
+══════════ SECTION 9 — PERFORMANCE, QUALITY, SECURITY ══════════
+- Lazy-load every admin route (admin code must NOT load for normal visitors). Paginate with limit/startAfter (20 per page), debounce search 300ms, abort stale requests, unsubscribe every listener, in-memory cache with stale-while-revalidate, memoized rows, skeletons with exact sizes, no whole-collection reads (tell me the composite indexes to create).
+- Safe delete: ConfirmDialog for every destructive action; soft delete with a 10-second Undo toast where possible; deleting an anime must show how many episodes/downloads/schedule slots will be removed.
+- Bulk actions on lists (selection mode with sticky action bar).
+- Security: sanitize all text/HTML input (XSS), validate URLs (http/https only), file type and size checks for uploads, rate-limit repeated saves, role checks in UI + Firestore rules, audit log for every create/update/delete, idle lock kept.
+- Error handling: global ErrorBoundary, offline banner, friendly Firebase error messages (permission, network, quota) with Retry.
+
+══════════ SECTION 10 — RESPONSIVE RULES ══════════
+- Forms: 1 column on phone, 2 on desktop. Tables → ListRows on phone. Drawers → bottom sheets on phone. Sticky save bar above the bottom navigation with safe-area padding.
+- Long text: truncate/line-clamp + min-w-0 on every text container; emails, slugs, URLs use middle or end ellipsis and are fully visible on tap (tooltip/sheet). Never let a badge, button or menu overlap text.
+- Touch targets ≥ 44px, spacing ≥ 8px between tappable items. Test at 320, 375, 414, 768, 1024, 1440, 1920.
+
+══════════ SECTION 11 — NAMING & TEXT ══════════
+- Plain English labels a non-coder understands ("Show on homepage", "Hide from site", "Save changes"). Remove technical/eyebrow text such as "BROADCAST MATRIX CMS", "Taxonomies & Categorization CMS", "Immutable logging…". Page descriptions are one short line. Consistent verbs: Add, Edit, Delete, Save, Publish.
+
+══════════ SECTION 12 — PHASES (do ONLY the phase I request) ══════════
+PHASE A: Design system + shared components, new layout/navigation (sidebar, bottom nav, More sheet, global search, role helpers), Dashboard. STOP.
+PHASE B: Library — Anime list + Anime workspace (details, seasons), Episodes (list, drawer, bulk), Downloads, Schedule, Categories. (If too large, I will ask for "Phase B part 1: Anime list + workspace" and "Phase B part 2: Episodes, Downloads, Schedule, Categories".) STOP.
+PHASE C: Homepage Layout, Hero Banners, Popups & Notices, Branding & Theme, Menus & Footer, Settings, SEO, Legal Pages. STOP.
+PHASE D: Community (Requests, Reports, Users, Avatars), Activity Logs, final polish, full self-test of all pages at all breakpoints. STOP.
+
+START WITH PHASE A NOW.
+
+══════════ DELIVERY FORMAT (every phase) ══════════
+1) Short plan (files to create/modify). 2) Complete code file by file. 3) Firestore rules/indexes to deploy. 4) Self-test checklist with results: no overlap/cut text at 320/768/1440px, no wrapped button labels, no native dropdowns/checkboxes, no "Invalid Date", old data unchanged, only blue primary buttons, 0 console errors.

@@ -1,74 +1,150 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { RequestAnimeModal } from './components/RequestAnimeModal';
 import { LegalModal, type LegalTab } from './components/LegalModal';
-import { LegalView } from './views/LegalView';
-import { HomeView } from './views/HomeView';
-
-import { BrowseView } from './views/BrowseView';
-import { WatchlistView } from './views/WatchlistView';
-import { HistoryView } from './views/HistoryView';
-import { FavoritesView } from './views/FavoritesView';
-import { NotificationsView } from './views/NotificationsView';
-import { LoginView } from './views/LoginView';
-import { SignupView } from './views/SignupView';
-import { ProfileView } from './views/ProfileView';
-import { AnimeDetailView } from './views/AnimeDetailView';
-import { WatchEpisodeView } from './views/WatchEpisodeView';
-import { ScheduleView } from './views/ScheduleView';
-import { AnimeRequestsView } from './views/AnimeRequestsView';
-import { PublicProfileView } from './views/PublicProfileView';
-import { AdminDashboardView } from './views/admin/AdminDashboardView';
-import { AdminAnimeListView } from './views/admin/AdminAnimeListView';
-import { AdminAnimeFormView } from './views/admin/AdminAnimeFormView';
-import { AdminEpisodeListView } from './views/admin/AdminEpisodeListView';
-import { AdminEpisodeFormView } from './views/admin/AdminEpisodeFormView';
-import { AdminScheduleView } from './views/admin/AdminScheduleView';
-import { AdminTaxonomyView } from './views/admin/AdminTaxonomyView';
-import { AdminHomepageView } from './views/admin/AdminHomepageView';
-import { AdminHeroBannersView } from './views/admin/AdminHeroBannersView';
-import { AdminSeasonsView } from './views/admin/AdminSeasonsView';
-import { AdminNavigationFooterView } from './views/admin/AdminNavigationFooterView';
-import { AdminAnnouncementsView } from './views/admin/AdminAnnouncementsView';
-import { AdminNoticeView } from './views/admin/AdminNoticeView';
-import { AdminSeoSettingsView } from './views/admin/AdminSeoSettingsView';
-import { AdminLegalPagesView } from './views/admin/AdminLegalPagesView';
-import { AdminActivityLogsView } from './views/admin/AdminActivityLogsView';
-import { AdminUsersView } from './views/admin/AdminUsersView';
-import { AdminRequestsView } from './views/admin/AdminRequestsView';
-import { AdminReportsView } from './views/admin/AdminReportsView';
-import { AdminSettingsView } from './views/admin/AdminSettingsView';
-import { AdminAvatarsView } from './views/admin/AdminAvatarsView';
-import { AdminDownloadsView } from './views/admin/AdminDownloadsView';
-import { AdminBulkEpisodeView } from './views/admin/AdminBulkEpisodeView';
-import { AnimeDownloadView } from './views/AnimeDownloadView';
-import { getSiteSettings, DEFAULT_SITE_CONFIG } from './lib/firestore/site-settings';
-import { getCmsPopupNotice, subscribeToCmsPopupNotice, DEFAULT_POPUP_NOTICE } from './lib/firestore/cms';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { SiteNoticeModal } from './components/SiteNoticeModal';
+import {
+  getSiteSettings,
+  DEFAULT_SITE_CONFIG,
+  applyThemeBranding,
+} from './lib/firestore/site-settings';
+import { subscribeToCmsPopupNotice, DEFAULT_POPUP_NOTICE } from './lib/firestore/cms';
+import { useAuth } from './lib/auth';
+import { isValidSafeUrl } from './lib/security';
 import type { SitePopupNotice } from './types/cms';
 import type { SiteConfig } from './types/library';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2, X, Send, ArrowUp, Wrench } from 'lucide-react';
+
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  importer: () => Promise<{ default: T }>,
+  retries = 2
+): React.LazyExoticComponent<T> {
+  return lazy(async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await importer();
+      } catch (err) {
+        lastError = err;
+        if (attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastError;
+  });
+}
+
+// Route-level code splitting: public views
+const HomeView = lazyWithRetry(() => import('./views/HomeView').then((m) => ({ default: m.HomeView })));
+const BrowseView = lazyWithRetry(() => import('./views/BrowseView').then((m) => ({ default: m.BrowseView })));
+const ScheduleView = lazyWithRetry(() => import('./views/ScheduleView').then((m) => ({ default: m.ScheduleView })));
+const WatchlistView = lazyWithRetry(() => import('./views/WatchlistView').then((m) => ({ default: m.WatchlistView })));
+const HistoryView = lazyWithRetry(() => import('./views/HistoryView').then((m) => ({ default: m.HistoryView })));
+const FavoritesView = lazyWithRetry(() => import('./views/FavoritesView').then((m) => ({ default: m.FavoritesView })));
+const NotificationsView = lazyWithRetry(() => import('./views/NotificationsView').then((m) => ({ default: m.NotificationsView })));
+const LoginView = lazyWithRetry(() => import('./views/LoginView').then((m) => ({ default: m.LoginView })));
+const SignupView = lazyWithRetry(() => import('./views/SignupView').then((m) => ({ default: m.SignupView })));
+const ProfileView = lazyWithRetry(() => import('./views/ProfileView').then((m) => ({ default: m.ProfileView })));
+const PublicProfileView = lazyWithRetry(() => import('./views/PublicProfileView').then((m) => ({ default: m.PublicProfileView })));
+const AnimeRequestsView = lazyWithRetry(() => import('./views/AnimeRequestsView').then((m) => ({ default: m.AnimeRequestsView })));
+const AnimeDetailView = lazyWithRetry(() => import('./views/AnimeDetailView').then((m) => ({ default: m.AnimeDetailView })));
+const WatchEpisodeView = lazyWithRetry(() => import('./views/WatchEpisodeView').then((m) => ({ default: m.WatchEpisodeView })));
+const AnimeDownloadView = lazyWithRetry(() => import('./views/AnimeDownloadView').then((m) => ({ default: m.AnimeDownloadView })));
+const LegalView = lazyWithRetry(() => import('./views/LegalView').then((m) => ({ default: m.LegalView })));
+const NotFoundView = lazyWithRetry(() => import('./views/NotFoundView').then((m) => ({ default: m.NotFoundView })));
+
+// Route-level code splitting: admin views (never loaded for public visitors)
+const AdminDashboardView = lazyWithRetry(() => import('./views/admin/AdminDashboardView').then((m) => ({ default: m.AdminDashboardView })));
+const AdminAnimeListView = lazyWithRetry(() => import('./views/admin/AdminAnimeListView').then((m) => ({ default: m.AdminAnimeListView })));
+const AdminAnimeFormView = lazyWithRetry(() => import('./views/admin/AdminAnimeFormView').then((m) => ({ default: m.AdminAnimeFormView })));
+const AdminEpisodeListView = lazyWithRetry(() => import('./views/admin/AdminEpisodeListView').then((m) => ({ default: m.AdminEpisodeListView })));
+const AdminEpisodeFormView = lazyWithRetry(() => import('./views/admin/AdminEpisodeFormView').then((m) => ({ default: m.AdminEpisodeFormView })));
+const AdminBulkEpisodeView = lazyWithRetry(() => import('./views/admin/AdminBulkEpisodeView').then((m) => ({ default: m.AdminBulkEpisodeView })));
+const AdminScheduleView = lazyWithRetry(() => import('./views/admin/AdminScheduleView').then((m) => ({ default: m.AdminScheduleView })));
+const AdminTaxonomyView = lazyWithRetry(() => import('./views/admin/AdminTaxonomyView').then((m) => ({ default: m.AdminTaxonomyView })));
+const AdminHomepageView = lazyWithRetry(() => import('./views/admin/AdminHomepageView').then((m) => ({ default: m.AdminHomepageView })));
+const AdminHeroBannersView = lazyWithRetry(() => import('./views/admin/AdminHeroBannersView').then((m) => ({ default: m.AdminHeroBannersView })));
+const AdminSeasonsView = lazyWithRetry(() => import('./views/admin/AdminSeasonsView').then((m) => ({ default: m.AdminSeasonsView })));
+const AdminNavigationFooterView = lazyWithRetry(() => import('./views/admin/AdminNavigationFooterView').then((m) => ({ default: m.AdminNavigationFooterView })));
+const AdminNoticeView = lazyWithRetry(() => import('./views/admin/AdminNoticeView').then((m) => ({ default: m.AdminNoticeView })));
+const AdminSeoSettingsView = lazyWithRetry(() => import('./views/admin/AdminSeoSettingsView').then((m) => ({ default: m.AdminSeoSettingsView })));
+const AdminLegalPagesView = lazyWithRetry(() => import('./views/admin/AdminLegalPagesView').then((m) => ({ default: m.AdminLegalPagesView })));
+const AdminActivityLogsView = lazyWithRetry(() => import('./views/admin/AdminActivityLogsView').then((m) => ({ default: m.AdminActivityLogsView })));
+const AdminUsersView = lazyWithRetry(() => import('./views/admin/AdminUsersView').then((m) => ({ default: m.AdminUsersView })));
+const AdminRequestsView = lazyWithRetry(() => import('./views/admin/AdminRequestsView').then((m) => ({ default: m.AdminRequestsView })));
+const AdminReportsView = lazyWithRetry(() => import('./views/admin/AdminReportsView').then((m) => ({ default: m.AdminReportsView })));
+const AdminSettingsView = lazyWithRetry(() => import('./views/admin/AdminSettingsView').then((m) => ({ default: m.AdminSettingsView })));
+const AdminAvatarsView = lazyWithRetry(() => import('./views/admin/AdminAvatarsView').then((m) => ({ default: m.AdminAvatarsView })));
+const AdminDownloadsView = lazyWithRetry(() => import('./views/admin/AdminDownloadsView').then((m) => ({ default: m.AdminDownloadsView })));
 
 interface ToastMessage {
   id: string;
   text: string;
 }
 
+const RouteFallback: React.FC = () => {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 gap-4 text-center">
+      <div className="w-8 h-8 border-2 border-[#1E88FF] border-t-transparent rounded-full animate-spin" aria-label="Loading page" />
+      {slow && (
+        <div className="space-y-2">
+          <p className="text-xs text-[#94A3B8]">Taking longer than expected to load.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="h-9 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1570d8] text-white text-xs font-semibold cursor-pointer transition-colors"
+          >
+            Reload Page
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AppContent: React.FC = () => {
+  const { user, isAdmin } = useAuth();
+  const isSuperAdmin = Boolean(
+    isAdmin || (user?.email && user.email.toLowerCase().trim() === 'zairoxmax2.0@gmail.com')
+  );
   const [currentPath, setCurrentPath] = useState<string>(
     typeof window !== 'undefined'
       ? `${window.location.pathname}${window.location.search}` || '/'
       : '/'
   );
-  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [hasSaveBar, setHasSaveBar] = useState<boolean>(false);
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_SITE_CONFIG);
   const [requestModalOpen, setRequestModalOpen] = useState<boolean>(false);
   const [legalModalOpen, setLegalModalOpen] = useState<boolean>(false);
   const [legalModalTab, setLegalModalTab] = useState<LegalTab>('about');
   const [popupNotice, setPopupNotice] = useState<SitePopupNotice>(DEFAULT_POPUP_NOTICE);
   const [popupNoticeOpen, setPopupNoticeOpen] = useState<boolean>(false);
+  const [isFooterVisible, setIsFooterVisible] = useState<boolean>(false);
+  const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
+
+  // Sync active save-bar status from document body attribute
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const updateSaveBar = () => {
+      setHasSaveBar(document.body.getAttribute('data-has-save-bar') === 'true');
+    };
+    updateSaveBar();
+    const observer = new MutationObserver(updateSaveBar);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-has-save-bar'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Sync route changes with browser history
   const navigate = useCallback((path: string) => {
@@ -77,6 +153,25 @@ const AppContent: React.FC = () => {
       setCurrentPath(path);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  }, []);
+
+  // Monitor scroll for Back-To-Top button and Footer intersection
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 400);
+
+      const footer = document.querySelector('footer');
+      if (footer) {
+        const rect = footer.getBoundingClientRect();
+        setIsFooterVisible(rect.top <= window.innerHeight);
+      } else {
+        setIsFooterVisible(false);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
@@ -96,26 +191,57 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Fetch site configuration
+  // Fetch site configuration & sync with live broadcasts + CSS branding vars
   useEffect(() => {
-    getSiteSettings().then((cfg) => setSiteConfig(cfg));
+    getSiteSettings().then((cfg) => {
+      setSiteConfig(cfg);
+      applyThemeBranding(cfg);
+    });
+    const handleSettingsUpdate = (e: Event) => {
+      const custom = e as CustomEvent<Partial<SiteConfig>>;
+      if (custom.detail) {
+        setSiteConfig((prev) => {
+          const next = { ...prev, ...custom.detail };
+          applyThemeBranding(next);
+          return next;
+        });
+      }
+    };
+    window.addEventListener('zynox:settings-updated', handleSettingsUpdate);
+    return () => window.removeEventListener('zynox:settings-updated', handleSettingsUpdate);
   }, []);
+
+  // Update page title when public site is in maintenance mode
+  const [rawPath] = (currentPath || '').split('?');
+  const isAdminRoute = (rawPath || '').startsWith('/admin');
+  const inMaintenance = Boolean(siteConfig.maintenanceMode && !isSuperAdmin && !isAdminRoute);
+
+  useEffect(() => {
+    if (inMaintenance && typeof document !== 'undefined') {
+      document.title = `Maintenance — ${siteConfig.siteName || 'ZYNOX ANIME'}`;
+    }
+  }, [inMaintenance, siteConfig.siteName]);
 
   // Tracks whether the user dismissed the notice during this active tab browsing session
   const hasDismissedThisVisitRef = useRef(false);
-  // Tracks whether the entrance popup has already been shown
   const hasShownEntrancePopupRef = useRef(false);
-  // Records the exact timestamp when user entered the website
   const siteEntryTimeRef = useRef<number>(Date.now());
-  // Tracks current route path in a ref so navigation doesn't disrupt the entrance timer
   const currentPathRef = useRef(currentPath);
   useEffect(() => {
     currentPathRef.current = currentPath;
   }, [currentPath]);
 
-  // Helper to check if a notice version was explicitly dismissed for 24h via "Don't show again today"
   const isNoticeDismissedForToday = useCallback((noticeData: SitePopupNotice): boolean => {
     try {
+      if ((noticeData as any).expiresAt) {
+        const exp = new Date((noticeData as any).expiresAt).getTime();
+        if (!isNaN(exp) && Date.now() > exp) return true;
+      }
+      if ((noticeData as any).endDate) {
+        const exp = new Date((noticeData as any).endDate).getTime();
+        if (!isNaN(exp) && Date.now() > exp) return true;
+      }
+
       const dismissedVer = localStorage.getItem('zynox_popup_notice_ver');
       const dismissedTimeStr = localStorage.getItem('zynox_popup_notice_time');
       const currentVer = noticeData.version || '1.0';
@@ -134,35 +260,30 @@ const AppContent: React.FC = () => {
     return false;
   }, []);
 
-  // Real-time synchronization and display of Website Entrance Pop-up Card Notice (5 to 7 seconds after entering)
+  // Real-time synchronization and display of Website Entrance Pop-up Card Notice
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const checkAndDisplayNotice = (noticeData: SitePopupNotice, isImmediate = false) => {
       setPopupNotice(noticeData);
 
-      // If disabled by admin, don't show
       if (!noticeData.enabled) {
         setPopupNoticeOpen(false);
         return;
       }
 
-      // If user closed it in this active session, don't keep popping up on every internal link click
       if (hasDismissedThisVisitRef.current) {
         return;
       }
 
-      // If user checked "Don't show again today", honor the 24h suppression
       if (isNoticeDismissedForToday(noticeData)) {
         return;
       }
 
-      // If entrance popup was already displayed in this visit and this is not a manual/admin trigger, do not show again
       if (hasShownEntrancePopupRef.current && !isImmediate) {
         return;
       }
 
-      // Calculate delay based on website entrance timestamp (defaults to 6s, i.e. 5-7 seconds after website entry)
       const targetDelaySec = noticeData.displayDelaySeconds ?? 6;
       const targetDelayMs = targetDelaySec * 1000;
       const elapsed = Date.now() - siteEntryTimeRef.current;
@@ -170,9 +291,8 @@ const AppContent: React.FC = () => {
 
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        const [rawPath] = (currentPathRef.current || '').split('?');
-        // Do NOT pop up over the admin dashboard
-        if (rawPath.startsWith('/admin')) {
+        const [p] = (currentPathRef.current || '').split('?');
+        if (p.startsWith('/admin')) {
           return;
         }
         if (hasDismissedThisVisitRef.current || isNoticeDismissedForToday(noticeData)) {
@@ -183,12 +303,10 @@ const AppContent: React.FC = () => {
       }, remainingDelay);
     };
 
-    // 1. Subscribe to real-time Firestore notice configuration
     const unsubscribe = subscribeToCmsPopupNotice((liveNotice) => {
       checkAndDisplayNotice(liveNotice, false);
     });
 
-    // 2. Listen for broadcast events when Admin saves or updates in same window
     const handleBroadcastUpdate = (e: Event) => {
       const customEvent = e as CustomEvent<SitePopupNotice>;
       if (customEvent.detail) {
@@ -198,7 +316,6 @@ const AppContent: React.FC = () => {
       }
     };
 
-    // 3. Listen for manual open trigger (e.g. from Admin Test button)
     const handleManualOpen = () => {
       hasDismissedThisVisitRef.current = false;
       hasShownEntrancePopupRef.current = true;
@@ -216,11 +333,10 @@ const AppContent: React.FC = () => {
     };
   }, [isNoticeDismissedForToday]);
 
-  // If user navigated away from /admin back to site and entrance popup hasn't been shown yet
   useEffect(() => {
-    const [rawPath] = currentPath.split('?');
+    const [p] = currentPath.split('?');
     if (
-      !rawPath.startsWith('/admin') &&
+      !p.startsWith('/admin') &&
       !hasShownEntrancePopupRef.current &&
       !hasDismissedThisVisitRef.current &&
       popupNotice.enabled &&
@@ -250,18 +366,17 @@ const AppContent: React.FC = () => {
   );
 
   const showToast = useCallback((msg: string) => {
-    const id = Date.now().toString();
-    setToast({ id, text: msg });
+    const id = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    setToasts((prev) => [...prev, { id, text: msg }].slice(-3));
     setTimeout(() => {
-      setToast((prev) => (prev?.id === id ? null : prev));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   }, []);
 
   // Router matcher logic
   const renderRoute = () => {
-    // Separate pathname from search query parameters cleanly
-    const [rawPath, rawQuery] = currentPath.split('?');
-    const path = rawPath || '/';
+    const [routePath, rawQuery] = currentPath.split('?');
+    const path = routePath || '/';
     const searchParams = new URLSearchParams(
       rawQuery !== undefined
         ? rawQuery
@@ -294,9 +409,6 @@ const AppContent: React.FC = () => {
           initialSort={searchParams.get('sort') || 'latest'}
         />
       );
-    }
-    if (path === '/schedule') {
-      return <ScheduleView key="schedule-view" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/watchlist') {
       return <WatchlistView navigate={navigate} onShowMessage={showToast} />;
@@ -388,10 +500,10 @@ const AppContent: React.FC = () => {
       return <AdminNavigationFooterView key="admin-footer" initialTab="footer" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/announcements' || path === '/admin/announcement') {
-      return <AdminAnnouncementsView key="admin-announcements" navigate={navigate} onShowMessage={showToast} />;
+      return <AdminNoticeView key="admin-announcements" initialTab="announcements" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/notice' || path === '/admin/popup-notice') {
-      return <AdminNoticeView key="admin-notice" navigate={navigate} onShowMessage={showToast} />;
+      return <AdminNoticeView key="admin-notice" initialTab="popup" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/avatars' || path === '/admin/avatar') {
       return <AdminAvatarsView key="admin-avatars" navigate={navigate} onShowMessage={showToast} />;
@@ -418,12 +530,16 @@ const AppContent: React.FC = () => {
       return <AdminReportsView key="admin-reports" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/settings') {
-      return <AdminSettingsView key="admin-settings" navigate={navigate} onShowMessage={showToast} />;
+      return <AdminSettingsView key="admin-settings" initialTab="settings" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/admin/branding') {
+      return <AdminSettingsView key="admin-branding" initialTab="branding" navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/admin/downloads' || path.startsWith('/admin/downloads')) {
       return <AdminDownloadsView key="admin-downloads" navigate={navigate} onShowMessage={showToast} />;
     }
 
+    // Legal routes
     if (path === '/about') {
       return <LegalView key="legal-about" tab="about" navigate={navigate} onShowMessage={showToast} />;
     }
@@ -433,11 +549,19 @@ const AppContent: React.FC = () => {
     if (path === '/disclaimer') {
       return <LegalView key="legal-disclaimer" tab="disclaimer" navigate={navigate} onShowMessage={showToast} />;
     }
+    if (path === '/terms' || path === '/terms-of-service') {
+      return <LegalView key="legal-terms" tab="terms" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/privacy' || path === '/privacy-policy') {
+      return <LegalView key="legal-privacy" tab="privacy" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/contact') {
+      return <LegalView key="legal-contact" tab="contact" navigate={navigate} onShowMessage={showToast} />;
+    }
 
     // Dynamic episode player route: /anime/:animeSlug/episode/:episodeNumber
     if (path.startsWith('/anime/') && path.includes('/episode/')) {
       const parts = path.split('/').filter(Boolean);
-      // parts[0] === 'anime', parts[1] === animeSlug, parts[2] === 'episode', parts[3] === episodeNumber
       if (parts.length >= 4 && parts[2] === 'episode') {
         return (
           <WatchEpisodeView
@@ -454,7 +578,6 @@ const AppContent: React.FC = () => {
     // Dynamic watch route: /watch/:animeSlug/:episodeId
     if (path.startsWith('/watch/')) {
       const parts = path.split('/').filter(Boolean);
-      // parts[0] === 'watch', parts[1] === animeSlug, parts[2] === episodeId
       if (parts.length >= 3) {
         return (
           <WatchEpisodeView
@@ -471,7 +594,6 @@ const AppContent: React.FC = () => {
     // Dynamic anime download route: /anime/:slug/download
     if (path.startsWith('/anime/') && path.includes('/download')) {
       const parts = path.split('?')[0].split('/').filter(Boolean);
-      // parts[0] === 'anime', parts[1] === animeSlug, parts[2] === 'download'
       const rawSlug = parts[1];
       const slug = rawSlug ? decodeURIComponent(rawSlug) : '';
       const seasonParam = searchParams.get('season');
@@ -532,61 +654,107 @@ const AppContent: React.FC = () => {
       }
     }
 
-    // Fallback -> Home
-    return <HomeView navigate={navigate} onShowMessage={showToast} />;
+    // Unmatched route -> 404 Not Found
+    return <NotFoundView navigate={navigate} />;
   };
 
-  const [rawPath] = (currentPath || '').split('?');
-  const isAdminRoute = (rawPath || '').startsWith('/admin');
+  const safeTelegramUrl =
+    siteConfig.telegramUrl && isValidSafeUrl(siteConfig.telegramUrl)
+      ? siteConfig.telegramUrl
+      : 'https://t.me/ZynoxAnime';
 
   return (
-    <div className="min-h-screen bg-[#030712] text-[#F5F9FF] flex flex-col font-sans relative selection:bg-[#00A8FF]/30 selection:text-white">
-      {/* Hardware-Accelerated Ambient Glow Background */}
+    <div className="min-h-screen bg-[#050A14] text-white flex flex-col font-sans relative selection:bg-[#1E88FF]/30 selection:text-white">
       <div className="bg-ambient-layer" aria-hidden="true" />
 
-      {/* Toast Notification Banner */}
-      {toast && (
+      {/* Bottom Toast Notification Stack */}
+      {toasts.length > 0 && (
         <div
-          id="toast-notification-banner"
-          className="fixed top-20 right-4 z-50 bg-[#111827] border border-[#6366F1]/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-200"
+          id="toast-notification-container"
+          style={{
+            bottom: hasSaveBar
+              ? 'calc(128px + env(safe-area-inset-bottom, 0px) + 12px)'
+              : 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
+          }}
+          className="fixed left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 md:!bottom-6 z-[60] w-[min(92vw,420px)] md:w-auto md:max-w-md pointer-events-none flex flex-col gap-2 items-center md:items-end transition-all duration-200"
         >
-          <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0" />
-          <span className="text-xs font-semibold">{toast.text}</span>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors ml-2"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className="pointer-events-auto w-full bg-[#0B1324] border border-white/10 text-white px-3.5 py-2.5 rounded-xl shadow-2xl shadow-black/80 flex items-center justify-between gap-3 backdrop-blur-md"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <CheckCircle2 className="w-4 h-4 text-[#1E88FF] shrink-0" />
+                <span className="text-xs font-semibold truncate leading-tight">{t.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+                className="w-6 h-6 rounded-md hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                aria-label="Dismiss notification"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* When on Admin routes, render Admin Layout directly without double headers and public footer */}
+      {/* Admin routes */}
       {isAdminRoute ? (
         <div className="flex-1 flex flex-col h-screen overflow-hidden bg-[#050A14]">
-          {renderRoute()}
+          <Suspense fallback={<RouteFallback />}>{renderRoute()}</Suspense>
+        </div>
+      ) : inMaintenance ? (
+        /* Clean Public Maintenance Mode Screen (Admins bypass automatically) */
+        <div className="min-h-screen bg-[#050A14] text-white flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+          <div className="max-w-md w-full bg-[#0B1324] border border-white/10 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+            <div className="w-14 h-14 rounded-2xl bg-[#1E88FF]/15 border border-[#1E88FF]/30 flex items-center justify-center mx-auto text-[#1E88FF]">
+              <Wrench className="w-7 h-7" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                Scheduled Maintenance
+              </p>
+              <h1 className="text-2xl font-bold tracking-tight text-white">
+                {siteConfig.siteName || 'ZYNOX ANIME'} is Updating
+              </h1>
+              <p className="text-sm text-[#94A3B8] leading-relaxed">
+                {siteConfig.maintenanceMessage ||
+                  'We are currently upgrading our streaming servers to deliver a faster experience. Please check back shortly.'}
+              </p>
+            </div>
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="h-11 px-5 rounded-xl bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+              >
+                <span>Refresh Page</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="h-11 px-5 rounded-xl bg-[#101A30] hover:bg-[#16223D] border border-white/10 text-[#CBD5E1] hover:text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+              >
+                <span>Admin Sign In</span>
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
-        /* Main Public Page Layout Wrapper (Applies smooth glass blur when popup notice is open) */
+        /* Main Public Page Layout Wrapper */
         <div
           className={`flex flex-col flex-1 transition-[filter] duration-300 ${
             popupNoticeOpen ? 'filter blur-[6px] pointer-events-none select-none' : ''
           }`}
         >
-          {/* Persistent App Header */}
-          <Header
-            currentPath={currentPath}
-            navigate={navigate}
-            onShowMessage={showToast}
-          />
+          <Header currentPath={currentPath} navigate={navigate} onShowMessage={showToast} />
 
-          {/* Main Viewport */}
           <main className="flex-1 pt-16 md:pt-[72px]">
-            {renderRoute()}
+            <Suspense fallback={<RouteFallback />}>{renderRoute()}</Suspense>
           </main>
 
-          {/* Upgraded Footer */}
           <Footer
             siteConfig={siteConfig}
             navigate={navigate}
@@ -596,6 +764,36 @@ const AppContent: React.FC = () => {
               setLegalModalOpen(true);
             }}
           />
+
+          {/* Floating Actions on md+ */}
+          <div
+            className={`hidden md:flex flex-col items-center gap-3 fixed bottom-[20px] right-[20px] z-30 transition-all duration-300 ${
+              isFooterVisible ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100'
+            }`}
+          >
+            {showBackToTop && (
+              <button
+                type="button"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="w-11 h-11 rounded-full bg-[#0B1324]/90 hover:bg-[#1E88FF] text-[#CBD5E1] hover:text-white border border-white/15 backdrop-blur-md shadow-xl flex items-center justify-center transition-colors cursor-pointer"
+                title="Back to Top"
+                aria-label="Back to top"
+              >
+                <ArrowUp className="w-5 h-5" />
+              </button>
+            )}
+
+            <a
+              href={safeTelegramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-11 h-11 rounded-full bg-[#1E88FF] hover:bg-[#3B9BFF] text-white shadow-xl border border-white/15 flex items-center justify-center transition-colors cursor-pointer relative"
+              title="Join Telegram Channel"
+              aria-label="Join our Telegram Channel"
+            >
+              <Send className="w-4 h-4 fill-white text-white" />
+            </a>
+          </div>
         </div>
       )}
 
@@ -625,9 +823,34 @@ const AppContent: React.FC = () => {
 };
 
 export default function App() {
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      {isOffline && (
+        <div
+          role="status"
+          className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-black text-xs font-bold py-1.5 px-4 text-center shadow-md flex items-center justify-center gap-1.5"
+        >
+          <span>You are currently browsing in offline mode. Cached pages remain available.</span>
+        </div>
+      )}
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

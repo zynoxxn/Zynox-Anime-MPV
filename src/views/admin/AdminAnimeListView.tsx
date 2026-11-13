@@ -1,23 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import type { Anime } from '../../types/anime';
-import { getAllAnimes, deleteAnime, updateAnime, cleanAnimeTitle } from '../../lib/firestore/anime';
+import { getAllAnimes, deleteAnime, updateAnime, createAnime } from '../../lib/firestore/anime';
 import { logAdminActivity } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
 import { AdminLayout } from './AdminLayout';
-import { ConfirmModal } from '../../components/ConfirmModal';
-import { getOptimizedImageUrl, FALLBACK_ANIME_POSTER } from '../../lib/image-optimizer';
 import {
-  PlusCircle,
-  Edit,
-  Trash2,
-  Tv,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSelect,
+  AdminListRow,
+  AdminStatusBadge,
+  AdminConfirmDialog,
+  AdminSelectionBar,
+  AdminEmptyState,
+  AdminErrorState,
+  AdminSkeleton,
+} from '../../components/admin';
+import {
+  Plus,
   Film,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Search,
+  Tv,
   Download,
-  Clock,
+  Copy,
+  Trash2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Layers,
+  CheckSquare,
 } from 'lucide-react';
 
 interface AdminAnimeListViewProps {
@@ -33,9 +43,13 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [targetDeleteAnime, setTargetDeleteAnime] = useState<Anime | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -58,17 +72,40 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
   }, []);
 
   const handleTogglePublish = async (anime: Anime) => {
-    if (!anime.id) return;
+    const id = anime.id || anime.slug;
+    if (!id) return;
     try {
       const nextStatus = !anime.published;
-      await updateAnime(anime.id, { published: nextStatus });
+      await updateAnime(id, { published: nextStatus });
       setAnimes((prev) =>
-        prev.map((a) => (a.id === anime.id ? { ...a, published: nextStatus } : a))
+        prev.map((a) => ((a.id === id || a.slug === id) ? { ...a, published: nextStatus } : a))
       );
-      onShowMessage(`Anime marked as ${nextStatus ? 'Published' : 'Draft'}.`);
-    } catch (err: any) {
-      console.error('Failed to update published status:', err);
-      setError('Failed to update published status.');
+      onShowMessage(`"${anime.title}" marked as ${nextStatus ? 'Published' : 'Draft'}.`);
+    } catch {
+      onShowMessage('Failed to update published status.');
+    }
+  };
+
+  const handleDuplicate = async (anime: Anime) => {
+    try {
+      const newTitle = `${anime.title} (Copy)`;
+      const newSlug = `${anime.slug || 'copy'}-${Date.now().toString(36)}`;
+      const duplicatedData = {
+        ...anime,
+        title: newTitle,
+        slug: newSlug,
+        published: false,
+      };
+      delete (duplicatedData as any).id;
+      const createdId = await createAnime(duplicatedData);
+      const newAnimeObj: Anime = {
+        ...duplicatedData,
+        id: createdId,
+      };
+      setAnimes((prev) => [newAnimeObj, ...prev]);
+      onShowMessage(`Duplicated "${anime.title}" as draft.`);
+    } catch {
+      onShowMessage('Failed to duplicate anime.');
     }
   };
 
@@ -93,227 +130,318 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
         animeToDelete.title
       );
       setAnimes((prev) =>
-        prev.filter((a) => a.id !== animeToDelete.id && a.slug !== animeToDelete.slug && a.id !== targetId)
+        prev.filter((a) => a.id !== targetId && a.slug !== targetId && a.id !== animeToDelete.id)
       );
-      onShowMessage(`"${animeToDelete.title}" deleted successfully.`);
-    } catch (err: any) {
-      console.error('Failed to delete anime:', err);
-      setError('Failed to delete anime.');
+      onShowMessage(`"${animeToDelete.title}" deleted.`);
+    } catch {
+      onShowMessage('Failed to delete anime.');
     } finally {
       setIsDeleting(false);
       setTargetDeleteAnime(null);
     }
   };
 
-  const filtered = animes.filter((a) => {
-    const q = (searchQuery || '').toLowerCase();
-    const matchesSearch =
-      (a.title || '').toLowerCase().includes(q) ||
-      (a.slug || '').toLowerCase().includes(q);
-    const matchesStatus = statusFilter === 'all' || a.status === statusFilter;
-    const matchesType = typeFilter === 'all' || (a.type || 'TV').toLowerCase() === (typeFilter || 'all').toLowerCase();
-    return matchesSearch && matchesStatus && matchesType;
-  });
+  // Bulk actions
+  const handleBulkPublish = async (publish: boolean) => {
+    const ids = Array.from(selectedIds);
+    try {
+      await Promise.all(ids.map((id) => updateAnime(id, { published: publish })));
+      setAnimes((prev) =>
+        prev.map((a) => (ids.includes(a.id || a.slug) ? { ...a, published: publish } : a))
+      );
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+      onShowMessage(`${ids.length} titles marked as ${publish ? 'Published' : 'Draft'}.`);
+    } catch {
+      onShowMessage('Bulk update failed.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    try {
+      await Promise.all(ids.map((id) => deleteAnime(id)));
+      setAnimes((prev) => prev.filter((a) => !ids.includes(a.id || a.slug)));
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+      onShowMessage(`Deleted ${ids.length} titles.`);
+    } catch {
+      onShowMessage('Bulk delete failed.');
+    }
+  };
+
+  const filtered = useMemo(() => {
+    return animes.filter((a) => {
+      const q = (searchQuery || '').toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        (a.title || '').toLowerCase().includes(q) ||
+        (a.slug || '').toLowerCase().includes(q);
+      const matchesStatus = statusFilter === 'all' || (a.status || 'ongoing').toLowerCase() === statusFilter.toLowerCase();
+      const matchesType = typeFilter === 'all' || (a.type || 'TV').toLowerCase() === typeFilter.toLowerCase();
+      return matchesSearch && matchesStatus && matchesType;
+    });
+  }, [animes, searchQuery, statusFilter, typeFilter]);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((a) => a.id || a.slug)));
+    }
+  };
 
   return (
     <AdminLayout currentTab="anime" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-5 sm:p-6 rounded-2xl">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white">
-              Anime Library
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              {animes.length} titles registered
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => navigate('/admin/anime/new')}
-            className="px-4 py-2 bg-[#1683FF] hover:bg-[#1268cc] text-white text-xs font-bold rounded-xl shadow-md shadow-[#1683FF]/20 flex items-center gap-2 transition-all self-start sm:self-auto"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Add Anime</span>
-          </button>
-        </div>
+      <div className="space-y-6 min-w-0">
+        {/* Page Header (ONE primary button: "Add anime", title left + primary right on same line) */}
+        <AdminPageHeader
+          title="Anime Library"
+          description={`${animes.length} titles registered in catalog`}
+          primaryAction={{
+            label: 'Add anime',
+            icon: Plus,
+            onClick: () => navigate('/admin/anime/new'),
+          }}
+        />
 
         {error && (
-          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-300 text-xs">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
-          </div>
+          <AdminErrorState
+            message={error}
+            onRetry={fetchAnimeList}
+          />
         )}
 
-        {/* Filter Controls Bar */}
-        <div className="bg-[#0B1322] border border-white/5 rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              name="admin_anime_search"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder="Search anime by title or slug..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#050A14] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-            />
+        {/* Filter Controls Bar: Search with Select mode toggle, + Status and Type side-by-side (2 cols) even on phone */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <AdminSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search anime..."
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSelectionMode((prev) => {
+                  if (prev) setSelectedIds(new Set());
+                  return !prev;
+                });
+              }}
+              className={`h-11 px-3.5 rounded-[10px] text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                isSelectionMode
+                  ? 'bg-[#1E88FF]/15 border-[#1E88FF]/40 text-[#1E88FF]'
+                  : 'bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white hover:border-white/20'
+              }`}
+            >
+              <CheckSquare className="w-4 h-4" />
+              <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-            >
-              <option value="all">All Statuses</option>
-              <option value="ongoing">Ongoing</option>
-              <option value="completed">Completed</option>
-              <option value="upcoming">Upcoming</option>
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <AdminSelect
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(String(val))}
+                options={[
+                  { value: 'all', label: 'All Statuses' },
+                  { value: 'ongoing', label: 'Ongoing' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'upcoming', label: 'Upcoming' },
+                ]}
+                sheetTitle="Filter by Status"
+              />
+            </div>
 
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-            >
-              <option value="all">All Types</option>
-              <option value="tv">TV</option>
-              <option value="movie">Movie</option>
-              <option value="ova">OVA</option>
-              <option value="ona">ONA</option>
-            </select>
+            <div>
+              <AdminSelect
+                value={typeFilter}
+                onChange={(val) => setTypeFilter(String(val))}
+                options={[
+                  { value: 'all', label: 'All Types' },
+                  { value: 'tv', label: 'TV Series' },
+                  { value: 'movie', label: 'Movie' },
+                  { value: 'ova', label: 'OVA' },
+                  { value: 'ona', label: 'ONA' },
+                  { value: 'special', label: 'Special' },
+                ]}
+                sheetTitle="Filter by Type"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Anime Table */}
-        {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading anime database...</div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8]">
-            No anime found matching your search.
-          </div>
-        ) : (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl overflow-hidden">
-            <div className="divide-y divide-white/5">
-              {filtered.map((anime) => (
-                <div
-                  key={anime.id || anime.slug}
-                  className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors group"
+        {/* Anime List / Table Container */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] overflow-hidden">
+          {/* Header row on desktop */}
+          <div className="hidden lg:flex items-center px-4 py-2.5 bg-[#101A30] border-b border-white/10 text-xs font-semibold text-[#94A3B8]">
+            {isSelectionMode && (
+              <div className="w-8 shrink-0 flex items-center">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={selectedIds.size > 0 && selectedIds.size === filtered.length}
+                  onClick={toggleSelectAll}
+                  className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors cursor-pointer ${
+                    selectedIds.size > 0 && selectedIds.size === filtered.length
+                      ? 'bg-[#1E88FF] border-[#1E88FF] text-white'
+                      : 'border-white/20 bg-white/5'
+                  }`}
                 >
-                  {/* Left: Thumbnail & Title Info */}
-                  <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                    <img
-                      src={getOptimizedImageUrl(anime.poster, { width: 120, fallbackType: 'poster' })}
-                      alt={anime.title}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-12 h-16 object-cover rounded-xl shrink-0 border border-white/10"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        if (target.src !== FALLBACK_ANIME_POSTER) {
-                          target.src = FALLBACK_ANIME_POSTER;
-                        }
-                      }}
-                    />
-
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-bold text-white group-hover:text-[#1683FF] transition-colors truncate">
-                          {cleanAnimeTitle(anime.title)}
-                        </h3>
-                        <span className="text-[10px] text-[#94A3B8] font-mono">/{anime.slug}</span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#94A3B8]">
-                        <span className="font-semibold text-white capitalize bg-white/5 px-2 py-0.5 rounded">
-                          {anime.type || 'TV'}
-                        </span>
-                        <span>•</span>
-                        <span className="capitalize">{anime.status || 'ongoing'}</span>
-                        <span>•</span>
-                        <span>{anime.year || '2026'}</span>
-                        <span>•</span>
-                        <span className="text-cyan-400">{anime.audioLanguage || 'Hindi Dub'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Actions */}
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 pt-3 md:pt-0 w-full md:w-auto justify-end border-t border-white/5 md:border-t-0">
-                    <button
-                      type="button"
-                      onClick={() => handleTogglePublish(anime)}
-                      className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                        anime.published
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'
-                      }`}
-                    >
-                      {anime.published ? (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      ) : (
-                        <XCircle className="w-3.5 h-3.5" />
-                      )}
-                      <span>{anime.published ? 'Published' : 'Draft'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/admin/anime/${anime.id || anime.slug}/episodes`)}
-                      className="px-2.5 sm:px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Tv className="w-3.5 h-3.5" />
-                      <span>Episodes</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/admin/downloads?animeId=${anime.id || anime.slug}`)}
-                      className="px-2.5 sm:px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                      title="Manage Downloads (Zip 1, Zip 2, 360p-1080p)"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Downloads</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/admin/anime/edit/${anime.id || anime.slug}`)}
-                      className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-[#1683FF] text-white transition-colors cursor-pointer"
-                      title="Edit Anime"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setTargetDeleteAnime(anime)}
-                      className="p-1.5 sm:p-2 rounded-xl bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors cursor-pointer"
-                      title="Delete Anime"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  {selectedIds.size > 0 && selectedIds.size === filtered.length && (
+                    <span className="text-[10px] leading-none">✓</span>
+                  )}
+                </button>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">Title & Details</div>
+            <div className="w-28 text-left">Type</div>
+            <div className="w-28 text-left">Status</div>
+            <div className="w-24 text-right pr-4">Views</div>
+            <div className="w-12 text-right">Actions</div>
           </div>
+
+          {loading ? (
+            <div className="p-4 space-y-3">
+              <AdminSkeleton variant="text" count={6} />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8">
+              <AdminEmptyState
+                icon={Film}
+                title="No anime found"
+                description={
+                  searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
+                    ? 'Try adjusting your search or filters.'
+                    : 'No anime in your catalog yet. Add your first series.'
+                }
+                actionLabel="Add anime"
+                onAction={() => navigate('/admin/anime/new')}
+              />
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filtered.map((anime) => {
+                const animeId = anime.id || anime.slug;
+                const isSelected = selectedIds.has(animeId);
+                const statusCap = (anime.status || 'Ongoing').charAt(0).toUpperCase() + (anime.status || 'Ongoing').slice(1).toLowerCase();
+
+                return (
+                  <AdminListRow
+                    key={animeId}
+                    id={animeId}
+                    title={anime.title}
+                    meta={`${anime.type || 'TV'} · ${statusCap} · ${anime.year || '2026'} · ${anime.audioLanguage || 'Multi Audio'}`}
+                    thumbnail={anime.poster}
+                    thumbnailType="poster"
+                    status={anime.published === false ? 'draft' : anime.status || 'ongoing'}
+                    selectable={isSelectionMode}
+                    selected={isSelected}
+                    onSelect={(checked) => {
+                      setSelectedIds((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(animeId);
+                        else next.delete(animeId);
+                        return next;
+                      });
+                    }}
+                    onClick={() => navigate(`/admin/anime/edit/${animeId}`)}
+                    menuItems={[
+                      {
+                        id: 'edit',
+                        label: 'Edit',
+                        icon: Film,
+                        onClick: () => navigate(`/admin/anime/edit/${animeId}`),
+                      },
+                      {
+                        id: 'episodes',
+                        label: 'Episodes',
+                        icon: Tv,
+                        onClick: () => navigate(`/admin/anime/${animeId}/episodes`),
+                      },
+                      {
+                        id: 'downloads',
+                        label: 'Downloads',
+                        icon: Download,
+                        onClick: () => navigate(`/admin/downloads?animeId=${animeId}`),
+                      },
+                      {
+                        id: 'seasons',
+                        label: 'Seasons',
+                        icon: Layers,
+                        onClick: () => navigate(`/admin/seasons`),
+                      },
+                      {
+                        id: 'duplicate',
+                        label: 'Duplicate',
+                        icon: Copy,
+                        onClick: () => handleDuplicate(anime),
+                      },
+                      {
+                        id: 'view',
+                        label: 'View on site',
+                        icon: ExternalLink,
+                        onClick: () => navigate(`/anime/${anime.slug || animeId}`),
+                      },
+                      {
+                        id: 'publish',
+                        label: anime.published === false ? 'Publish' : 'Unpublish',
+                        icon: anime.published === false ? Eye : EyeOff,
+                        divider: true,
+                        onClick: () => handleTogglePublish(anime),
+                      },
+                      {
+                        id: 'delete',
+                        label: 'Delete',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => setTargetDeleteAnime(anime),
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Sticky selection bar when in selection mode and items are selected */}
+        {isSelectionMode && selectedIds.size > 0 && (
+          <AdminSelectionBar
+            selectedCount={selectedIds.size}
+            totalCount={filtered.length}
+            onSelectAll={toggleSelectAll}
+            onClear={() => setSelectedIds(new Set())}
+            actions={[
+              {
+                label: 'Publish',
+                onClick: () => handleBulkPublish(true),
+              },
+              {
+                label: 'Draft',
+                onClick: () => handleBulkPublish(false),
+              },
+              {
+                label: 'Delete',
+                destructive: true,
+                onClick: handleBulkDelete,
+              },
+            ]}
+          />
         )}
 
-        {/* Delete Confirmation Modal */}
-        <ConfirmModal
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
           isOpen={Boolean(targetDeleteAnime)}
-          title="Delete Anime Title"
-          message={`Are you sure you want to permanently delete "${targetDeleteAnime?.title}"? All associated episodes may become unlinked.`}
-          confirmLabel={isDeleting ? 'Deleting...' : 'Delete Anime'}
-          isDestructive={true}
+          onClose={() => setTargetDeleteAnime(null)}
           onConfirm={handleConfirmDelete}
-          onCancel={() => setTargetDeleteAnime(null)}
+          title={`Delete "${targetDeleteAnime?.title}"?`}
+          consequence="This will permanently delete this anime, its seasons, and associated episodes from your library."
+          confirmLabel="Delete anime"
+          isLoading={isDeleting}
         />
       </div>
     </AdminLayout>

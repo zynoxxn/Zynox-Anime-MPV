@@ -93,7 +93,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, title, 
         <button
           type="button"
           onClick={handleNativeShare}
-          className="w-full py-2.5 bg-gradient-to-r from-[#1683FF] to-[#00CFFF] hover:opacity-95 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#1683FF]/25 cursor-pointer"
+          className="w-full py-2.5 bg-[#1E88FF] hover:bg-[#1570d8] text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
           <Share2 className="w-4 h-4" />
           <span>Open System Share Menu</span>

@@ -9,6 +9,7 @@ import {
   deleteDoc,
   query,
   where,
+  limit,
   increment,
   serverTimestamp,
   writeBatch,
@@ -23,6 +24,9 @@ import { DEFAULT_EPISODES, DEFAULT_ANIMES } from '../../data/defaultCatalog';
 
 const EPISODES_COLLECTION = 'episodes';
 const LOCAL_EPISODES_KEY = 'zynox_local_admin_episodes';
+
+const memoryEpisodesByAnime = new Map<string, Episode[]>();
+const inFlightEpisodeFetches = new Map<string, Promise<Episode[]>>();
 
 export function getLocalStoredEpisodes(): Episode[] {
   if (typeof localStorage === 'undefined') return [];
@@ -47,6 +51,9 @@ export function saveLocalStoredEpisode(ep: Episode): void {
       list.unshift(ep);
     }
     localStorage.setItem(LOCAL_EPISODES_KEY, JSON.stringify(list));
+    if (ep.animeId) {
+      memoryEpisodesByAnime.delete(ep.animeId);
+    }
   } catch (e) {
     console.warn('Failed to save episode to local storage:', e);
   }
@@ -195,77 +202,193 @@ export function normalizeSeasonEpisodeNumbers(ep: Episode): Episode {
   return ep;
 }
 
-export async function getPublishedEpisodesByAnimeId(animeId: string): Promise<Episode[]> {
+function buildCandidateAnimeKeys(animeId: string, knownSlug?: string): string[] {
+  const keys = new Set<string>();
+  const add = (val?: string | null) => {
+    if (!val) return;
+    const trimmed = val.trim();
+    if (trimmed) keys.add(trimmed);
+  };
+  add(animeId);
+  add(knownSlug);
+  for (const def of DEFAULT_ANIMES) {
+    if (
+      def.id === animeId ||
+      def.slug === animeId ||
+      (knownSlug && (def.id === knownSlug || def.slug === knownSlug))
+    ) {
+      add(def.id);
+      add(def.slug);
+    }
+  }
+  return Array.from(keys);
+}
+
+function mergeEpisodeSources(
+  defaults: Episode[],
+  localEps: Episode[],
+  firestoreEps: Episode[]
+): Episode[] {
+  const map = new Map<string, Episode>();
+  for (const d of defaults) {
+    const key = `s${d.seasonNumber || d.season || 1}-e${d.episodeNumber}`;
+    map.set(key, d);
+  }
+  for (const l of localEps) {
+    if (l.published === false) continue;
+    const key = `s${l.seasonNumber || l.season || 1}-e${l.episodeNumber}`;
+    map.set(key, l);
+  }
+  for (const ep of firestoreEps) {
+    if (ep.published === false) continue;
+    const key = `s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`;
+    map.set(key, ep);
+  }
+  return Array.from(map.values())
+    .map(sanitizeEpisodeStreamUrls)
+    .sort((a, b) => {
+      const sA = a.seasonNumber || a.season || 1;
+      const sB = b.seasonNumber || b.season || 1;
+      if (sA !== sB) return sA - sB;
+      return a.episodeNumber - b.episodeNumber;
+    });
+}
+
+export function getCachedPublishedEpisodesByAnimeId(animeId: string, knownSlug?: string): Episode[] {
+  if (!animeId) return [];
+  const keys = buildCandidateAnimeKeys(animeId, knownSlug);
+
+  for (const k of keys) {
+    const mem = memoryEpisodesByAnime.get(k);
+    if (mem && mem.length > 0) return mem;
+  }
+
+  for (const k of keys) {
+    const stored = getStoredCache<Episode[]>(`episodes_${k}`, []);
+    if (Array.isArray(stored) && stored.length > 0) {
+      const normalized = stored.map(normalizeSeasonEpisodeNumbers).map(sanitizeEpisodeStreamUrls);
+      memoryEpisodesByAnime.set(k, normalized);
+      return normalized;
+    }
+  }
+
   const defaults = generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
-  try {
-    const targetIds = new Set<string>([animeId]);
-    try {
-      const anime = await getAnimeById(animeId);
-      if (anime) {
-        if (anime.id) targetIds.add(anime.id);
-        if (anime.slug) targetIds.add(anime.slug);
-      }
-    } catch {}
+  const keySet = new Set(keys.map((k) => k.toLowerCase()));
+  const localEps = getLocalStoredEpisodes()
+    .filter((e) => e && e.published !== false && e.animeId && keySet.has(e.animeId.toLowerCase()))
+    .map(normalizeSeasonEpisodeNumbers);
+
+  if (localEps.length > 0) {
+    return mergeEpisodeSources(defaults, localEps, []);
+  }
+  return defaults;
+}
+
+export async function getPublishedEpisodesByAnimeId(
+  animeId: string,
+  knownSlug?: string
+): Promise<Episode[]> {
+  if (!animeId) return [];
+
+  const dedupeKey = `${animeId}::${knownSlug || ''}`;
+  const existingFlight = inFlightEpisodeFetches.get(dedupeKey);
+  if (existingFlight) {
+    return existingFlight;
+  }
+
+  const promise = (async () => {
+    const defaults = generateFallbackEpisodes(animeId).map(normalizeSeasonEpisodeNumbers);
+    const baseKeys = buildCandidateAnimeKeys(animeId, knownSlug);
+    const targetIds = new Set<string>(baseKeys);
+
+    if (!knownSlug) {
+      try {
+        const anime = await withTimeout(getAnimeById(animeId), 1500, null);
+        if (anime) {
+          if (anime.id) targetIds.add(anime.id);
+          if (anime.slug) targetIds.add(anime.slug);
+        }
+      } catch {}
+    }
 
     const idList = Array.from(targetIds);
-    let list: Episode[] = [];
+    const idSetLower = new Set(idList.map((v) => v.toLowerCase()));
+    const localEps = getLocalStoredEpisodes()
+      .filter((e) => e && e.published !== false && e.animeId && idSetLower.has(e.animeId.toLowerCase()))
+      .map(normalizeSeasonEpisodeNumbers);
 
     try {
-      const q = query(
-        collection(db, EPISODES_COLLECTION),
-        where('animeId', 'in', idList.slice(0, 10)),
-        where('published', '==', true)
-      );
-      const snapshot = await withTimeout(getDocs(q), 6000, null);
-      if (snapshot && !snapshot.empty) {
-        list = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<Episode, 'id'>),
-        })).map(normalizeSeasonEpisodeNumbers);
-      }
-    } catch {
+      let list: Episode[] = [];
+
       try {
-        const q = query(
-          collection(db, EPISODES_COLLECTION),
-          where('animeId', '==', animeId)
-        );
-        const snapshot = await withTimeout(getDocs(q), 5000, null);
+        const q =
+          idList.length > 1
+            ? query(
+                collection(db, EPISODES_COLLECTION),
+                where('animeId', 'in', idList.slice(0, 10)),
+                where('published', '==', true)
+              )
+            : query(
+                collection(db, EPISODES_COLLECTION),
+                where('animeId', '==', animeId),
+                where('published', '==', true)
+              );
+        const snapshot = await withTimeout(getDocs(q), 3200, null);
         if (snapshot && !snapshot.empty) {
           list = snapshot.docs
             .map((docSnap) => ({
               id: docSnap.id,
               ...(docSnap.data() as Omit<Episode, 'id'>),
             }))
-            .filter((ep) => ep.published !== false)
             .map(normalizeSeasonEpisodeNumbers);
         }
-      } catch {}
-    }
+      } catch {
+        try {
+          const q = query(
+            collection(db, EPISODES_COLLECTION),
+            where('animeId', '==', animeId),
+            where('published', '==', true)
+          );
+          const snapshot = await withTimeout(getDocs(q), 2500, null);
+          if (snapshot && !snapshot.empty) {
+            list = snapshot.docs
+              .map((docSnap) => ({
+                id: docSnap.id,
+                ...(docSnap.data() as Omit<Episode, 'id'>),
+              }))
+              .filter((ep) => ep.published !== false)
+              .map(normalizeSeasonEpisodeNumbers);
+          }
+        } catch {}
+      }
 
-    if (list.length === 0) {
-      return defaults;
-    }
+      if (list.length === 0 && localEps.length === 0) {
+        const cached = getCachedPublishedEpisodesByAnimeId(animeId, knownSlug);
+        return cached.length > 0 ? cached : defaults;
+      }
 
-    // Merge: Firestore episodes override default ones with same season + episodeNumber
-    const map = new Map<string, Episode>();
-    for (const d of defaults) {
-      const key = `s${d.seasonNumber || d.season || 1}-e${d.episodeNumber}`;
-      map.set(key, d);
+      const merged = mergeEpisodeSources(defaults, localEps, list);
+      if (merged.length > 0) {
+        for (const k of idList) {
+          memoryEpisodesByAnime.set(k, merged);
+        }
+        setStoredCache(`episodes_${animeId}`, merged);
+        if (knownSlug && knownSlug !== animeId) {
+          setStoredCache(`episodes_${knownSlug}`, merged);
+        }
+      }
+      return merged;
+    } catch (err) {
+      console.warn(`Failed to get published episodes for anime ${animeId}, checking default catalog:`, err);
+      const cached = getCachedPublishedEpisodesByAnimeId(animeId, knownSlug);
+      return cached.length > 0 ? cached : defaults;
     }
-    for (const ep of list) {
-      const key = `s${ep.seasonNumber || ep.season || 1}-e${ep.episodeNumber}`;
-      map.set(key, ep);
-    }
-    return Array.from(map.values()).map(sanitizeEpisodeStreamUrls).sort((a, b) => {
-      const sA = a.seasonNumber || a.season || 1;
-      const sB = b.seasonNumber || b.season || 1;
-      if (sA !== sB) return sA - sB;
-      return a.episodeNumber - b.episodeNumber;
-    });
-  } catch (err) {
-    console.warn(`Failed to get published episodes for anime ${animeId}, checking default catalog:`, err);
-    return defaults;
-  }
+  })().finally(() => {
+    inFlightEpisodeFetches.delete(dedupeKey);
+  });
+
+  inFlightEpisodeFetches.set(dedupeKey, promise);
+  return promise;
 }
 
 export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode[]> {
@@ -372,7 +495,10 @@ export async function getAllEpisodesByAnimeId(animeId?: string): Promise<Episode
 
 export async function getEpisodeById(id: string): Promise<Episode | null> {
   if (!id) return null;
-  // 1. Quick check default catalog first
+  const localMatch = getLocalStoredEpisodes().map(normalizeSeasonEpisodeNumbers).find((e) => e.id === id);
+  if (localMatch) return sanitizeEpisodeStreamUrls(localMatch);
+
+  // 1. Quick check default catalog
   for (const [, epList] of Object.entries(DEFAULT_EPISODES)) {
     const match = epList.map(normalizeSeasonEpisodeNumbers).find((e) => e.id === id);
     if (match) return sanitizeEpisodeStreamUrls(match);
@@ -380,7 +506,7 @@ export async function getEpisodeById(id: string): Promise<Episode | null> {
 
   try {
     const docRef = doc(db, EPISODES_COLLECTION, id);
-    const docSnap = await withTimeout(getDoc(docRef), 1800, null);
+    const docSnap = await withTimeout(getDoc(docRef), 2000, null);
     if (docSnap && docSnap.exists()) {
       const data = docSnap.data() as Episode;
       if (isAnimeDeleted(data.animeId)) return null;
@@ -413,8 +539,8 @@ export async function getEpisodeByAnimeAndNumber(
   });
 
   try {
-    // 2. Fetch all episodes for this anime and find the exact season + episode
-    const allAnimeEpisodes = await getAllEpisodesByAnimeId(animeId);
+    // 2. Fetch published episodes for this anime and find the exact season + episode
+    const allAnimeEpisodes = await getPublishedEpisodesByAnimeId(animeId);
     if (allAnimeEpisodes.length > 0) {
       const match = allAnimeEpisodes.find((e) => {
         const sMatch = seasonNumber ? Number(e.seasonNumber || e.season || 1) === Number(seasonNumber) : true;
@@ -449,7 +575,8 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
     try {
       const q = query(
         collection(db, EPISODES_COLLECTION),
-        where('published', '==', true)
+        where('published', '==', true),
+        limit(60)
       );
       const snapshot = await withTimeout(getDocs(q), 1800, null);
       if (snapshot && !snapshot.empty) {
@@ -461,18 +588,7 @@ export async function getLatestReleasedEpisodes(limitCount: number = 12): Promis
           .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
       }
     } catch (qErr) {
-      console.warn('Failed query published episodes, falling back to all docs:', qErr);
-      try {
-        const snapshot = await withTimeout(getDocs(collection(db, EPISODES_COLLECTION)), 1500, null);
-        if (snapshot && !snapshot.empty) {
-          firestoreEpisodes = snapshot.docs
-            .map((docSnap) => ({
-              id: docSnap.id,
-              ...(docSnap.data() as Omit<Episode, 'id'>),
-            }))
-            .filter((ep) => ep.published !== false && !isAnimeDeleted(ep.animeId));
-        }
-      } catch {}
+      console.warn('Failed query published episodes:', qErr);
     }
 
     // Flatten default episodes

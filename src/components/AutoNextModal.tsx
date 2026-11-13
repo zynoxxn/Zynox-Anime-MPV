@@ -71,7 +71,7 @@ export const AutoNextModal: React.FC<AutoNextModalProps> = ({
         <button
           type="button"
           onClick={onPlayNext}
-          className="flex-1 py-1.5 bg-[#1683FF] hover:bg-[#2196FF] text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-[#1683FF]/30"
+          className="flex-1 py-1.5 bg-[#1E88FF] hover:bg-[#1570d8] text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5"
         >
           <Play className="w-3.5 h-3.5 fill-white" />
           <span>Play Now</span>

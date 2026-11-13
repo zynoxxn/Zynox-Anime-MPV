@@ -1,47 +1,111 @@
 @import "tailwindcss";
 
 :root {
-  /* ZYNOX Exact Master Color System */
-  --bg-primary: #030712;
-  --bg-navy: #050A14;
-  --bg-secondary: #07111F;
-  --bg-card: #081426;
-  --bg-card-hover: #0B1B32;
-
-  /* Blue & Cyan Accents */
-  --blue-primary: #1683FF;
-  --blue-bright: #2196FF;
-  --blue-cyan: #00CFFF;
-
-  /* Typography Colors */
-  --text-primary: #F8FAFC;
-  --text-secondary: #CBD5E1;
-  --text-muted: #94A3B8;
+  /* ZYNOX Exact Master Design Tokens */
+  --bg-page: #050A14;
+  --bg-surface: #0B1324;
+  --bg-elevated: #101A30;
+  --bg-hover: #16223D;
 
   /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-blue: rgba(33, 150, 243, 0.25);
-  --border-blue-glow: rgba(22, 131, 255, 0.4);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Typography Colors */
+  --text-primary: #FFFFFF;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --text-disabled: #64748B;
+
+  /* Primary Electric Blue */
+  --color-primary: #1E88FF;
+  --color-primary-hover: #3B9BFF;
+  --color-primary-pressed: #1670D6;
+  --color-primary-soft: rgba(30, 136, 255, 0.14);
+
+  /* Status Tokens */
+  --color-success: #22C55E;
+  --color-success-soft: rgba(34, 197, 94, 0.14);
+  --color-warning: #F59E0B;
+  --color-warning-soft: rgba(245, 158, 11, 0.14);
+  --color-danger: #EF4444;
+  --color-danger-soft: rgba(239, 68, 68, 0.14);
+  --color-neutral-soft: rgba(148, 163, 184, 0.14);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
 }
 
 html {
   scroll-behavior: smooth;
   overflow-x: hidden;
+  height: -webkit-fill-available;
 }
 
 body {
   min-height: 100vh;
-  background-color: #030712;
-  color: #F8FAFC;
+  min-height: 100dvh;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   margin: 0;
   padding: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: auto;
   touch-action: pan-y pinch-zoom;
+}
+
+/* Disable transient tap/click glow while preserving keyboard focus ring */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Keyboard accessibility focus ring */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect user reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* iOS input auto-zoom prevention: inputs must be minimum 16px on mobile */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* Fixed Hardware-Accelerated Ambient Glow Background */
@@ -51,9 +115,9 @@ body {
   pointer-events: none;
   z-index: -10;
   background-image: 
-    radial-gradient(circle at 50% 0%, rgba(22, 131, 255, 0.07) 0%, transparent 60%),
-    radial-gradient(circle at 100% 20%, rgba(0, 207, 255, 0.04) 0%, transparent 50%),
-    radial-gradient(circle at 0% 80%, rgba(33, 150, 243, 0.03) 0%, transparent 50%);
+    radial-gradient(circle at 50% 0%, rgba(30, 136, 255, 0.07) 0%, transparent 60%),
+    radial-gradient(circle at 100% 20%, rgba(30, 136, 255, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 0% 80%, rgba(30, 136, 255, 0.03) 0%, transparent 50%);
   transform: translateZ(0);
   will-change: transform;
 }
@@ -69,13 +133,13 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #081426;
+  background: #101A30;
   border-radius: 9999px;
-  border: 1px solid rgba(33, 150, 243, 0.2);
+  border: 1px solid rgba(30, 136, 255, 0.25);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #1683FF;
+  background: var(--color-primary);
 }
 
 /* Smooth hide scrollbar utility */
@@ -85,15 +149,6 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
-}
-
-/* Ambient glow & glass utilities */
-.glow-blue {
-  box-shadow: 0 0 20px -3px rgba(22, 131, 255, 0.35);
-}
-
-.glow-blue-lg {
-  box-shadow: 0 0 35px -5px rgba(22, 131, 255, 0.45);
 }
 
 /* Fluid Skeleton Shimmer Wave Animation */

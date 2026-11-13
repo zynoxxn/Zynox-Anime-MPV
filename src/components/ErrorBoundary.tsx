@@ -27,7 +27,13 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('[CRITICAL APP ERROR]:', error, errorInfo);
   }
 
-  private handleReload = () => {
+  private handleReload = async () => {
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {}
     window.location.reload();
   };
 
@@ -38,8 +44,8 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#030712] text-white flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-[#0B1322] border border-white/10 rounded-3xl p-6 sm:p-8 text-center space-y-6 shadow-2xl">
+        <div className="min-h-screen bg-[#050A14] text-white flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-[#0B1324] border border-white/10 rounded-3xl p-6 sm:p-8 text-center space-y-6 shadow-2xl">
             <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
               <AlertTriangle className="w-8 h-8" />
             </div>
@@ -55,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="flex-1 py-3 px-4 bg-[#1683FF] hover:bg-[#2563EB] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-[#1683FF]/20"
+                className="flex-1 py-3 px-4 bg-[#1E88FF] hover:bg-[#1570d8] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <RefreshCw className="w-4 h-4" />
                 <span>Reload Page</span>

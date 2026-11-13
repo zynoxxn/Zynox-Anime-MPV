@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/auth';
 import type { AppNotification } from '../types/library';
 import {
@@ -7,6 +7,9 @@ import {
   markAllNotificationsRead,
   deleteNotification,
 } from '../lib/firestore/notifications';
+import { isValidSafeUrl } from '../lib/security';
+import { EmptyState, ErrorState } from '../components/common/FeedbackStates';
+import { usePageSeo } from '../hooks/usePageSeo';
 import {
   Bell,
   Trash2,
@@ -31,27 +34,35 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread' | 'announcements' | 'episodes' | 'community'>('all');
 
-  const fetchNotifs = async () => {
+  usePageSeo({
+    title: 'Notifications | ZYNOX ANIME',
+    description: 'Episode release alerts, comment replies, and community updates.',
+  });
+
+  const fetchNotifs = useCallback(async () => {
     if (!user) {
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
+      setError(null);
       const items = await getUserNotifications(user.uid);
       setNotifications(items);
     } catch (err) {
       console.error('Notifications fetch error:', err);
+      setError('Failed to load your notifications. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchNotifs();
-  }, [user]);
+  }, [fetchNotifs]);
 
   const handleMarkAllRead = async () => {
     if (!user) return;
@@ -73,10 +84,11 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       );
     }
     if (notif.link) {
-      if (notif.link.startsWith('http://') || notif.link.startsWith('https://')) {
-        window.location.href = notif.link;
-      } else {
-        navigate(notif.link);
+      const link = notif.link.trim();
+      if (link.startsWith('/')) {
+        navigate(link);
+      } else if (isValidSafeUrl(link)) {
+        window.location.href = link;
       }
     }
   };
@@ -86,16 +98,16 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       case 'episode_release':
         return <Film className="w-4 h-4 text-emerald-400" />;
       case 'comment_reply':
-        return <MessageSquare className="w-4 h-4 text-[#00D9FF]" />;
+        return <MessageSquare className="w-4 h-4 text-[#1E88FF]" />;
       case 'comment_like':
-        return <Heart className="w-4 h-4 text-rose-500" />;
+        return <Heart className="w-4 h-4 text-rose-400" />;
       case 'request_status':
         return <Send className="w-4 h-4 text-amber-400" />;
       case 'system_announcement':
       case 'announcement':
         return <Sparkles className="w-4 h-4 text-amber-400" />;
       default:
-        return <Sparkles className="w-4 h-4 text-[#00A8FF]" />;
+        return <Sparkles className="w-4 h-4 text-[#1E88FF]" />;
     }
   };
 
@@ -115,17 +127,25 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const FILTER_TABS: { id: typeof filter; label: string }[] = [
+    { id: 'all', label: `All (${notifications.length})` },
+    { id: 'unread', label: `Unread (${unreadCount})` },
+    { id: 'announcements', label: 'Announcements' },
+    { id: 'episodes', label: 'Episodes' },
+    { id: 'community', label: 'Community' },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6">
-        <div>
-          <h1 className="text-2xl sm:text-4xl font-black text-[#F5F9FF] flex items-center gap-3 tracking-tight">
-            <Bell className="w-7 h-7 text-[#00A8FF]" />
-            <span>Community &amp; Release Notifications</span>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
+            <Bell className="w-6 h-6 sm:w-7 sm:h-7 text-[#1E88FF] shrink-0" />
+            <span className="truncate">Notifications</span>
           </h1>
-          <p className="text-xs sm:text-sm text-[#A9B8CC] mt-1">
-            Episode releases, comment replies, community likes, and anime request updates
+          <p className="text-xs sm:text-sm text-[#94A3B8] mt-1">
+            Episode releases, comment replies, and request status updates.
           </p>
         </div>
 
@@ -133,132 +153,97 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           <button
             type="button"
             onClick={handleMarkAllRead}
-            className="px-4 py-2 bg-[#00A8FF]/15 hover:bg-[#00A8FF]/25 border border-[#00A8FF]/30 text-[#00D9FF] text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 self-start sm:self-auto"
+            className="h-9 px-3.5 bg-[#0B1324] hover:bg-[#101A30] border border-white/10 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shrink-0 whitespace-nowrap"
           >
-            <CheckCheck className="w-3.5 h-3.5" />
+            <CheckCheck className="w-3.5 h-3.5 text-[#1E88FF] shrink-0" />
             <span>Mark all read ({unreadCount})</span>
           </button>
         )}
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setFilter('all')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-            filter === 'all'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-              : 'bg-[#0A1628] text-[#A9B8CC] hover:text-white border border-white/5'
-          }`}
-        >
-          All ({notifications.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('unread')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-            filter === 'unread'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-              : 'bg-[#0A1628] text-[#A9B8CC] hover:text-white border border-white/5'
-          }`}
-        >
-          Unread ({unreadCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('announcements')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-            filter === 'announcements'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-              : 'bg-[#0A1628] text-[#A9B8CC] hover:text-white border border-white/5'
-          }`}
-        >
-          Announcements
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('episodes')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-            filter === 'episodes'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-              : 'bg-[#0A1628] text-[#A9B8CC] hover:text-white border border-white/5'
-          }`}
-        >
-          Episodes
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('community')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-            filter === 'community'
-              ? 'bg-[#0066FF] text-white shadow-md shadow-[#0066FF]/30'
-              : 'bg-[#0A1628] text-[#A9B8CC] hover:text-white border border-white/5'
-          }`}
-        >
-          Community
-        </button>
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+        {FILTER_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setFilter(t.id)}
+            className={`h-9 px-3.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 border cursor-pointer ${
+              filter === t.id
+                ? 'bg-[#1E88FF] text-white border-[#1E88FF]'
+                : 'bg-[#0B1324] text-[#94A3B8] hover:text-white border-white/10 hover:bg-[#101A30]'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
       {loading ? (
-        <div className="py-24 text-center text-xs text-[#A9B8CC]">Loading notifications...</div>
-      ) : !user ? (
-        <div className="text-center py-16 bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-8 max-w-md mx-auto space-y-4 shadow-xl">
-          <Bell className="w-12 h-12 mx-auto text-[#6E7F95]" />
-          <h3 className="text-lg font-bold text-[#F5F9FF]">Sign In to View Notifications</h3>
-          <p className="text-xs text-[#A9B8CC] leading-relaxed">
-            Create an account or sign in to receive alerts when new episodes air or people reply to your comments.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/profile')}
-            className="px-5 py-2.5 bg-[#0066FF] hover:bg-[#0052cc] text-white text-xs font-bold rounded-xl shadow-md shadow-[#0066FF]/30"
-          >
-            Sign In to Profile
-          </button>
-        </div>
-      ) : filteredNotifications.length === 0 ? (
-        <div className="text-center py-20 bg-[#0A1628] border border-[#00A8FF]/20 rounded-3xl p-8 max-w-md mx-auto space-y-3 shadow-xl">
-          <Bell className="w-12 h-12 mx-auto text-[#6E7F95]" />
-          <h3 className="text-lg font-bold text-[#F5F9FF]">No notifications</h3>
-          <p className="text-xs text-[#A9B8CC] leading-relaxed">
-            You will receive updates here whenever new episodes of followed anime are released or community members interact with you.
-          </p>
-        </div>
-      ) : (
         <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-20 rounded-2xl bg-[#0B1324] border border-white/10 animate-pulse"
+            />
+          ))}
+        </div>
+      ) : error ? (
+        <ErrorState
+          title="Could Not Load Notifications"
+          message={error}
+          onRetry={fetchNotifs}
+        />
+      ) : !user ? (
+        <EmptyState
+          icon={<Bell className="w-7 h-7 text-[#1E88FF]" />}
+          title="Sign in to view notifications"
+          description="Create an account or sign in to receive alerts when new episodes air or people reply to you."
+          actionLabel="Sign In"
+          onAction={() => navigate('/login')}
+        />
+      ) : filteredNotifications.length === 0 ? (
+        <EmptyState
+          icon={<Bell className="w-7 h-7 text-[#1E88FF]" />}
+          title="No notifications"
+          description="You will receive updates here whenever new episodes release or community members reply."
+        />
+      ) : (
+        <div className="space-y-2.5">
           {filteredNotifications.map((n) => (
             <div
               key={n.id}
               onClick={() => handleItemClick(n)}
-              className={`p-4 rounded-2xl border transition-all flex items-start justify-between gap-4 cursor-pointer group shadow-lg ${
+              className={`p-3.5 sm:p-4 rounded-2xl border transition-colors flex items-start justify-between gap-3 cursor-pointer group min-w-0 ${
                 n.read
-                  ? 'bg-[#0D1B2E] border-white/5 text-[#A9B8CC] hover:border-white/20 hover:bg-[#11243C]'
-                  : 'bg-[#0D1B2E] border-[#00A8FF]/40 text-[#F5F9FF] shadow-[#00A8FF]/5 hover:border-[#00A8FF] hover:bg-[#11243C]'
+                  ? 'bg-[#0B1324] border-white/10 text-[#94A3B8] hover:bg-[#101A30]'
+                  : 'bg-[#0B1324] border-[#1E88FF]/40 text-white hover:border-[#1E88FF]'
               }`}
             >
-              <div className="flex items-start gap-3.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#06101F] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className="w-9 h-9 rounded-xl bg-[#101A30] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                   {getNotifIcon(n.type)}
                 </div>
 
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
                     {!n.read && (
-                      <span className="w-2 h-2 rounded-full bg-[#00A8FF] shrink-0" />
+                      <span className="w-2 h-2 rounded-full bg-[#1E88FF] shrink-0" />
                     )}
-                    <h4 className="text-sm font-bold text-[#F5F9FF] group-hover:text-[#00D9FF] transition-colors truncate">
+                    <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-[#1E88FF] transition-colors truncate">
                       {n.title}
                     </h4>
                   </div>
-                  <p className="text-xs text-[#A9B8CC] leading-relaxed">{n.message}</p>
+                  <p className="text-xs text-[#94A3B8] leading-relaxed break-words">
+                    {n.message}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                {n.link && (
-                  <ExternalLink className="w-4 h-4 text-[#6E7F95] group-hover:text-white transition-colors" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                {n.link && isValidSafeUrl(n.link) && (
+                  <ExternalLink className="w-4 h-4 text-[#64748B] group-hover:text-white transition-colors" />
                 )}
                 {n.id && (
                   <button
@@ -267,8 +252,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                       e.stopPropagation();
                       handleDelete(n.id!);
                     }}
-                    className="p-1.5 text-[#6E7F95] hover:text-rose-400 rounded-lg transition-colors"
-                    title="Delete notification"
+                    className="w-8 h-8 text-[#64748B] hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors flex items-center justify-center cursor-pointer"
+                    aria-label="Delete notification"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

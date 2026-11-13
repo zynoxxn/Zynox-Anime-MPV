@@ -29,12 +29,6 @@ const app: FirebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebas
 export const auth: Auth = getAuth(app);
 export const storage: FirebaseStorage = getStorage(app);
 
-// Developer diagnostics (No sensitive keys or secrets)
-if (typeof window !== 'undefined') {
-  console.log('[Firebase Init] projectId:', firebaseConfig.projectId);
-  console.log('[Firebase Init] auth initialized:', Boolean(auth));
-}
-
 const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || import.meta.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const isDefaultAppletProject = !envProjectId || envProjectId === rawConfig.projectId;
 

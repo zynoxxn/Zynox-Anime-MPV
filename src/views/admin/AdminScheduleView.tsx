@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { AdminLayout } from './AdminLayout';
 import { useAuth } from '../../lib/auth';
-import type { CmsScheduleItem, ScheduleStatus } from '../../types/cms';
+import type { CmsScheduleItem } from '../../types/cms';
 import type { Anime } from '../../types/anime';
 import {
   getCmsSchedule,
@@ -9,26 +9,26 @@ import {
   deleteCmsScheduleItem,
   logAdminActivity,
 } from '../../lib/firestore/cms';
-import { getAllAnimes, updateAnime } from '../../lib/firestore/anime';
+import { getAllAnimes } from '../../lib/firestore/anime';
 import {
-  getAllEpisodesByAnimeId,
-  createEpisode,
-  updateEpisode,
-} from '../../lib/firestore/episodes';
-import { ConfirmModal } from '../../components/ConfirmModal';
+  AdminPageHeader,
+  AdminSegmentedTabs,
+  AdminListRow,
+  AdminSelect,
+  AdminConfirmDialog,
+  AdminEmptyState,
+  AdminErrorState,
+  AdminSkeleton,
+} from '../../components/admin';
 import {
   Calendar,
   Clock,
   Plus,
   Trash2,
   Edit2,
-  Save,
-  X,
-  Sparkles,
-  CheckCircle2,
-  AlertCircle,
   RefreshCw,
-  Search,
+  X,
+  Tv,
 } from 'lucide-react';
 
 interface AdminScheduleViewProps {
@@ -65,7 +65,6 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
     try {
       setLoading(true);
       const [schList, animeList] = await Promise.all([getCmsSchedule(), getAllAnimes()]);
-      // Deduplicate schedule list by unique anime
       const seenAnime = new Set<string>();
       const dedupedSchedule = schList.filter((item) => {
         const key = item.animeId || item.animeSlug || item.animeTitle;
@@ -88,7 +87,6 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
   }, []);
 
   const handleOpenNew = () => {
-    // Pick the first anime that is not already scheduled if possible
     const scheduledAnimeIds = new Set(scheduleItems.map((s) => s.animeId || s.animeSlug));
     const availableAnime = animes.find((a) => !scheduledAnimeIds.has(a.id) && !scheduledAnimeIds.has(a.slug)) || animes[0];
 
@@ -104,7 +102,7 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
       dayOfWeek: 'Monday',
       releaseTime: '20:00',
       timezone: 'Asia/Kolkata',
-      language: 'Hindi Dub & Japanese Sub',
+      language: 'Hindi Dub',
       status: 'upcoming',
     });
     setIsNew(true);
@@ -118,7 +116,6 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
   const handleAnimeSelect = (animeIdOrSlug: string) => {
     const found = animes.find((a) => a.id === animeIdOrSlug || a.slug === animeIdOrSlug);
     if (found && editingItem) {
-      // Check if this anime already has a schedule slot to prevent duplicates
       const existing = scheduleItems.find(
         (s) => s.animeId === found.id || s.animeSlug === found.slug || s.animeId === found.slug
       );
@@ -140,159 +137,77 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.animeTitle || !editingItem.releaseTime) {
-      onShowMessage('Please fill all required schedule fields.');
+    if (!editingItem || !editingItem.animeTitle || !editingItem.dayOfWeek) {
+      onShowMessage('Anime title and release day are required.');
       return;
     }
 
     try {
       setSaving(true);
-      const itemToSave = editingItem as CmsScheduleItem;
-
-      // Prevent adding the same anime multiple times: reuse existing schedule ID if it exists
-      const existingSlot = scheduleItems.find(
-        (s) =>
-          s.id !== itemToSave.id &&
-          ((itemToSave.animeId && (s.animeId === itemToSave.animeId || s.animeSlug === itemToSave.animeId)) ||
-            (itemToSave.animeSlug && (s.animeSlug === itemToSave.animeSlug || s.animeId === itemToSave.animeSlug)))
-      );
-      if (existingSlot) {
-        itemToSave.id = existingSlot.id;
-      }
+      const itemToSave: CmsScheduleItem = {
+        id: editingItem.id || `sch-${Date.now()}`,
+        animeId: editingItem.animeId || '',
+        animeTitle: editingItem.animeTitle || '',
+        animeSlug: editingItem.animeSlug || '',
+        animePoster: editingItem.animePoster || '',
+        animeBanner: editingItem.animeBanner || editingItem.animePoster || '',
+        episodeNumber: Number(editingItem.episodeNumber) || 1,
+        seasonNumber: Number(editingItem.seasonNumber) || 1,
+        dayOfWeek: editingItem.dayOfWeek as any,
+        releaseTime: editingItem.releaseTime || '20:00',
+        timezone: editingItem.timezone || 'Asia/Kolkata',
+        language: editingItem.language || 'Hindi Dub',
+        status: editingItem.status || 'upcoming',
+      };
 
       await saveCmsScheduleItem(itemToSave);
 
-      // Automatically sync broadcast time onto anime record
-      if (itemToSave.animeId) {
-        const targetAnime = animes.find(
-          (a) => a.id === itemToSave.animeId || a.slug === itemToSave.animeId || a.title === itemToSave.animeTitle
-        );
-        const animeDocId = targetAnime?.id || itemToSave.animeId;
-        const airText = itemToSave.airDate || `${itemToSave.dayOfWeek} at ${itemToSave.releaseTime}`;
-
-        if (animeDocId) {
-          const animeBanner =
-            targetAnime?.banner ||
-            (targetAnime as any)?.bannerUrl ||
-            targetAnime?.poster ||
-            (itemToSave as any).animeBanner ||
-            '';
-          if (animeBanner) {
-            (itemToSave as any).animeBanner = animeBanner;
-          }
-          if (targetAnime?.poster) {
-            itemToSave.animePoster = targetAnime.poster;
-          }
-          const isSlotUpcoming = itemToSave.status !== 'released' && itemToSave.status !== 'cancelled';
-          const animePatch: Partial<Anime> = {
-            releaseDay: itemToSave.dayOfWeek,
-            releaseTime: itemToSave.releaseTime,
-            timezone: itemToSave.timezone || 'Asia/Kolkata',
-            upcomingEpisodeNumber: Number(itemToSave.episodeNumber) || 1,
-            upcomingAirDate: airText,
-            upcomingReleaseTime: itemToSave.releaseTime,
-          };
-          await updateAnime(animeDocId, animePatch).catch((err) =>
-            console.warn('Failed to sync anime broadcast info upon scheduling:', err)
-          );
-        }
-
-        // If episode already exists in Firestore, sync airDate without creating duplicates
-        if (itemToSave.episodeNumber && animeDocId) {
-          try {
-            const isSlotUpcoming = itemToSave.status !== 'released';
-            const existingEpisodes = await getAllEpisodesByAnimeId(animeDocId);
-            const targetEp = existingEpisodes.find(
-              (e) =>
-                Number(e.episodeNumber) === Number(itemToSave.episodeNumber) &&
-                Number(e.seasonNumber || e.season || 1) === Number(itemToSave.seasonNumber || 1)
-            );
-            const bannerThumb =
-              targetAnime?.banner ||
-              (targetAnime as any)?.bannerUrl ||
-              targetAnime?.poster ||
-              itemToSave.animePoster ||
-              '';
-            if (targetEp && targetEp.id) {
-              const epHasStream = Boolean(targetEp.videoUrl || (targetEp.sources && targetEp.sources.length > 0));
-              if (!epHasStream && targetEp.status !== 'released') {
-                await updateEpisode(targetEp.id, {
-                  status: isSlotUpcoming ? 'upcoming' : 'released',
-                  isUpcoming: isSlotUpcoming,
-                  airDate: airText,
-                  releaseTime: itemToSave.releaseTime,
-                  dayOfWeek: itemToSave.dayOfWeek,
-                  timezone: itemToSave.timezone || 'Asia/Kolkata',
-                  thumbnail: bannerThumb,
-                });
-              }
-            } else if (isSlotUpcoming) {
-              await createEpisode({
-                animeId: animeDocId,
-                episodeNumber: Number(itemToSave.episodeNumber),
-                seasonNumber: Number(itemToSave.seasonNumber || 1),
-                title: `Episode ${itemToSave.episodeNumber}`,
-                description: `Scheduled release on ${itemToSave.dayOfWeek} at ${itemToSave.releaseTime}${itemToSave.timezone ? ` (${itemToSave.timezone})` : ''}`,
-                status: 'upcoming',
-                isUpcoming: true,
-                published: true,
-                airDate: airText,
-                releaseTime: itemToSave.releaseTime,
-                dayOfWeek: itemToSave.dayOfWeek,
-                timezone: itemToSave.timezone || 'Asia/Kolkata',
-                thumbnail: bannerThumb,
-                sources: [],
-              });
-            }
-          } catch (epErr) {
-            console.warn('Failed to sync episode list upon scheduling:', epErr);
-          }
-        }
+      if (user?.email) {
+        logAdminActivity(
+          user.uid || 'admin',
+          user.email,
+          isNew ? 'CREATE_SCHEDULE_SLOT' : 'UPDATE_SCHEDULE_SLOT',
+          'schedule',
+          itemToSave.id,
+          `${itemToSave.dayOfWeek} ${itemToSave.releaseTime} — ${itemToSave.animeTitle}`
+        ).catch(() => {});
       }
 
-      await logAdminActivity(
-        user?.uid || '',
-        user?.email || '',
-        isNew ? 'Added Schedule Item' : 'Updated Schedule Item',
-        'Schedule',
-        itemToSave.id,
-        `${itemToSave.animeTitle} - ${itemToSave.dayOfWeek} at ${itemToSave.releaseTime}`
-      );
-      onShowMessage(`Schedule item for "${itemToSave.animeTitle}" saved & synchronized!`);
+      onShowMessage(`Schedule slot saved for "${itemToSave.animeTitle}".`);
       setEditingItem(null);
       await loadData();
     } catch (err: any) {
-      console.error('Failed to save schedule:', err);
-      onShowMessage(`Error: ${err.message || 'Could not save schedule item'}`);
+      onShowMessage(`Failed to save slot: ${err.message}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const handleDeleteConfirm = async () => {
     if (!itemToDelete) return;
     try {
       setDeleting(true);
       await deleteCmsScheduleItem(itemToDelete.id);
-      await logAdminActivity(
-        user?.uid || '',
-        user?.email || '',
-        'Deleted Schedule Item',
-        'Schedule',
-        itemToDelete.id,
-        `Removed schedule item: ${itemToDelete.title}`
-      );
-      onShowMessage(`Schedule item "${itemToDelete.title}" deleted.`);
+      if (user?.email) {
+        logAdminActivity(
+          user.uid || 'admin',
+          user.email,
+          'DELETE_SCHEDULE_SLOT',
+          'schedule',
+          itemToDelete.id,
+          `Deleted schedule slot for "${itemToDelete.title}"`
+        ).catch(() => {});
+      }
+      onShowMessage(`Removed schedule slot for "${itemToDelete.title}".`);
       setItemToDelete(null);
       await loadData();
     } catch (err: any) {
-      onShowMessage(`Error: ${err.message || 'Could not delete item'}`);
+      onShowMessage(`Failed to delete slot: ${err.message}`);
     } finally {
       setDeleting(false);
     }
   };
 
-  // Auto-sync schedule items from anime database
   const handleAutoSync = async () => {
     try {
       setSaving(true);
@@ -322,7 +237,7 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
           }
         }
       }
-      onShowMessage(`Successfully synchronized ${count} anime into broadcast schedule!`);
+      onShowMessage(`Synchronized ${count} anime into release schedule.`);
       await loadData();
     } catch (err: any) {
       onShowMessage(`Sync error: ${err.message}`);
@@ -331,314 +246,240 @@ export const AdminScheduleView: React.FC<AdminScheduleViewProps> = ({
     }
   };
 
-  const filtered = scheduleItems.filter(
-    (item) => selectedDay === 'all' || item.dayOfWeek === selectedDay
-  );
+  const filtered = useMemo(() => {
+    return scheduleItems.filter(
+      (item) => selectedDay === 'all' || item.dayOfWeek === selectedDay
+    );
+  }, [scheduleItems, selectedDay]);
+
+  const scheduleTabs = [
+    { id: 'all', label: `All (${scheduleItems.length})` },
+    ...DAYS_OF_WEEK.map((day) => ({
+      id: day,
+      label: day.slice(0, 3),
+    })),
+  ];
 
   return (
     <AdminLayout currentTab="schedule" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-[#1683FF] uppercase tracking-wider">
-              <Calendar className="w-4 h-4" />
-              <span>Broadcast Matrix CMS</span>
+      <div className="space-y-6 min-w-0">
+        {/* Page Header (ONE primary button: Add slot) */}
+        <AdminPageHeader
+          title="Broadcast Schedule"
+          description={`${scheduleItems.length} weekly airing slots configured`}
+          primaryAction={{
+            label: 'Add slot',
+            icon: Plus,
+            onClick: handleOpenNew,
+          }}
+          secondaryActions={[
+            {
+              label: 'Sync from anime',
+              icon: RefreshCw,
+              onClick: handleAutoSync,
+              disabled: saving,
+            },
+          ]}
+        />
+
+        {/* Day Filter Tabs */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-2.5 overflow-x-auto no-scrollbar">
+          <AdminSegmentedTabs
+            tabs={scheduleTabs}
+            activeTab={selectedDay}
+            onChange={(tab) => setSelectedDay(tab)}
+          />
+        </div>
+
+        {/* Schedule List */}
+        <div className="bg-[#0B1324] border border-white/10 rounded-[12px] overflow-hidden">
+          {loading ? (
+            <div className="p-4 space-y-3">
+              <AdminSkeleton variant="text" count={6} />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Anime Release Schedule Manager
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Control public weekly broadcast times, countdown clocks, episode numbers, and status overrides.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={handleAutoSync}
-              disabled={saving}
-              className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-cyan-400 border border-cyan-500/20 rounded-xl transition-all flex items-center gap-1.5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${saving ? 'animate-spin' : ''}`} />
-              <span>Auto-Sync from Anime</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenNew}
-              className="px-4 py-2 bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 rounded-xl transition-all flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Schedule Slot</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Day Filter Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none bg-[#0B1322] border border-white/5 p-3 rounded-2xl">
-          <button
-            type="button"
-            onClick={() => setSelectedDay('all')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              selectedDay === 'all'
-                ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            All Days ({scheduleItems.length})
-          </button>
-          {DAYS_OF_WEEK.map((day) => {
-            const count = scheduleItems.filter((i) => i.dayOfWeek === day).length;
-            return (
-              <button
-                key={day}
-                type="button"
-                onClick={() => setSelectedDay(day)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                  selectedDay === day
-                    ? 'bg-[#1683FF] text-white shadow-md shadow-[#1683FF]/30'
-                    : 'text-[#94A3B8] hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <span>{day}</span>
-                <span className="text-[10px] opacity-70">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Schedule Grid */}
-        {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading schedule slots...</div>
-        ) : filtered.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8] space-y-3">
-            <Calendar className="w-10 h-10 text-[#1683FF] mx-auto opacity-50" />
-            <h3 className="text-base font-bold text-white">No schedule slots found</h3>
-            <p className="text-xs max-w-sm mx-auto">
-              Click &quot;Add Schedule Slot&quot; or &quot;Auto-Sync from Anime&quot; to populate your weekly broadcast schedule.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((item) => (
-              <div
-                key={item.id}
-                className="bg-[#0B1322] border border-white/5 hover:border-[#1683FF]/40 rounded-2xl p-4 transition-all flex gap-3.5 relative group"
-              >
-                <img
-                  src={item.animePoster || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80'}
-                  alt={item.animeTitle}
-                  className="w-16 h-24 object-cover rounded-xl shrink-0 border border-white/10"
+          ) : filtered.length === 0 ? (
+            <div className="p-8">
+              <AdminEmptyState
+                icon={Calendar}
+                title="No schedule slots for this day"
+                description="Click 'Add slot' or 'Sync from anime' to schedule broadcasts."
+                actionLabel="Add slot"
+                onAction={handleOpenNew}
+              />
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {filtered.map((item) => (
+                <AdminListRow
+                  key={item.id}
+                  id={item.id}
+                  title={item.animeTitle}
+                  thumbnail={item.animePoster}
+                  thumbnailType="poster"
+                  meta={`${item.dayOfWeek} at ${item.releaseTime || '20:00'} IST · EP ${item.episodeNumber} · ${item.language || 'Hindi Dub'}`}
+                  status={item.status || 'upcoming'}
+                  onClick={() => handleOpenEdit(item)}
+                  menuItems={[
+                    {
+                      id: 'edit',
+                      label: 'Edit slot',
+                      icon: Edit2,
+                      onClick: () => handleOpenEdit(item),
+                    },
+                    {
+                      id: 'view',
+                      label: 'View anime',
+                      icon: Tv,
+                      onClick: () => navigate(`/anime/${item.animeSlug || item.animeId}`),
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Delete slot',
+                      icon: Trash2,
+                      destructive: true,
+                      onClick: () => setItemToDelete({ id: item.id, title: item.animeTitle }),
+                    },
+                  ]}
                 />
+              ))}
+            </div>
+          )}
+        </div>
 
-                <div className="flex-1 min-w-0 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-[#1683FF] bg-[#1683FF]/10 px-2 py-0.5 rounded">
-                        {item.dayOfWeek}
-                      </span>
-                      <span className="font-mono text-cyan-400 font-bold flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.releaseTime}
-                      </span>
-                    </div>
-
-                    <h4 className="text-xs font-bold text-white truncate">{item.animeTitle}</h4>
-                    <div className="text-[11px] text-[#94A3B8]">
-                      Episode {item.episodeNumber} • {item.language || 'Hindi Dub'}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                    <span className="text-[10px] font-bold uppercase text-emerald-400">
-                      {item.status}
-                    </span>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
-                        title="Edit Slot"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete({ id: item.id, title: item.animeTitle })}
-                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                        title="Delete Slot"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Edit / New Modal */}
+        {/* Edit / Create Modal */}
         {editingItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="relative w-full max-w-lg bg-[#0B1322] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white">
-                  {isNew ? 'Create New Schedule Slot' : 'Edit Schedule Slot'}
+                <h3 className="text-sm font-semibold text-white">
+                  {isNew ? 'Create Schedule Slot' : 'Edit Schedule Slot'}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
-                  className="text-[#94A3B8] hover:text-white"
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               <form onSubmit={handleSave} className="space-y-4">
-                {/* Select Anime */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Select Anime Series</label>
-                  <select
+                <div>
+                  <AdminSelect
+                    label="Select Anime"
                     value={editingItem.animeId || editingItem.animeSlug || ''}
-                    onChange={(e) => handleAnimeSelect(e.target.value)}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                  >
-                    {animes.map((a) => (
-                      <option key={a.id || a.slug} value={a.id || a.slug}>
-                        {a.title}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => handleAnimeSelect(String(val))}
+                    options={animes.map((a) => ({
+                      value: a.id || a.slug,
+                      label: a.title,
+                    }))}
+                    sheetTitle="Choose Anime"
+                  />
                 </div>
 
-                {/* Day and Time */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Day of Week</label>
-                    <select
+                  <div>
+                    <AdminSelect
+                      label="Day of Week"
                       value={editingItem.dayOfWeek || 'Monday'}
-                      onChange={(e) =>
-                        setEditingItem({
-                          ...editingItem,
-                          dayOfWeek: e.target.value as any,
-                        })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                    >
-                      {DAYS_OF_WEEK.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setEditingItem({ ...editingItem, dayOfWeek: String(val) as any })}
+                      options={DAYS_OF_WEEK.map((d) => ({
+                        value: d,
+                        label: d,
+                      }))}
+                      sheetTitle="Select Day"
+                    />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Air Time (24-Hour)</label>
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Air Time (IST)
+                    </label>
                     <input
-                      type="text"
-                      placeholder="e.g. 20:30"
-                      value={editingItem.releaseTime || ''}
+                      type="time"
+                      value={editingItem.releaseTime || '20:00'}
                       onChange={(e) => setEditingItem({ ...editingItem, releaseTime: e.target.value })}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                      required
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3 text-xs text-white outline-none"
                     />
                   </div>
                 </div>
 
-                {/* Episode & Season Number */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Episode Number</label>
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Next Episode #
+                    </label>
                     <input
                       type="number"
+                      min="1"
                       value={editingItem.episodeNumber || 1}
-                      onChange={(e) =>
-                        setEditingItem({
-                          ...editingItem,
-                          episodeNumber: parseInt(e.target.value, 10) || 1,
-                        })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
+                      onChange={(e) => setEditingItem({ ...editingItem, episodeNumber: parseInt(e.target.value, 10) || 1 })}
+                      className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3 text-xs text-white outline-none"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Broadcast Status</label>
-                    <select
+                  <div>
+                    <AdminSelect
+                      label="Status"
                       value={editingItem.status || 'upcoming'}
-                      onChange={(e) =>
-                        setEditingItem({
-                          ...editingItem,
-                          status: e.target.value as ScheduleStatus,
-                        })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                    >
-                      <option value="upcoming">Upcoming</option>
-                      <option value="released">Released</option>
-                      <option value="delayed">Delayed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Audio Language & Timezone */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Audio Language</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Hindi Dub & JPN Sub"
-                      value={editingItem.language || ''}
-                      onChange={(e) => setEditingItem({ ...editingItem, language: e.target.value })}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Timezone</label>
-                    <input
-                      type="text"
-                      value={editingItem.timezone || 'Asia/Kolkata'}
-                      onChange={(e) => setEditingItem({ ...editingItem, timezone: e.target.value })}
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#1683FF]"
+                      onChange={(val) => setEditingItem({ ...editingItem, status: String(val) as any })}
+                      options={[
+                        { value: 'upcoming', label: 'Upcoming' },
+                        { value: 'airing', label: 'Airing' },
+                        { value: 'completed', label: 'Completed' },
+                        { value: 'delayed', label: 'Delayed' },
+                      ]}
+                      sheetTitle="Select Status"
                     />
                   </div>
                 </div>
 
-                {/* Buttons */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <div>
+                  <AdminSelect
+                    label="Audio Language"
+                    value={editingItem.language || 'Hindi Dub'}
+                    onChange={(val) => setEditingItem({ ...editingItem, language: String(val) })}
+                    options={[
+                      { value: 'Hindi Dub', label: 'Hindi Dub' },
+                      { value: 'Japanese Sub', label: 'Japanese Sub' },
+                      { value: 'Dual Audio', label: 'Dual Audio' },
+                      { value: 'Multi Audio', label: 'Multi Audio' },
+                    ]}
+                    sheetTitle="Select Audio"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
                   <button
                     type="button"
                     onClick={() => setEditingItem(null)}
-                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl"
+                    className="h-10 px-4 rounded-[10px] border border-white/10 hover:border-white/20 text-[#CBD5E1] hover:text-white text-xs font-medium transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-5 py-2 bg-[#1683FF] hover:bg-[#1268cc] text-xs font-bold text-white rounded-xl shadow-lg shadow-[#1683FF]/30 flex items-center gap-1.5"
+                    className="h-10 px-4 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{saving ? 'Saving...' : 'Save Slot'}</span>
+                    {saving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Save slot</span>
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
-        {/* Delete Modal */}
-        <ConfirmModal
-          isOpen={!!itemToDelete}
-          title="Delete Schedule Broadcast Slot?"
-          message={itemToDelete ? `Are you sure you want to remove "${itemToDelete.title}" from the broadcast schedule?` : ''}
-          confirmLabel={deleting ? 'Deleting...' : 'Delete Slot'}
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setItemToDelete(null)}
+
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={Boolean(itemToDelete)}
+          onClose={() => setItemToDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          title={`Delete Schedule Slot?`}
+          consequence={`This will remove "${itemToDelete?.title}" from the public weekly broadcast schedule.`}
+          confirmLabel="Delete slot"
+          isLoading={deleting}
         />
       </div>
     </AdminLayout>

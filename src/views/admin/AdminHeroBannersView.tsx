@@ -10,22 +10,29 @@ import {
   logAdminActivity,
 } from '../../lib/firestore/cms';
 import { getAllAnimes, updateAnime } from '../../lib/firestore/anime';
-import { ConfirmModal } from '../../components/ConfirmModal';
-import { AdminImageUploader } from '../../components/admin/AdminImageUploader';
+import {
+  AdminPageHeader,
+  AdminSelect,
+  AdminToggle,
+  AdminStatusBadge,
+  AdminConfirmDialog,
+  AdminImageUploader,
+  AdminEmptyState,
+  AdminSkeleton,
+  AdminRowMenu,
+} from '../../components/admin';
 import {
   Layers,
   Plus,
   Trash2,
   Edit2,
-  Save,
   X,
-  Eye,
-  EyeOff,
-  MoveUp,
-  MoveDown,
-  Sparkles,
   Play,
   ExternalLink,
+  MoveUp,
+  MoveDown,
+  RefreshCw,
+  Sliders,
 } from 'lucide-react';
 
 interface AdminHeroBannersViewProps {
@@ -105,7 +112,7 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBanner || !editingBanner.title?.trim()) {
-      onShowMessage('Please provide a slide title.');
+      onShowMessage('Please provide a banner title.');
       return;
     }
 
@@ -122,14 +129,11 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
       };
       await saveCmsHeroBanner(toSave);
 
-      // Also ensure corresponding anime featured & isFeatured flags are kept in sync
       const shouldFeature = toSave.active !== false;
       if (toSave.animeId) {
         try {
           await updateAnime(toSave.animeId, { featured: shouldFeature, isFeatured: shouldFeature });
-        } catch (syncErr) {
-          console.warn('Could not sync anime featured flag:', syncErr);
-        }
+        } catch {}
       }
       if (toSave.animeSlug && toSave.animeSlug !== toSave.animeId) {
         try {
@@ -140,12 +144,13 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
-        isNew ? 'Added Hero Spotlight Banner' : 'Updated Hero Banner',
-        'HeroBanner',
+        isNew ? 'Created Hero Spotlight Banner' : 'Updated Hero Spotlight Banner',
+        'HeroBannerCMS',
         toSave.id,
         toSave.title
       );
-      onShowMessage(`Hero banner "${toSave.title}" saved successfully!`);
+
+      onShowMessage(`Saved banner "${toSave.title}".`);
       setEditingBanner(null);
       await loadData();
     } catch (err: any) {
@@ -155,11 +160,12 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const handleDeleteConfirm = async () => {
     if (!bannerToDelete) return;
     try {
       setDeleting(true);
       await deleteCmsHeroBanner(bannerToDelete.id);
+
       if (bannerToDelete.animeId) {
         try {
           await updateAnime(bannerToDelete.animeId, { featured: false, isFeatured: false });
@@ -170,348 +176,363 @@ export const AdminHeroBannersView: React.FC<AdminHeroBannersViewProps> = ({
           await updateAnime(bannerToDelete.animeSlug, { featured: false, isFeatured: false });
         } catch {}
       }
+
       await logAdminActivity(
         user?.uid || '',
         user?.email || '',
-        'Deleted Hero Banner',
-        'HeroBanner',
+        'Deleted Hero Spotlight Banner',
+        'HeroBannerCMS',
         bannerToDelete.id,
         bannerToDelete.title
       );
-      onShowMessage(`Hero slide "${bannerToDelete.title}" deleted.`);
+
+      onShowMessage(`Deleted banner "${bannerToDelete.title}".`);
       setBannerToDelete(null);
       await loadData();
     } catch (err: any) {
-      onShowMessage(`Error: ${err.message}`);
+      onShowMessage(`Failed to delete banner: ${err.message}`);
     } finally {
       setDeleting(false);
     }
   };
 
+  const handleToggleActive = async (banner: CmsHeroBanner) => {
+    try {
+      const nextActive = !banner.active;
+      await saveCmsHeroBanner({ ...banner, active: nextActive });
+      if (banner.animeId) {
+        await updateAnime(banner.animeId, { featured: nextActive, isFeatured: nextActive });
+      }
+      setBanners((prev) =>
+        prev.map((b) => (b.id === banner.id ? { ...b, active: nextActive } : b))
+      );
+      onShowMessage(`"${banner.title}" marked as ${nextActive ? 'Active' : 'Draft'}.`);
+    } catch {
+      onShowMessage('Failed to toggle status.');
+    }
+  };
+
+  const handleReorder = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= banners.length) return;
+
+    const newBanners = [...banners];
+    const [moved] = newBanners.splice(index, 1);
+    newBanners.splice(targetIndex, 0, moved);
+
+    const updated = newBanners.map((b, i) => ({ ...b, displayOrder: i + 1 }));
+    setBanners(updated);
+
+    try {
+      await Promise.all(updated.map((b) => saveCmsHeroBanner(b)));
+      onShowMessage('Updated slide order.');
+    } catch {
+      onShowMessage('Failed to update banner order.');
+    }
+  };
+
   return (
-    <AdminLayout currentTab="hero-banners" navigate={navigate} onShowMessage={onShowMessage}>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0B1322] border border-white/5 p-6 rounded-3xl">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-cyan-400 uppercase tracking-wider">
-              <Layers className="w-4 h-4" />
-              <span>Hero Spotlight Carousel CMS</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-              Hero Slide Banners Manager
-            </h1>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Create and reorder the primary hero slider carousel slides displayed at the very top of the homepage.
-            </p>
-          </div>
+    <AdminLayout currentTab="banners" navigate={navigate} onShowMessage={onShowMessage}>
+      <div className="space-y-6 min-w-0">
+        {/* Page Header (ONE primary button: Add banner) */}
+        <AdminPageHeader
+          title="Hero Spotlight Banners"
+          description={`${banners.length} spotlight carousel banners configured`}
+          primaryAction={{
+            label: 'Add banner',
+            icon: Plus,
+            onClick: handleOpenNew,
+          }}
+        />
 
-          <button
-            type="button"
-            onClick={handleOpenNew}
-            className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-xs font-bold text-white shadow-lg shadow-cyan-500/30 rounded-xl transition-all flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Hero Banner</span>
-          </button>
-        </div>
-
-        {/* Banners Grid */}
+        {/* Card Grid (16:9 banner thumb, title, toggle, "⋯") */}
         {loading ? (
-          <div className="py-20 text-center text-xs text-[#94A3B8]">Loading spotlight banners...</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <AdminSkeleton variant="card" count={3} />
+          </div>
         ) : banners.length === 0 ? (
-          <div className="bg-[#0B1322] border border-white/5 rounded-3xl p-12 text-center text-[#94A3B8] space-y-3">
-            <Layers className="w-10 h-10 text-cyan-400 mx-auto opacity-50" />
-            <h3 className="text-base font-bold text-white">No spotlight slides found</h3>
-            <p className="text-xs max-w-sm mx-auto">
-              Add your first featured hero slide to highlight top seasonal anime.
-            </p>
+          <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-8">
+            <AdminEmptyState
+              icon={Sliders}
+              title="No hero banners created"
+              description="Add spotlight slides for featured anime on the public homepage."
+              actionLabel="Add banner"
+              onAction={handleOpenNew}
+            />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {banners.map((banner) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {banners.map((banner, index) => (
               <div
                 key={banner.id}
-                className="bg-[#0B1322] border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col group relative"
+                className="bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 rounded-[12px] overflow-hidden transition-colors flex flex-col justify-between group"
               >
-                {/* Background Image Preview */}
-                <div className="h-44 relative bg-[#050A14] overflow-hidden">
+                {/* 16:9 Banner Thumbnail */}
+                <div className="relative aspect-video w-full bg-black/40 overflow-hidden">
                   <img
-                    src={banner.backgroundImage}
+                    src={banner.backgroundImage || banner.posterImage || '/placeholder-banner.jpg'}
                     alt={banner.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0B1322] via-[#0B1322]/50 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-                  {/* Badge & Order */}
-                  <div className="absolute top-3 left-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-mono font-bold text-white">
-                      Slide #{banner.displayOrder}
+                  {/* Order badge & Status badge */}
+                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-[6px] bg-black/70 backdrop-blur-md text-[10px] font-mono text-white border border-white/10">
+                      #{index + 1}
                     </span>
-                    {banner.active ? (
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-500/80 backdrop-blur-md text-[10px] font-bold text-white">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-lg bg-rose-500/80 backdrop-blur-md text-[10px] font-bold text-white">
-                        Hidden
-                      </span>
-                    )}
+                    <AdminStatusBadge status={banner.active ? 'live' : 'draft'} />
                   </div>
 
-                  {/* Edit/Delete Actions */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  {/* Action Menu button top right */}
+                  <div className="absolute top-2 right-2">
+                    <AdminRowMenu
+                      title={banner.title}
+                      items={[
+                        {
+                          id: 'edit',
+                          label: 'Edit banner',
+                          icon: Edit2,
+                          onClick: () => {
+                            setEditingBanner(banner);
+                            setIsNew(false);
+                          },
+                        },
+                        {
+                          id: 'view',
+                          label: 'View target page',
+                          icon: ExternalLink,
+                          onClick: () => navigate(banner.buttonUrl || '/'),
+                        },
+                        {
+                          id: 'delete',
+                          label: 'Delete banner',
+                          icon: Trash2,
+                          destructive: true,
+                          onClick: () =>
+                            setBannerToDelete({
+                              id: banner.id,
+                              title: banner.title,
+                              animeId: banner.animeId,
+                              animeSlug: banner.animeSlug,
+                            }),
+                        },
+                      ]}
+                    />
+                  </div>
+
+                  {/* Title overlay on bottom of thumb */}
+                  <div className="absolute bottom-2.5 left-3 right-3">
+                    <h3 className="text-sm font-bold text-white truncate drop-shadow">
+                      {banner.title}
+                    </h3>
+                    {banner.subtitle && (
+                      <p className="text-[11px] text-[#CBD5E1] truncate drop-shadow">
+                        {banner.subtitle}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Controls: Move up/down, Toggle, Edit button */}
+                <div className="p-3 bg-[#101A30]/50 border-t border-white/5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => handleReorder(index, 'up')}
+                      className="p-1.5 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white disabled:opacity-20 cursor-pointer"
+                      title="Move slide earlier"
+                    >
+                      <MoveUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === banners.length - 1}
+                      onClick={() => handleReorder(index, 'down')}
+                      className="p-1.5 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white disabled:opacity-20 cursor-pointer"
+                      title="Move slide later"
+                    >
+                      <MoveDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(banner)}
+                      className={`text-[11px] px-2.5 py-1 rounded-[6px] font-semibold border transition-colors cursor-pointer ${
+                        banner.active
+                          ? 'bg-[#1E88FF]/15 text-[#1E88FF] border-[#1E88FF]/30 hover:bg-[#1E88FF]/25'
+                          : 'bg-white/5 text-[#94A3B8] border-white/10 hover:text-white'
+                      }`}
+                    >
+                      {banner.active ? 'Active' : 'Draft'}
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
                         setEditingBanner(banner);
                         setIsNew(false);
                       }}
-                      className="p-1.5 rounded-lg bg-black/60 backdrop-blur-md hover:bg-[#1683FF] text-white transition-colors"
-                      title="Edit Banner"
+                      className="h-7 px-2.5 rounded-[6px] bg-white/5 hover:bg-white/10 text-white text-xs font-medium transition-colors cursor-pointer"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBannerToDelete({ id: banner.id, title: banner.title })}
-                      className="p-1.5 rounded-lg bg-black/60 backdrop-blur-md hover:bg-rose-600 text-white transition-colors cursor-pointer"
-                      title="Delete Banner"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      Edit
                     </button>
                   </div>
-
-                  {/* Overlay text */}
-                  <div className="absolute bottom-3 left-4 right-4">
-                    <div className="text-[11px] font-bold text-cyan-400">{banner.subtitle}</div>
-                    <h3 className="text-base font-black text-white truncate">{banner.title}</h3>
-                  </div>
-                </div>
-
-                {/* Footer Buttons preview */}
-                <div className="p-4 flex items-center justify-between border-t border-white/5 bg-[#080E1A]">
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 bg-[#1683FF] text-white text-[11px] font-bold rounded-lg flex items-center gap-1">
-                      <Play className="w-3 h-3" /> {banner.buttonText}
-                    </span>
-                    {banner.secondaryButtonText && (
-                      <span className="px-3 py-1 bg-white/10 text-white text-[11px] font-bold rounded-lg">
-                        {banner.secondaryButtonText}
-                      </span>
-                    )}
-                  </div>
-
-                  <span className="text-[10px] text-[#94A3B8] font-mono truncate max-w-[140px]">
-                    {banner.buttonUrl}
-                  </span>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Edit / New Modal */}
+        {/* Editor Drawer / Modal */}
         {editingBanner && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-            <div className="relative w-full max-w-lg bg-[#0B1322] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white">
-                  {isNew ? 'Create New Hero Slide' : 'Edit Hero Slide'}
+                <h3 className="text-sm font-semibold text-white">
+                  {isNew ? 'Create Spotlight Banner' : 'Edit Spotlight Banner'}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setEditingBanner(null)}
-                  className="text-[#94A3B8] hover:text-white"
+                  className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-3">
-                {/* Anime quick autofill */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Autofill from Anime</label>
-                  <select
-                    value={editingBanner.animeSlug || editingBanner.animeId || ''}
-                    onChange={(e) => handleSelectAnime(e.target.value)}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                  >
-                    <option value="">Custom Spotlight / Manual</option>
-                    {animes.map((a) => (
-                      <option key={a.id || a.slug} value={a.slug}>
-                        {a.title}
-                      </option>
-                    ))}
-                  </select>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <AdminSelect
+                    label="Autofill from Anime Series"
+                    value={editingBanner.animeId || editingBanner.animeSlug || ''}
+                    onChange={(val) => handleSelectAnime(String(val))}
+                    options={animes.map((a) => ({
+                      value: a.id || a.slug,
+                      label: a.title,
+                    }))}
+                    sheetTitle="Select Target Anime"
+                  />
                 </div>
 
-                {/* Title & Subtitle */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Slide Title</label>
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    Banner Title <span className="text-[#1E88FF]">*</span>
+                  </label>
                   <input
                     type="text"
+                    required
                     value={editingBanner.title || ''}
                     onChange={(e) => setEditingBanner({ ...editingBanner, title: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                    required
+                    className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Slide Subtitle</label>
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    Subtitle (e.g. Season 2 • Hindi Dub • 1080p)
+                  </label>
                   <input
                     type="text"
-                    placeholder="e.g. Season 2 • Hindi Dub • 1080p"
                     value={editingBanner.subtitle || ''}
                     onChange={(e) => setEditingBanner({ ...editingBanner, subtitle: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
+                    className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
                   />
                 </div>
 
-                {/* Description */}
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#94A3B8]">Description</label>
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    Spotlight Synopsis / Description
+                  </label>
                   <textarea
                     rows={2}
                     value={editingBanner.description || ''}
                     onChange={(e) => setEditingBanner({ ...editingBanner, description: e.target.value })}
-                    className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 resize-none"
+                    className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white outline-none"
                   />
                 </div>
 
-                {/* Background Banner Image Direct Upload */}
-                <div className="pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-white mb-1.5">
+                    16:9 Wide Banner Background Image
+                  </label>
                   <AdminImageUploader
-                    label="Background Banner Image"
-                    type="banner"
-                    currentUrl={editingBanner.backgroundImage || ''}
-                    animeId={editingBanner.animeId || editingBanner.animeSlug || 'hero'}
-                    onUrlChange={(url) =>
-                      setEditingBanner({ ...editingBanner, backgroundImage: url })
-                    }
-                    required
-                    recommendedText="Landscape 16:9 (Max 10MB • JPG, PNG, WEBP)"
+                    aspectRatio="16:9"
+                    value={editingBanner.backgroundImage || ''}
+                    onChange={(url) => setEditingBanner({ ...editingBanner, backgroundImage: url })}
+                    label="Banner Image (1920x1080)"
                   />
                 </div>
 
-                {/* Primary Button */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Primary Button Text</label>
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Button Label
+                    </label>
                     <input
                       type="text"
                       value={editingBanner.buttonText || 'Watch Now'}
-                      onChange={(e) =>
-                        setEditingBanner({ ...editingBanner, buttonText: e.target.value })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
+                      onChange={(e) => setEditingBanner({ ...editingBanner, buttonText: e.target.value })}
+                      className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3 text-xs text-white outline-none"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Primary Button URL</label>
+                  <div>
+                    <label className="block text-xs font-semibold text-white mb-1.5">
+                      Button URL
+                    </label>
                     <input
                       type="text"
                       value={editingBanner.buttonUrl || '/'}
-                      onChange={(e) =>
-                        setEditingBanner({ ...editingBanner, buttonUrl: e.target.value })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
+                      onChange={(e) => setEditingBanner({ ...editingBanner, buttonUrl: e.target.value })}
+                      className="w-full h-10 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3 text-xs font-mono text-white outline-none"
                     />
                   </div>
                 </div>
 
-                {/* Secondary Button */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Secondary Button Text</label>
-                    <input
-                      type="text"
-                      value={editingBanner.secondaryButtonText || 'Details'}
-                      onChange={(e) =>
-                        setEditingBanner({ ...editingBanner, secondaryButtonText: e.target.value })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#94A3B8]">Secondary Button URL</label>
-                    <input
-                      type="text"
-                      value={editingBanner.secondaryButtonUrl || '/'}
-                      onChange={(e) =>
-                        setEditingBanner({ ...editingBanner, secondaryButtonUrl: e.target.value })
-                      }
-                      className="w-full bg-[#050A14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500"
-                    />
-                  </div>
+                <div className="pt-2 border-t border-white/5">
+                  <AdminToggle
+                    checked={editingBanner.active ?? true}
+                    onChange={(checked) => setEditingBanner({ ...editingBanner, active: checked })}
+                    label="Show on Public Homepage"
+                    description="When disabled, this slide is kept as a draft."
+                  />
                 </div>
 
-                {/* Display Order & Active */}
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-bold text-[#94A3B8]">Slide Order #</label>
-                    <input
-                      type="number"
-                      value={editingBanner.displayOrder || 1}
-                      onChange={(e) =>
-                        setEditingBanner({
-                          ...editingBanner,
-                          displayOrder: parseInt(e.target.value, 10) || 1,
-                        })
-                      }
-                      className="w-16 bg-[#050A14] border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none focus:border-cyan-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="banner-active"
-                      checked={editingBanner.active ?? true}
-                      onChange={(e) =>
-                        setEditingBanner({ ...editingBanner, active: e.target.checked })
-                      }
-                      className="rounded accent-cyan-500"
-                    />
-                    <label htmlFor="banner-active" className="text-xs font-semibold text-white">
-                      Active on Homepage
-                    </label>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
                   <button
                     type="button"
                     onClick={() => setEditingBanner(null)}
-                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-[#94A3B8] rounded-xl"
+                    className="h-10 px-4 rounded-[10px] border border-white/10 hover:border-white/20 text-[#CBD5E1] hover:text-white text-xs font-medium transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-5 py-2 bg-cyan-500 hover:bg-cyan-600 text-xs font-bold text-white rounded-xl shadow-lg shadow-cyan-500/30 flex items-center gap-1.5"
+                    className="h-10 px-4 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{saving ? 'Saving...' : 'Save Banner'}</span>
+                    {saving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Save banner</span>
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
-        {/* Delete Confirmation Modal */}
-        <ConfirmModal
-          isOpen={!!bannerToDelete}
-          title="Delete Hero Spotlight Slide?"
-          message={bannerToDelete ? `Are you sure you want to delete "${bannerToDelete.title}" from the homepage hero carousel? This cannot be undone.` : ''}
-          confirmLabel={deleting ? 'Deleting...' : 'Delete Slide'}
-          onConfirm={handleConfirmDelete}
-          onCancel={() => setBannerToDelete(null)}
+
+        {/* Delete Confirmation Dialog */}
+        <AdminConfirmDialog
+          isOpen={Boolean(bannerToDelete)}
+          onClose={() => setBannerToDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          title={`Delete "${bannerToDelete?.title}"?`}
+          consequence="This spotlight banner slide will be permanently removed from the public homepage."
+          confirmLabel="Delete banner"
+          isLoading={deleting}
         />
       </div>
     </AdminLayout>

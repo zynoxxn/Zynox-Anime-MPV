@@ -144,19 +144,36 @@ export function generateAnimeSeoMetadata(
     .slice(0, 140);
 
   if (options.isDownload) {
-    // Dedicated high-CTR title for download pages
-    title = `Download ${animeTitle} ${langBadge} All Episodes 720p 1080p HD Batch Zip — ${siteName}`;
+    if (options.seoSettings?.downloadTitleTemplate) {
+      title = options.seoSettings.downloadTitleTemplate
+        .replace(/\{title\}/g, animeTitle)
+        .replace(/\{siteName\}/g, siteName);
+    } else {
+      title = `Download ${animeTitle} ${langBadge} All Episodes 720p 1080p HD Batch Zip — ${siteName}`;
+    }
     description = `Download ${animeTitle} all episodes in high speed 720p HD and 1080p Full HD with Hindi Dub & English Sub. Direct Mega & Google Drive batch zip available on ${siteName}. ${rawSynopsis ? `${rawSynopsis}...` : ''}`;
     canonicalUrl = `${baseUrl}/anime/${slug}/download`;
   } else if (options.episodeNumber) {
     const epNum = options.episodeNumber;
-    title = `Watch ${animeTitle} Episode ${epNum} ${langBadge} 1080p HD Online Free — ${siteName}`;
+    if (options.seoSettings?.episodeTitleTemplate) {
+      title = options.seoSettings.episodeTitleTemplate
+        .replace(/\{title\}/g, animeTitle)
+        .replace(/\{epNumber\}/g, String(epNum))
+        .replace(/\{siteName\}/g, siteName);
+    } else {
+      title = `Watch ${animeTitle} Episode ${epNum} ${langBadge} 1080p HD Online Free — ${siteName}`;
+    }
     description = `Stream ${animeTitle} Episode ${epNum} online in high definition 1080p & 720p with Hindi Dubbed and English Subtitles. Zero buffering on ${siteName}.`;
     canonicalUrl = `${baseUrl}/anime/${slug}/episode/${epNum}`;
     ogType = 'video.episode';
   } else {
-    // Main Anime Detail page
-    title = `Watch ${animeTitle} in Hindi Dub & English Sub (All Episodes HD) — ${siteName}`;
+    if (options.seoSettings?.animeTitleTemplate) {
+      title = options.seoSettings.animeTitleTemplate
+        .replace(/\{title\}/g, animeTitle)
+        .replace(/\{siteName\}/g, siteName);
+    } else {
+      title = `Watch ${animeTitle} in Hindi Dub & English Sub (All Episodes HD) — ${siteName}`;
+    }
     description = `Watch ${animeTitle} ${langBadge} online in 1080p Full HD on ${siteName}. ${rawSynopsis ? `${rawSynopsis}...` : 'Stream all episodes and download batch zip with zero lag.'}`;
     canonicalUrl = `${baseUrl}/anime/${slug}`;
   }

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AnimeAvatar, DEFAULT_AVATAR } from '../data/avatars';
 import { getAnimeAvatars } from '../lib/firestore/avatars';
 import { compressAvatarImage } from '../lib/image-compress';
+import { isValidSafeUrl } from '../lib/security';
 import {
   X,
   Check,
   Upload,
   Link as LinkIcon,
   Image as ImageIcon,
-  Sparkles,
 } from 'lucide-react';
 
 interface AvatarPickerModalProps {
@@ -19,6 +19,9 @@ interface AvatarPickerModalProps {
   isAdmin?: boolean;
   onNavigateAdmin?: (path: string) => void;
 }
+
+const ALLOWED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
   isOpen,
@@ -31,16 +34,17 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
   const [avatarsList, setAvatarsList] = useState<AnimeAvatar[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedUrl, setSelectedUrl] = useState<string>(currentAvatar || DEFAULT_AVATAR);
+  const [showUrlInput, setShowUrlInput] = useState<boolean>(false);
   const [urlInput, setUrlInput] = useState<string>('');
-  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load avatars list
   useEffect(() => {
     if (!isOpen) return;
 
     let isMounted = true;
     setLoading(true);
+    setUploadError(null);
 
     getAnimeAvatars(true)
       .then((items) => {
@@ -57,22 +61,32 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
       setSelectedUrl(currentAvatar);
     }
 
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('keydown', handleEsc);
     };
-  }, [isOpen, currentAvatar]);
+  }, [isOpen, currentAvatar, onClose]);
 
   if (!isOpen) return null;
 
-  // Handle local file upload (compresses to lightweight thumbnail)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPG, WEBP, GIF)');
+    if (!ALLOWED_IMAGE_MIME.includes(file.type)) {
+      setUploadError('Only PNG, JPG, WEBP, or GIF images are supported.');
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadError('Image exceeds maximum file size of 5 MB.');
+      return;
+    }
+    setUploadError(null);
 
     try {
       const compressedUrl = await compressAvatarImage(file, 256, 0.82);
@@ -91,11 +105,16 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
     }
   };
 
-  // Handle custom URL input apply
   const handleApplyUrl = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!urlInput.trim()) return;
-    setSelectedUrl(urlInput.trim());
+    const clean = urlInput.trim();
+    if (!clean) return;
+    if (!isValidSafeUrl(clean) || (!clean.startsWith('https://') && !clean.startsWith('http://'))) {
+      setUploadError('Please enter a valid http:// or https:// image URL.');
+      return;
+    }
+    setUploadError(null);
+    setSelectedUrl(clean);
     setShowUrlInput(false);
     setUrlInput('');
   };
@@ -108,16 +127,18 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-lg bg-[#07111F] border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scaleUp"
+        className="w-full max-w-lg bg-[#0B1324] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - Simple Title: Avatar */}
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#040A14]">
-          <div className="flex items-center gap-3">
-            {/* Current Active Preview */}
-            <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-[#1683FF] shadow-lg shadow-[#1683FF]/30 shrink-0 bg-[#02060D]">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#101A30]">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative w-10 h-10 rounded-full overflow-hidden border-2 border-[#1E88FF] shrink-0 bg-[#050A14]">
               <img
                 src={selectedUrl || DEFAULT_AVATAR}
                 alt="Selected Avatar"
@@ -128,74 +149,78 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                 }}
               />
             </div>
-            <div>
-              <h2 className="text-lg font-black text-white tracking-wide">
-                Avatar
-              </h2>
-            </div>
+            <h2 className="text-base sm:text-lg font-bold text-white truncate">
+              Choose Avatar
+            </h2>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors"
+            aria-label="Close avatar picker"
+            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-[#94A3B8] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Quick Upload / Paste URL Action Bar - Only visible to Admins */}
+        {/* Admin Quick Upload / URL */}
         {isAdmin && (
           <>
-            <div className="px-5 py-3 border-b border-white/5 bg-[#050D1A] flex items-center justify-between gap-2">
+            <div className="px-5 py-3 border-b border-white/10 bg-[#050A14] flex items-center justify-between gap-2">
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileUpload}
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif"
                 className="hidden"
               />
 
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex-1 py-2 px-3 rounded-xl bg-white/5 hover:bg-[#1683FF]/20 text-[#CBD5E1] hover:text-[#00CFFF] border border-white/10 hover:border-[#1683FF]/40 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                className="flex-1 h-9 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-[#CBD5E1] hover:text-white border border-white/10 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Upload className="w-3.5 h-3.5 text-[#00CFFF]" />
+                <Upload className="w-3.5 h-3.5 text-[#1E88FF]" />
                 <span>Upload Image</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowUrlInput(!showUrlInput)}
-                className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`flex-1 h-9 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
                   showUrlInput
-                    ? 'bg-[#1683FF] text-white border-[#1683FF]'
+                    ? 'bg-[#1E88FF] text-white border-[#1E88FF]'
                     : 'bg-white/5 hover:bg-white/10 text-[#CBD5E1] hover:text-white border-white/10'
                 }`}
               >
-                <LinkIcon className="w-3.5 h-3.5 text-[#00CFFF]" />
+                <LinkIcon className="w-3.5 h-3.5" />
                 <span>Paste URL</span>
               </button>
             </div>
 
-            {/* Optional URL Input Popover */}
+            {uploadError && (
+              <div className="px-5 py-2.5 bg-rose-500/10 border-b border-rose-500/20 text-xs text-rose-300 font-medium">
+                {uploadError}
+              </div>
+            )}
+
             {showUrlInput && (
               <form
                 onSubmit={handleApplyUrl}
-                className="px-5 py-3 bg-[#030812] border-b border-white/10 flex items-center gap-2 animate-fadeIn"
+                className="px-5 py-3 bg-[#101A30] border-b border-white/10 flex items-center gap-2"
               >
                 <input
                   type="url"
                   autoFocus
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="Paste direct image link (https://...)"
-                  className="flex-1 bg-[#07111F] border border-white/15 focus:border-[#1683FF] rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-[#64748B] outline-none"
+                  placeholder="Paste image link (https://...)"
+                  className="flex-1 h-9 bg-[#050A14] border border-white/10 focus:border-[#1E88FF] rounded-xl px-3.5 text-xs text-white placeholder-[#64748B] outline-none min-w-0"
                 />
                 <button
                   type="submit"
-                  className="px-3 py-1.5 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-xs font-bold text-white shadow-md cursor-pointer"
+                  className="h-9 px-3.5 rounded-xl bg-[#1E88FF] hover:bg-[#3B9BFF] text-xs font-semibold text-white cursor-pointer shrink-0"
                 >
                   Set
                 </button>
@@ -204,11 +229,11 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
           </>
         )}
 
-        {/* Avatars Grid - Pure circular avatars */}
-        <div className="p-4 sm:p-5 overflow-y-auto max-h-[380px] sm:max-h-[440px] custom-scrollbar flex-1 bg-[#050D1A]">
+        {/* Avatars Grid */}
+        <div className="p-4 sm:p-5 overflow-y-auto max-h-[380px] sm:max-h-[440px] flex-1 bg-[#050A14]">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#94A3B8]">
-              <div className="w-6 h-6 border-2 border-[#1683FF] border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-[#1E88FF] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : avatarsList.length === 0 ? (
             <div className="py-12 text-center text-[#94A3B8] text-xs">
@@ -224,23 +249,23 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                     key={avatar.id}
                     type="button"
                     onClick={() => setSelectedUrl(avatar.url)}
-                    className="group relative aspect-square rounded-full p-0.5 transition-all duration-200 cursor-pointer focus:outline-none"
+                    className="group relative aspect-square rounded-full p-0.5 transition-transform duration-200 cursor-pointer focus:outline-none"
                     style={{
-                      transform: isSelected ? 'scale(1.08)' : 'scale(1)',
+                      transform: isSelected ? 'scale(1.06)' : 'scale(1)',
                     }}
                   >
-                    {/* Ring Container */}
                     <div
-                      className={`w-full h-full rounded-full overflow-hidden border-2 bg-[#02060D] transition-all duration-200 ${
+                      className={`w-full h-full rounded-full overflow-hidden border-2 bg-[#0B1324] transition-colors ${
                         isSelected
-                          ? 'border-[#00CFFF] shadow-lg shadow-[#00CFFF]/40 ring-2 ring-[#1683FF]/60'
-                          : 'border-white/10 group-hover:border-white/40 group-hover:scale-105'
+                          ? 'border-[#1E88FF] ring-2 ring-[#1E88FF]/40'
+                          : 'border-white/10 group-hover:border-white/40'
                       }`}
                     >
                       <img
                         src={avatar.url}
-                        alt="Avatar"
+                        alt={avatar.name || 'Avatar'}
                         referrerPolicy="no-referrer"
+                        loading="lazy"
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = DEFAULT_AVATAR;
@@ -248,9 +273,8 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                       />
                     </div>
 
-                    {/* Selected Badge Checkmark */}
                     {isSelected && (
-                      <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#1683FF] border-2 border-[#07111F] text-white flex items-center justify-center shadow-md animate-scaleUp">
+                      <div className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-[#1E88FF] border-2 border-[#0B1324] text-white flex items-center justify-center shadow-md">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                     )}
@@ -261,8 +285,8 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
           )}
         </div>
 
-        {/* Footer with Simple Action & Admin Link */}
-        <div className="px-5 py-3.5 border-t border-white/10 bg-[#040A14] flex items-center justify-between gap-3">
+        {/* Footer */}
+        <div className="px-5 py-3.5 border-t border-white/10 bg-[#101A30] flex items-center justify-between gap-3">
           {isAdmin && onNavigateAdmin ? (
             <button
               type="button"
@@ -270,7 +294,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
                 onClose();
                 onNavigateAdmin('/admin/avatars');
               }}
-              className="text-[11px] font-semibold text-[#64748B] hover:text-[#00CFFF] transition-colors"
+              className="text-xs font-semibold text-[#94A3B8] hover:text-[#1E88FF] transition-colors cursor-pointer"
             >
               Manage in Admin
             </button>
@@ -278,18 +302,18 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
             <div />
           )}
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] transition-colors"
+              className="h-9 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#CBD5E1] transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleConfirm}
-              className="px-6 py-2 rounded-xl bg-[#1683FF] hover:bg-[#2196FF] text-xs font-bold text-white shadow-lg shadow-[#1683FF]/30 transition-all hover:scale-105 cursor-pointer"
+              className="h-9 px-5 rounded-xl bg-[#1E88FF] hover:bg-[#3B9BFF] text-xs font-semibold text-white transition-colors cursor-pointer"
             >
               Apply
             </button>

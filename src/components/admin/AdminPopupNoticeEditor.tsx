@@ -7,6 +7,8 @@ import {
   logAdminActivity,
 } from '../../lib/firestore/cms';
 import { useAuth } from '../../lib/auth';
+import { AdminConfirmDialog } from './AdminConfirmDialog';
+import { AdminToggle } from './AdminToggle';
 import {
   Save,
   Eye,
@@ -34,6 +36,7 @@ export const AdminPopupNoticeEditor: React.FC<AdminPopupNoticeEditorProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [activeSubTab, setActiveSubTab] = useState<'header' | 'notice' | 'footer'>('header');
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -110,10 +113,7 @@ export const AdminPopupNoticeEditor: React.FC<AdminPopupNoticeEditorProps> = ({
   };
 
   const handleResetToDefault = () => {
-    if (window.confirm('Reset popup notice to clean 1:1 default?')) {
-      setNotice(DEFAULT_POPUP_NOTICE);
-      onShowMessage?.('Reset to default. Click "Save Changes" to apply.', 'success');
-    }
+    setConfirmResetOpen(true);
   };
 
   if (loading) {
@@ -599,22 +599,19 @@ export const AdminPopupNoticeEditor: React.FC<AdminPopupNoticeEditorProps> = ({
               </div>
 
               {/* Don't show again toggle */}
-              <label className="flex items-center gap-3 p-3 bg-[#081222] rounded-xl border border-white/5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
+              <div className="px-3.5 py-2 bg-[#081222] rounded-xl border border-white/5">
+                <AdminToggle
                   checked={notice.footer?.showDontShowAgain ?? true}
-                  onChange={(e) =>
+                  onChange={(checked) =>
                     setNotice((p) => ({
                       ...p,
-                      footer: { ...p.footer, showDontShowAgain: e.target.checked },
+                      footer: { ...p.footer, showDontShowAgain: checked },
                     }))
                   }
-                  className="w-4 h-4 rounded text-cyan-500 focus:ring-0 cursor-pointer"
+                  label='Show "Don&apos;t show again today" option'
+                  description="Allow visitors to hide the popup for the rest of the day"
                 />
-                <span className="text-xs text-white">
-                  Show &ldquo;Don&apos;t show again today&rdquo; checkbox
-                </span>
-              </label>
+              </div>
 
               {/* Reset Version */}
               <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-3">
@@ -710,6 +707,19 @@ export const AdminPopupNoticeEditor: React.FC<AdminPopupNoticeEditorProps> = ({
           </div>
         </div>
       </div>
+      <AdminConfirmDialog
+        isOpen={confirmResetOpen}
+        onClose={() => setConfirmResetOpen(false)}
+        onConfirm={() => {
+          setNotice(DEFAULT_POPUP_NOTICE);
+          setConfirmResetOpen(false);
+          onShowMessage?.('Reset to default. Click "Save Changes" to apply.', 'success');
+        }}
+        title="Reset Popup Notice?"
+        consequence="This will reset the popup card text, colors, and buttons back to defaults. Save changes afterwards to apply."
+        confirmLabel="Reset Default"
+        isDestructive={false}
+      />
     </div>
   );
 };

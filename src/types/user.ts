@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'moderator' | 'user';
+export type UserRole = 'admin' | 'moderator' | 'user' | 'superadmin' | 'super_admin';
 export type UserStatus = 'active' | 'suspended' | 'disabled';
 
 export interface UserSettings {
@@ -18,6 +18,7 @@ export interface UserProfile {
   displayName: string;
   email: string;
   avatar?: string;
+  photoURL?: string;
   bio?: string;
   role: UserRole;
   status?: UserStatus;

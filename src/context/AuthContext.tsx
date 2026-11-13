@@ -125,12 +125,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       hasResolved = true;
       clearTimeout(safetyTimer);
-      if (typeof window !== 'undefined') {
-        console.log(
-          '[Firebase Auth] currentUser:',
-          currentUser ? { uid: currentUser.uid, email: currentUser.email } : null
-        );
-      }
       await fetchUserData(currentUser);
     });
 
