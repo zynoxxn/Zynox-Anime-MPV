@@ -1,6 +1,6 @@
 import type { Anime, ZipDownloadPackage } from '../types/anime';
 import type { Episode } from '../types/episode';
-import { formatDownloadUrl, executeDownloadRedirect } from './downloadRedirect';
+import { formatDownloadUrl } from './downloadRedirect';
 
 export type DownloadResolution = '360p' | '480p' | '720p' | '1080p';
 
@@ -63,7 +63,7 @@ export function detectHostName(url: string, fallback = 'Direct Cloud'): string {
 export function getEpisodeResolutionLink(
   episode: Episode,
   resolution: DownloadResolution,
-  anime?: Anime | null
+  _anime?: Anime | null
 ): ResolutionLinkInfo {
   const estimate = RESOLUTION_ESTIMATES[resolution];
   let foundUrl = '';
@@ -105,23 +105,13 @@ export function getEpisodeResolutionLink(
 
   const isAvailable = Boolean(foundUrl);
 
-  // 4. If not available, provide high-speed fallback mirror URL so user can still download
-  if (!foundUrl) {
-    const cleanTitle = (anime?.title || 'anime').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const epNum = episode.episodeNumber;
-    const seasonNum = episode.seasonNumber || episode.season || 1;
-    foundUrl = `https://mega.nz/folder/${cleanTitle}-s${seasonNum}-ep${epNum}-${resolution}`;
-    foundSize = estimate.size;
-    foundHost = 'MegaCloud Direct';
-  }
-
   return {
     resolution,
     label: estimate.label,
     badge: resolution,
     size: foundSize || estimate.size,
     url: foundUrl,
-    host: foundHost || detectHostName(foundUrl),
+    host: foundHost || (foundUrl ? detectHostName(foundUrl) : 'Unavailable'),
     isAvailable,
   };
 }
@@ -145,7 +135,8 @@ export function formatEpisodeDownloads(
     resolutions['1080p'].isAvailable ? resolutions['1080p'].url :
     resolutions['720p'].isAvailable ? resolutions['720p'].url :
     resolutions['480p'].isAvailable ? resolutions['480p'].url :
-    resolutions['360p'].url;
+    resolutions['360p'].isAvailable ? resolutions['360p'].url :
+    '';
 
   return {
     episode,

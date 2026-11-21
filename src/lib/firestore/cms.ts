@@ -98,17 +98,32 @@ export const DEFAULT_GENRES: CmsGenre[] = [
   { id: 'martial-arts', name: 'Martial Arts', slug: 'martial-arts', description: 'Hand-to-hand combat, kung fu, karate, and dojo rivalries.', displayOrder: 20, enabled: true },
 ];
 
+let memoryCmsGenres: CmsGenre[] | null = null;
+
+export function getCachedCmsGenres(): CmsGenre[] {
+  if (memoryCmsGenres && memoryCmsGenres.length > 0) return memoryCmsGenres;
+  const cached = getStoredCache<CmsGenre[]>('cms_genres', []);
+  if (cached && cached.length > 0) {
+    memoryCmsGenres = cached;
+    return cached;
+  }
+  return DEFAULT_GENRES;
+}
+
 export async function getCmsGenres(): Promise<CmsGenre[]> {
   try {
-    const snap = await getDocs(collection(db, CMS_GENRES));
-    if (!snap.empty) {
+    const snap = await withTimeout(getDocs(collection(db, CMS_GENRES)), 2000, null);
+    if (snap && !snap.empty) {
       const list = snap.docs.map((d) => ({ ...(d.data() as CmsGenre), id: d.id }));
-      return list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+      const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+      memoryCmsGenres = sorted;
+      setStoredCache('cms_genres', sorted);
+      return sorted;
     }
   } catch (err) {
     console.warn('Using default CMS genres:', err);
   }
-  return DEFAULT_GENRES;
+  return getCachedCmsGenres();
 }
 
 export async function saveCmsGenre(genre: CmsGenre): Promise<void> {
@@ -488,6 +503,7 @@ export const DEFAULT_HERO_BANNERS: CmsHeroBanner[] = [
 ];
 
 let memoryHeroBanners: CmsHeroBanner[] | null = null;
+let inFlightHeroBanners: Promise<CmsHeroBanner[]> | null = null;
 
 export function getCachedHeroBanners(): CmsHeroBanner[] {
   if (memoryHeroBanners && memoryHeroBanners.length > 0) return memoryHeroBanners;
@@ -500,37 +516,45 @@ export function getCachedHeroBanners(): CmsHeroBanner[] {
 }
 
 export async function getCmsHeroBanners(): Promise<CmsHeroBanner[]> {
-  try {
-    const snap = await withTimeout(getDocs(collection(db, CMS_HERO_BANNERS)), 2500, null);
-    if (snap && !snap.empty) {
-      const list = snap.docs
-        .filter((d) => d.id !== CMS_META_DOC_ID && d.id !== '__meta__')
-        .map((d) => {
-          const banner = { ...(d.data() as CmsHeroBanner), id: d.id };
-          // Sanitize any legacy unsplash URLs to Google Drive CDN
-          if (banner.backgroundImage?.includes('unsplash.com') || banner.posterImage?.includes('unsplash.com')) {
-            const isAngel = (banner.animeSlug || banner.title || '').toLowerCase().includes('angel');
-            banner.backgroundImage = isAngel
-              ? 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U'
-              : 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx';
-            banner.posterImage = isAngel
-              ? 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n'
-              : 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1';
-          }
-          return banner;
-        });
-      // If collection only contains meta doc, it means the admin cleared all banners
-      if (list.length > 0 || snap.docs.some((d) => d.id === CMS_META_DOC_ID || d.id === '__meta__')) {
-        const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
-        memoryHeroBanners = sorted;
-        setStoredCache('hero_banners', sorted);
-        return sorted;
+  if (inFlightHeroBanners) return inFlightHeroBanners;
+
+  inFlightHeroBanners = (async () => {
+    try {
+      const snap = await withTimeout(getDocs(collection(db, CMS_HERO_BANNERS)), 2000, null);
+      if (snap && !snap.empty) {
+        const list = snap.docs
+          .filter((d) => d.id !== CMS_META_DOC_ID && d.id !== '__meta__')
+          .map((d) => {
+            const banner = { ...(d.data() as CmsHeroBanner), id: d.id };
+            // Sanitize any legacy unsplash URLs to Google Drive CDN
+            if (banner.backgroundImage?.includes('unsplash.com') || banner.posterImage?.includes('unsplash.com')) {
+              const isAngel = (banner.animeSlug || banner.title || '').toLowerCase().includes('angel');
+              banner.backgroundImage = isAngel
+                ? 'https://lh3.googleusercontent.com/d/1zNj5h5T3veCQyZ3JH_sJ7PsplCC8LJ5U'
+                : 'https://lh3.googleusercontent.com/d/1cpuHOkZ84Fy93lrWYmRIvmWguAdZgWhx';
+              banner.posterImage = isAngel
+                ? 'https://lh3.googleusercontent.com/d/1SGH-SAFuYcXGqiiyeUsy_JqBJpPHUL4n'
+                : 'https://lh3.googleusercontent.com/d/1DyNsmfH8qaNAGdZkP0W1h5ZkltlDUPw1';
+            }
+            return banner;
+          });
+        // If collection only contains meta doc, it means the admin cleared all banners
+        if (list.length > 0 || snap.docs.some((d) => d.id === CMS_META_DOC_ID || d.id === '__meta__')) {
+          const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+          memoryHeroBanners = sorted;
+          setStoredCache('hero_banners', sorted);
+          return sorted;
+        }
       }
+    } catch (err) {
+      console.warn('Using fast cached CMS hero banners:', err);
     }
-  } catch (err) {
-    console.warn('Using fast cached CMS hero banners:', err);
-  }
-  return getCachedHeroBanners();
+    return getCachedHeroBanners();
+  })().finally(() => {
+    inFlightHeroBanners = null;
+  });
+
+  return inFlightHeroBanners;
 }
 
 export async function saveCmsHeroBanner(banner: CmsHeroBanner): Promise<void> {
@@ -635,17 +659,33 @@ export const DEFAULT_HOMEPAGE_SECTIONS: CmsHomepageSection[] = [
   { id: 'sec-completed', key: 'completed', title: 'Completed Masterpieces', subtitle: 'Binge the full series start to finish', enabled: true, displayOrder: 7, layout: 'carousel', contentSource: 'completed', maxItems: 10 },
 ];
 
+let memoryHomepageSections: CmsHomepageSection[] | null = null;
+
+export function getCachedHomepageSections(): CmsHomepageSection[] {
+  if (memoryHomepageSections && memoryHomepageSections.length > 0) return memoryHomepageSections;
+  const cached = getStoredCache<CmsHomepageSection[]>('cms_homepage_sections', []);
+  if (cached && cached.length > 0) {
+    memoryHomepageSections = cached;
+    return cached;
+  }
+  return [];
+}
+
 export async function getCmsHomepageSections(): Promise<CmsHomepageSection[]> {
   try {
-    const snap = await getDocs(collection(db, CMS_HOMEPAGE_SECTIONS));
-    if (!snap.empty) {
+    const snap = await withTimeout(getDocs(collection(db, CMS_HOMEPAGE_SECTIONS)), 2000, null);
+    if (snap && !snap.empty) {
       const list = snap.docs.map((d) => ({ ...(d.data() as CmsHomepageSection), id: d.id }));
-      return list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+      const sorted = list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+      memoryHomepageSections = sorted;
+      setStoredCache('cms_homepage_sections', sorted);
+      return sorted;
     }
   } catch (err) {
     console.warn('Using default CMS homepage sections:', err);
   }
-  return DEFAULT_HOMEPAGE_SECTIONS;
+  const cached = getCachedHomepageSections();
+  return cached.length > 0 ? cached : DEFAULT_HOMEPAGE_SECTIONS;
 }
 
 export async function saveCmsHomepageSection(section: CmsHomepageSection): Promise<void> {
@@ -1002,14 +1042,16 @@ export const DEFAULT_SEO_SETTINGS: CmsSeoSettings = {
 export async function getCmsSeoSettings(): Promise<CmsSeoSettings> {
   try {
     const docRef = doc(db, CMS_CONFIG, 'seo');
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return { ...DEFAULT_SEO_SETTINGS, ...(snap.data() as Partial<CmsSeoSettings>) };
+    const snap = await withTimeout(getDoc(docRef), 2000, null);
+    if (snap && snap.exists()) {
+      const merged = { ...DEFAULT_SEO_SETTINGS, ...(snap.data() as Partial<CmsSeoSettings>) };
+      setStoredCache('cms_seo_settings', merged);
+      return merged;
     }
   } catch (err) {
     console.warn('Using default CMS SEO settings:', err);
   }
-  return DEFAULT_SEO_SETTINGS;
+  return getStoredCache<CmsSeoSettings>('cms_seo_settings', DEFAULT_SEO_SETTINGS);
 }
 
 export async function saveCmsSeoSettings(seo: CmsSeoSettings): Promise<void> {
@@ -1045,14 +1087,16 @@ export const DEFAULT_CMS_SITE_SETTINGS: CmsSiteSettings = {
 export async function getCmsSiteSettings(): Promise<CmsSiteSettings> {
   try {
     const docRef = doc(db, CMS_CONFIG, 'siteSettings');
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return { ...DEFAULT_CMS_SITE_SETTINGS, ...(snap.data() as Partial<CmsSiteSettings>) };
+    const snap = await withTimeout(getDoc(docRef), 2000, null);
+    if (snap && snap.exists()) {
+      const merged = { ...DEFAULT_CMS_SITE_SETTINGS, ...(snap.data() as Partial<CmsSiteSettings>) };
+      setStoredCache('cms_site_settings', merged);
+      return merged;
     }
   } catch (err) {
     console.warn('Using default CMS Site Settings:', err);
   }
-  return DEFAULT_CMS_SITE_SETTINGS;
+  return getStoredCache<CmsSiteSettings>('cms_site_settings', DEFAULT_CMS_SITE_SETTINGS);
 }
 
 export async function saveCmsSiteSettings(settings: Partial<CmsSiteSettings>): Promise<void> {

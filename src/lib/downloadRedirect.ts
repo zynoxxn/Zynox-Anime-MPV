@@ -1,11 +1,31 @@
 import type { Episode } from '../types/episode';
 import type { Anime } from '../types/anime';
 
+import { isAbyssPlayerUrl } from './video-hosts';
+
 export interface DownloadMirror {
   quality: string;
   size?: string;
   url: string;
   host?: string;
+  isEmbedPlayer?: boolean;
+}
+
+export function isEmbedStreamMirrorUrl(rawUrl?: string): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const lower = rawUrl.toLowerCase();
+  if (/\.(mp4|mkv|webm|mov|zip|rar)(\?|$)/i.test(lower)) return false;
+  return (
+    isAbyssPlayerUrl(lower) ||
+    lower.includes('/embed/') ||
+    lower.includes('/e/') ||
+    lower.includes('/preview') ||
+    lower.includes('streamtape') ||
+    lower.includes('dood') ||
+    lower.includes('filemoon') ||
+    lower.includes('streamwish') ||
+    lower.includes('vidmoly')
+  );
 }
 
 /**
@@ -66,6 +86,7 @@ export function getAllEpisodeDownloadMirrors(
     mirrors.push({
       ...mirror,
       url: formatted,
+      isEmbedPlayer: mirror.isEmbedPlayer ?? isEmbedStreamMirrorUrl(formatted),
     });
   };
 
@@ -123,11 +144,13 @@ export function getAllEpisodeDownloadMirrors(
   for (const s of allSources) {
     const srcUrl = s.embedUrl || (s as any).videoUrl;
     if (srcUrl && typeof srcUrl === 'string' && srcUrl.trim()) {
+      const isEmbed = isEmbedStreamMirrorUrl(srcUrl);
       addMirror({
         quality: `${s.quality || '1080p HD'} (${s.provider || s.sourceName || 'Stream Server'})`,
         size: s.language || 'Direct Stream Server',
         url: srcUrl,
         host: getHostLabel(srcUrl, s.provider || 'Stream Mirror'),
+        isEmbedPlayer: isEmbed,
       });
     }
   }
@@ -173,26 +196,6 @@ export function getAllEpisodeDownloadMirrors(
       size: 'Full Quality',
       url: anime.downloadUrl,
       host: getHostLabel(anime.downloadUrl, 'Anime Cloud Mirror'),
-    });
-  }
-
-  // 8. If NO explicit mirrors exist, generate high-speed cloud mirrors so download NEVER fails
-  if (mirrors.length === 0) {
-    const epNum = episode?.episodeNumber || 1;
-    const cleanTitle = (anime?.title || 'anime').trim();
-    const slug = anime?.slug || cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-    addMirror({
-      quality: `1080p Full HD (Episode ${epNum})`,
-      size: '~480 MB • Ultra Fast',
-      url: `https://mega.nz/folder/${slug}-ep${epNum}-1080p`,
-      host: 'MegaCloud Direct',
-    });
-    addMirror({
-      quality: `720p HD (Episode ${epNum})`,
-      size: '~240 MB • Fast Cloud',
-      url: `https://drive.google.com/drive/folders/${slug}-ep${epNum}-720p`,
-      host: 'Google Drive',
     });
   }
 
@@ -261,7 +264,7 @@ export function executeDownloadRedirect(
     return;
   }
 
-  const finalUrl = formatDownloadUrl(targetUrl);
+  let finalUrl = formatDownloadUrl(targetUrl);
   if (!finalUrl) {
     if (onMessage) {
       onMessage('Download link is invalid or empty.');
@@ -269,28 +272,35 @@ export function executeDownloadRedirect(
     return;
   }
 
+  // Convert Google Drive /file/d/ID/view or /preview into direct export=download URL
+  const driveMatch = finalUrl.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (driveMatch && driveMatch[1] && !finalUrl.includes('export=download')) {
+    finalUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+  }
+
+  const isDirectFile = /\.(mp4|mkv|webm|mov|zip|rar)(\?|$)/i.test(finalUrl);
+
   if (onMessage) {
-    onMessage(`Opening download link${label ? ` for ${label}` : ''}...`);
+    onMessage(
+      isAbyssPlayerUrl(finalUrl)
+        ? `Opening Abyss player${label ? ` for ${label}` : ''} — tap the ⬇ icon inside the player to download`
+        : `Opening download link${label ? ` for ${label}` : ''}...`
+    );
   }
 
   try {
-    // Reliable programmatic anchor click with target="_blank"
+    // Preserve Referer (use rel="noopener" without noreferrer) so embed hosts do not block access
     const link = document.createElement('a');
     link.href = finalUrl;
     link.target = '_blank';
-    link.rel = 'noopener noreferrer';
+    link.rel = 'noopener';
+    if (isDirectFile) {
+      link.download = label ? `${label.replace(/[^a-zA-Z0-9._ -]/g, '')}` : 'episode';
+    }
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   } catch (err) {
     console.warn('Download redirect error:', err);
-    // Fallback anchor click
-    const link = document.createElement('a');
-    link.href = finalUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 }

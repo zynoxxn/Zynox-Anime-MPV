@@ -5,7 +5,7 @@ import type { CmsLegalPages } from '../types/cms';
 import { isValidSafeUrl } from '../lib/security';
 import { usePageSeo } from '../hooks/usePageSeo';
 
-export type LegalTabKey = 'about' | 'dmca' | 'disclaimer' | 'terms' | 'privacy' | 'contact';
+export type LegalTabKey = 'about' | 'dmca' | 'disclaimer' | 'terms' | 'privacy' | 'guidelines' | 'contact';
 
 interface LegalViewProps {
   tab: LegalTabKey;
@@ -19,6 +19,7 @@ const TAB_TITLES: Record<LegalTabKey, string> = {
   disclaimer: 'Disclaimer | ZYNOX ANIME',
   terms: 'Terms of Service | ZYNOX ANIME',
   privacy: 'Privacy Policy | ZYNOX ANIME',
+  guidelines: 'Community Guidelines | ZYNOX ANIME',
   contact: 'Contact Us | ZYNOX ANIME',
 };
 
@@ -87,8 +88,8 @@ export const LegalView: React.FC<LegalViewProps> = ({ tab, navigate, onShowMessa
     setTimeout(() => setCopied(false), 3000);
   };
 
-  const currentContent =
-    legalPages[tab as keyof CmsLegalPages] || DEFAULT_LEGAL_PAGES[tab as keyof CmsLegalPages] || '';
+  const contentKey: keyof CmsLegalPages = tab === 'guidelines' ? 'communityGuidelines' : tab;
+  const currentContent = legalPages[contentKey] || DEFAULT_LEGAL_PAGES[contentKey] || '';
 
   const renderContent = (text: string) => {
     const lines = text.split('\n');
@@ -144,6 +145,7 @@ export const LegalView: React.FC<LegalViewProps> = ({ tab, navigate, onShowMessa
     { id: 'disclaimer', label: 'Disclaimer', icon: ShieldAlert },
     { id: 'terms', label: 'Terms', icon: ScrollText },
     { id: 'privacy', label: 'Privacy', icon: Lock },
+    { id: 'guidelines', label: 'Guidelines', icon: ScrollText },
     { id: 'contact', label: 'Contact', icon: Mail },
   ];
 

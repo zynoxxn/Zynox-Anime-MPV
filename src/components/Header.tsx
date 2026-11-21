@@ -41,9 +41,18 @@ interface HeaderProps {
   currentPath: string;
   navigate: (path: string) => void;
   onShowMessage: (msg: string) => void;
+  transparentOverHero?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMessage }) => {
+const DEFAULT_HEADER_LOGO_PNG =
+  '/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png';
+
+export const Header: React.FC<HeaderProps> = ({
+  currentPath,
+  navigate,
+  onShowMessage,
+  transparentOverHero = false,
+}) => {
   const { user, userProfile, isAdmin, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -290,21 +299,44 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
     }));
   }, [navItems, currentPath, user]);
 
-  const logoSrc =
-    siteConfig.logoUrl || '/assets/aistudio/file_000000008b388211975b608afaf247bc_0de18ed0.png';
   const siteName = siteConfig.siteName || 'ZYNOX ANIME';
+  const logoSrc = siteConfig.logoUrl || DEFAULT_HEADER_LOGO_PNG;
+
+  const isTransparent = transparentOverHero && !mobileSearchOpen;
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40 w-full bg-[#050A14]/30 supports-[backdrop-filter]:bg-[#050A14]/25 border-b border-white/[0.08] backdrop-blur-xl transition-all select-none">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 md:h-[72px] flex items-center justify-between gap-3 sm:gap-6">
+      <header
+        className={`fixed top-0 left-0 right-0 z-40 w-full transition-all duration-200 select-none ${
+          isTransparent
+            ? 'bg-transparent border-b border-transparent'
+            : mobileSearchOpen
+              ? 'bg-[#050A14]/85 backdrop-blur-md border-b border-white/10'
+              : 'bg-[#050A14]/35 backdrop-blur-md border-b border-white/[0.08]'
+        }`}
+      >
+        {/* Top-to-transparent dark gradient behind header over Hero so icons stay readable */}
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-x-0 top-0 h-[110px] -z-10 transition-opacity duration-200 ${
+            isTransparent ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{
+            background: 'linear-gradient(to bottom, rgba(5,10,20,0.55) 0%, transparent 100%)',
+          }}
+        />
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 md:h-[68px] flex items-center justify-between gap-3 sm:gap-6">
           {/* 1. LEFT: Hamburger Menu (Mobile) + Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
               aria-label="Open navigation menu"
-              className="lg:hidden p-2 -ml-1 text-[#CBD5E1] hover:text-white rounded-lg hover:bg-[#101A30] transition-colors cursor-pointer shrink-0"
+              className={`lg:hidden p-2 -ml-1 rounded-lg transition-colors duration-150 cursor-pointer shrink-0 ${
+                isTransparent
+                  ? 'text-white hover:bg-white/15 drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                  : 'text-[#CBD5E1] hover:text-white hover:bg-[#101A30]'
+              }`}
               title="Open Navigation"
             >
               <Menu className="w-5 h-5" />
@@ -319,12 +351,12 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 navigate('/');
               }}
               aria-label={`${siteName} home`}
-              className="flex items-center gap-1.5 cursor-pointer group py-1 min-w-0"
+              className="flex items-center cursor-pointer py-1 min-w-0 shrink-0"
             >
               <img
                 src={logoSrc}
                 alt={siteName}
-                className="h-7 xs:h-8 sm:h-9 md:h-10 w-auto object-contain group-hover:brightness-110 transition-all"
+                className="h-8 sm:h-9 md:h-10 w-auto object-contain"
               />
             </button>
           </div>
@@ -338,8 +370,12 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   key={link.label}
                   type="button"
                   onClick={() => navigate(link.path)}
-                  className={`relative py-1 transition-colors cursor-pointer whitespace-nowrap ${
-                    active ? 'text-[#1E88FF] font-bold' : 'text-[#CBD5E1] hover:text-white'
+                  className={`relative py-1 transition-colors duration-150 cursor-pointer whitespace-nowrap ${
+                    active
+                      ? 'text-[#1E88FF] font-bold'
+                      : isTransparent
+                        ? 'text-white/90 hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                        : 'text-[#CBD5E1] hover:text-white'
                   }`}
                 >
                   <span>{link.label}</span>
@@ -357,15 +393,17 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 type="button"
                 aria-expanded={genresDropdownOpen}
                 onClick={() => setGenresDropdownOpen((prev) => !prev)}
-                className={`relative py-1 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                className={`relative py-1 transition-colors duration-150 cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   genresDropdownOpen || currentPath.toLowerCase().includes('genre')
                     ? 'text-[#1E88FF] font-bold'
-                    : 'text-[#CBD5E1] hover:text-white'
+                    : isTransparent
+                      ? 'text-white/90 hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                      : 'text-[#CBD5E1] hover:text-white'
                 }`}
               >
                 <span>Genre</span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
                     genresDropdownOpen ? 'rotate-180 text-[#1E88FF]' : 'text-[#94A3B8]'
                   }`}
                 />
@@ -389,7 +427,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setGenresDropdownOpen(false);
                         navigate('/browse');
                       }}
-                      className="text-xs font-semibold text-[#1E88FF] hover:text-[#3B9BFF] hover:underline cursor-pointer whitespace-nowrap"
+                      className="text-xs font-semibold text-[#1E88FF] hover:underline cursor-pointer whitespace-nowrap"
                     >
                       Browse Catalog &rarr;
                     </button>
@@ -436,7 +474,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   type="button"
                   onClick={() => navigate(link.path)}
                   className={`relative py-1 transition-colors cursor-pointer whitespace-nowrap ${
-                    active ? 'text-[#1E88FF] font-bold' : 'text-[#CBD5E1] hover:text-white'
+                    active
+                      ? 'text-[#1E88FF] font-bold'
+                      : isTransparent
+                        ? 'text-white/90 hover:text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                        : 'text-[#CBD5E1] hover:text-white'
                   }`}
                 >
                   <span>{link.label}</span>
@@ -468,7 +510,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   onFocus={() => {
                     if (searchQuery.trim()) setSearchOpen(true);
                   }}
-                  className="w-full h-10 bg-[#0B1324]/60 focus:bg-[#101A30]/90 backdrop-blur-md border border-white/10 focus:border-[#1E88FF] text-xs text-white rounded-xl pl-9 pr-8 focus:outline-none transition-colors placeholder:text-[#94A3B8]"
+                  className={`w-full h-10 border focus:border-[#1E88FF] text-xs text-white rounded-xl pl-9 pr-8 focus:outline-none transition-colors duration-150 placeholder:text-[#94A3B8] ${
+                    isTransparent
+                      ? 'bg-[#050A14]/55 focus:bg-[#0B1324]/90 border-white/20 backdrop-blur-md'
+                      : 'bg-[#0B1324] focus:bg-[#101A30] border-white/10'
+                  }`}
                 />
                 {searchQuery && (
                   <button
@@ -545,11 +591,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
 
                             <div className="flex-1 min-w-0 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#3B9BFF] transition-colors leading-snug line-clamp-1">
+                                <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-[#1E88FF] transition-colors duration-150 leading-snug line-clamp-1">
                                   {cleanAnimeTitle(anime.title)}
                                 </h4>
                                 {anime.activeSeasonNumber && (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#3B9BFF] text-[10px] font-bold border border-[#1E88FF]/30 shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#1E88FF] text-[10px] font-bold border border-[#1E88FF]/30 shrink-0">
                                     S{anime.activeSeasonNumber}
                                   </span>
                                 )}
@@ -565,8 +611,8 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
 
                               <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
                                 {ratingStr && (
-                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 text-[10px] font-bold">
-                                    <Star className="w-2.5 h-2.5 fill-amber-400" />
+                                  <span className="inline-flex items-center gap-0.5 text-[#94A3B8] text-[11px]">
+                                    <Star className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]" />
                                     <span>{ratingStr}</span>
                                   </span>
                                 )}
@@ -580,14 +626,14 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                   • {anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : '12+ Eps'}
                                 </span>
                                 {anime.audioLanguage && (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/15 text-[#3B9BFF] border border-[#1E88FF]/25 text-[10px] font-bold">
-                                    {anime.audioLanguage}
+                                  <span className="text-[11px] text-[#94A3B8]">
+                                    • {anime.audioLanguage}
                                   </span>
                                 )}
                               </div>
                             </div>
 
-                            <ChevronRight className="w-4 h-4 text-[#64748B] group-hover:text-[#3B9BFF] transition-colors shrink-0 ml-1 hidden sm:block" />
+                            <ChevronRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#1E88FF] transition-colors duration-150 shrink-0 ml-1 hidden sm:block" />
                           </div>
                         );
                       })}
@@ -598,7 +644,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           setSearchOpen(false);
                           navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
                         }}
-                        className="w-full py-3 bg-[#050A14] hover:bg-[#101A30] text-xs sm:text-sm font-bold text-[#1E88FF] hover:text-[#3B9BFF] text-center transition-colors border-t border-white/10 flex items-center justify-center gap-2 cursor-pointer"
+                        className="w-full py-3 bg-[#050A14] hover:bg-[#101A30] text-xs sm:text-sm font-bold text-[#1E88FF] text-center transition-colors duration-150 border-t border-white/10 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <span>View all results for &quot;{searchQuery}&quot;</span>
                         <ArrowRight className="w-4 h-4" />
@@ -623,7 +669,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                 setMobileSearchOpen(next);
                 if (next) setTimeout(() => mobileSearchInputRef.current?.focus(), 80);
               }}
-              className="md:hidden p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] transition-colors cursor-pointer"
+              className={`md:hidden p-2 rounded-xl transition-colors cursor-pointer ${
+                isTransparent
+                  ? 'text-white hover:bg-white/15 drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                  : 'text-[#CBD5E1] hover:text-white hover:bg-[#101A30]'
+              }`}
               title="Search"
             >
               <Search className="w-5 h-5" />
@@ -637,7 +687,11 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                   aria-label="Notifications"
                   aria-expanded={notifOpen}
                   onClick={() => setNotifOpen((prev) => !prev)}
-                  className="relative p-2 rounded-xl text-[#CBD5E1] hover:text-white hover:bg-[#101A30] border border-transparent hover:border-white/10 transition-colors cursor-pointer"
+                  className={`relative p-2 rounded-xl border border-transparent transition-colors cursor-pointer ${
+                    isTransparent
+                      ? 'text-white hover:bg-white/15 drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]'
+                      : 'text-[#CBD5E1] hover:text-white hover:bg-[#101A30] hover:border-white/10'
+                  }`}
                   title="Notifications"
                 >
                   <Bell className="w-5 h-5" />
@@ -654,7 +708,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         <button
                           type="button"
                           onClick={handleMarkAllNotificationsRead}
-                          className="text-[11px] text-[#1E88FF] hover:text-[#3B9BFF] hover:underline flex items-center gap-1 font-semibold cursor-pointer whitespace-nowrap"
+                          className="text-[11px] text-[#1E88FF] hover:underline flex items-center gap-1 font-semibold cursor-pointer whitespace-nowrap"
                         >
                           <CheckCheck className="w-3 h-3" />
                           <span>Mark all read</span>
@@ -672,7 +726,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           <div
                             key={n.id}
                             onClick={() => handleNotificationClick(n)}
-                            className={`p-2 rounded-xl cursor-pointer transition-colors ${
+                            className={`p-2 rounded-xl cursor-pointer transition-colors duration-150 ${
                               n.read
                                 ? 'text-[#94A3B8] hover:bg-white/5'
                                 : 'bg-[#1E88FF]/10 text-white hover:bg-[#1E88FF]/20 border border-[#1E88FF]/20'
@@ -695,7 +749,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                           setNotifOpen(false);
                           navigate('/notifications');
                         }}
-                        className="w-full py-1.5 text-center text-xs font-semibold text-[#1E88FF] hover:text-[#3B9BFF] hover:bg-[#101A30] rounded-lg transition-colors cursor-pointer"
+                        className="w-full py-1.5 text-center text-xs font-semibold text-[#1E88FF] hover:bg-[#101A30] rounded-lg transition-colors duration-150 cursor-pointer"
                       >
                         View all notifications
                       </button>
@@ -719,9 +773,9 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setProfileDropdownOpen((prev) => !prev);
                   }
                 }}
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B1324] hover:bg-[#101A30] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-colors cursor-pointer overflow-hidden p-0.5 ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#0B1324] hover:bg-[#101A30] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-colors duration-150 cursor-pointer overflow-hidden p-0.5 ${
                   user
-                    ? 'border-2 border-[#1E88FF] hover:border-[#3B9BFF]'
+                    ? 'border-2 border-[#1E88FF]'
                     : 'border border-white/10 hover:border-[#1E88FF]/60'
                 }`}
                 title={user ? displayName : 'Sign In'}
@@ -916,7 +970,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                                 {cleanAnimeTitle(anime.title)}
                               </h4>
                               {anime.activeSeasonNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#3B9BFF] text-[10px] font-bold border border-[#1E88FF]/30">
+                                <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/20 text-[#1E88FF] text-[10px] font-bold border border-[#1E88FF]/30">
                                   S{anime.activeSeasonNumber}
                                 </span>
                               )}
@@ -928,22 +982,20 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
 
                             <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#94A3B8]">
                               {anime.rating && (
-                                <span className="inline-flex items-center gap-0.5 text-amber-400 font-bold bg-amber-400/10 px-1 rounded">
-                                  <Star className="w-2.5 h-2.5 fill-amber-400" />
-                                  <span>{anime.rating}</span>
+                                <span className="inline-flex items-center gap-0.5 text-[#94A3B8]">
+                                  <Star className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]" />
+                                  <span>{Number(anime.rating).toFixed(1)}</span>
                                 </span>
                               )}
                               <span>• {anime.year || 2024}</span>
                               {anime.totalEpisodes && <span>• {anime.totalEpisodes} Eps</span>}
                               {anime.audioLanguage && (
-                                <span className="px-1.5 py-0.5 rounded bg-[#1E88FF]/15 text-[#3B9BFF] text-[10px] font-bold">
-                                  {anime.audioLanguage}
-                                </span>
+                                <span>• {anime.audioLanguage}</span>
                               )}
                             </div>
                           </div>
 
-                          <ChevronRight className="w-4 h-4 text-[#64748B] shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-[#94A3B8] shrink-0" />
                         </div>
                       );
                     })}
@@ -954,7 +1006,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                         setMobileSearchOpen(false);
                         navigate(`/browse?q=${encodeURIComponent(searchQuery)}`);
                       }}
-                      className="w-full py-3 bg-[#050A14] text-xs font-bold text-[#1E88FF] hover:text-[#3B9BFF] text-center flex items-center justify-center gap-1.5 border-t border-white/10 cursor-pointer"
+                      className="w-full py-3 bg-[#050A14] text-xs font-bold text-[#1E88FF] text-center flex items-center justify-center gap-1.5 border-t border-white/10 cursor-pointer"
                     >
                       <span>View all results for &quot;{searchQuery}&quot;</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -984,6 +1036,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <button
                   type="button"
+                  aria-label={`${siteName} home`}
                   className="flex items-center cursor-pointer py-0.5"
                   onClick={() => {
                     setMobileMenuOpen(false);
@@ -1044,7 +1097,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                       </span>
                     </div>
                     <ChevronDown
-                      className={`w-4 h-4 text-[#94A3B8] transition-transform duration-200 ${
+                      className={`w-4 h-4 text-[#94A3B8] transition-transform duration-150 ${
                         mobileGenresOpen ? 'rotate-180 text-[#1E88FF]' : ''
                       }`}
                     />
@@ -1146,7 +1199,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, navigate, onShowMes
                     setMobileMenuOpen(false);
                     navigate('/login');
                   }}
-                  className="w-full py-2.5 bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold rounded-xl text-center transition-colors cursor-pointer"
+                  className="w-full py-2.5 bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs font-semibold rounded-xl text-center transition-colors duration-150 cursor-pointer"
                 >
                   Sign In / Register
                 </button>

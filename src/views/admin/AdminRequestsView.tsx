@@ -113,6 +113,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
 
   const handleDelete = async () => {
     if (!requestToDelete?.id) return;
+    const reqTitle = requestToDelete.animeTitle || (requestToDelete as any).title || 'Untitled Request';
     try {
       setDeleting(true);
       await deleteAnimeRequest(requestToDelete.id);
@@ -122,10 +123,10 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
         'Deleted Anime Request',
         'Requests',
         requestToDelete.id,
-        requestToDelete.animeTitle
+        reqTitle
       );
       setRequests((prev) => prev.filter((r) => r.id !== requestToDelete.id));
-      onShowMessage(`Deleted request for "${requestToDelete.animeTitle}".`);
+      onShowMessage(`Deleted request for "${reqTitle}".`);
       setRequestToDelete(null);
     } catch (err: any) {
       onShowMessage(`Failed to delete request: ${err.message}`);
@@ -214,15 +215,17 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
         ) : (
           <div className="bg-[#0B1324] border border-white/10 rounded-[12px] divide-y divide-white/5 overflow-hidden">
             {filteredRequests.map((req) => {
+              const reqTitle = req.animeTitle || (req as any).title || 'Untitled Request';
+              const reqNotes = req.notes || req.message || req.reason || (req as any).preferredLanguage || '';
               const requester = req.userName || req.userEmail || 'Anonymous Visitor';
               const dateText = formatTimestamp(req.createdAt);
-              const metaText = `${requester} · ${dateText}${req.notes || req.message ? ` · "${req.notes || req.message}"` : ''}`;
+              const metaText = `${requester} · ${dateText}${reqNotes ? ` · "${reqNotes}"` : ''}`;
 
               return (
                 <AdminListRow
-                  key={req.id || `${req.animeTitle}-${dateText}`}
+                  key={req.id || `${reqTitle}-${dateText}`}
                   id={req.id || ''}
-                  title={req.animeTitle}
+                  title={reqTitle}
                   meta={metaText}
                   badge={getStatusBadge(req.status)}
                   menuItems={[
@@ -232,7 +235,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
                             id: 'approve',
                             label: 'Approve request',
                             icon: CheckCircle2,
-                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'approved'),
+                            onClick: () => req.id && handleStatusChange(req.id, reqTitle, 'approved'),
                           },
                         ]
                       : []),
@@ -242,7 +245,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
                             id: 'done',
                             label: 'Mark as done',
                             icon: Check,
-                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'completed'),
+                            onClick: () => req.id && handleStatusChange(req.id, reqTitle, 'completed'),
                           },
                         ]
                       : []),
@@ -252,7 +255,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
                             id: 'reject',
                             label: 'Reject request',
                             icon: XCircle,
-                            onClick: () => req.id && handleStatusChange(req.id, req.animeTitle, 'rejected'),
+                            onClick: () => req.id && handleStatusChange(req.id, reqTitle, 'rejected'),
                           },
                         ]
                       : []),
@@ -261,7 +264,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
                       label: 'Create anime draft',
                       icon: Plus,
                       onClick: () =>
-                        navigate(`/admin/anime/new?title=${encodeURIComponent(req.animeTitle)}`),
+                        navigate(`/admin/anime/new?title=${encodeURIComponent(reqTitle)}`),
                     },
                     ...(req.userEmail
                       ? [
@@ -271,7 +274,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
                             icon: Mail,
                             onClick: () => {
                               window.location.href = `mailto:${req.userEmail}?subject=${encodeURIComponent(
-                                `Regarding your request: ${req.animeTitle}`
+                                `Regarding your request: ${reqTitle}`
                               )}`;
                             },
                           },
@@ -297,7 +300,7 @@ export const AdminRequestsView: React.FC<AdminRequestsViewProps> = ({
           onClose={() => setRequestToDelete(null)}
           onConfirm={handleDelete}
           title="Delete anime request?"
-          consequence={`Permanently remove the submission for "${requestToDelete?.animeTitle}". This action cannot be reversed.`}
+          consequence={`Permanently remove the submission for "${requestToDelete?.animeTitle || (requestToDelete as any)?.title || 'Untitled Request'}". This action cannot be reversed.`}
           confirmLabel="Delete request"
           isLoading={deleting}
         />

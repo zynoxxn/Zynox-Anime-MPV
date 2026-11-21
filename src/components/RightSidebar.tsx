@@ -3,6 +3,7 @@ import type { Anime } from '../types/anime';
 import { Star, ChevronRight, MessageSquare, Compass, Sparkles } from 'lucide-react';
 import { getOptimizedImageUrl } from '../lib/image-optimizer';
 import { cleanAnimeTitle } from '../lib/firestore/anime';
+import { formatCardAudioLabel } from '../lib/format-meta';
 
 interface RightSidebarProps {
   topAnimes?: Anime[];
@@ -27,7 +28,6 @@ const GENRES = [
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
   topAnimes = [],
-  loading = false,
   navigate,
   discordUrl = 'https://discord.gg/zynox',
 }) => {
@@ -37,19 +37,19 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     <aside className="hidden xl:flex flex-col w-[280px] 2xl:w-[300px] shrink-0 space-y-6 select-none">
       {/* 1. TOP RATED PICKS */}
       {topList.length > 0 && (
-        <div className="bg-[#0B1324]/80 border border-white/5 rounded-2xl p-4 space-y-3.5 shadow-md">
+        <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 space-y-3.5 shadow-md">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1 h-3.5 bg-[#1E88FF] rounded-full" />
+            <div className="flex items-center gap-2">
+              <span className="w-1 h-4 bg-[#1E88FF] rounded-full" />
               <h3 className="text-sm font-bold text-white tracking-wide">Top Rated</h3>
             </div>
             <button
               type="button"
               onClick={() => navigate('/browse?sort=rating')}
-              className="text-[11px] font-semibold text-[#1E88FF] hover:text-[#00CFFF] flex items-center gap-0.5 transition-colors cursor-pointer"
+              className="text-xs font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity duration-150 cursor-pointer whitespace-nowrap"
             >
               <span>View All</span>
-              <ChevronRight className="w-3 h-3" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -57,35 +57,36 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             {topList.map((anime, idx) => {
               const rank = idx + 1;
               const ratingVal = anime.rating ? Number(anime.rating).toFixed(1) : '8.5';
+              const audioLabel = formatCardAudioLabel(anime);
               return (
                 <div
                   key={`sb-top-${anime.id || anime.slug}-${idx}`}
                   onClick={() => navigate(`/anime/${anime.slug || anime.id}`)}
-                  className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-[#101A30] cursor-pointer group transition-all duration-200"
+                  className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-[#101A30] cursor-pointer group transition-colors duration-150"
                 >
-                  <span className="w-5 text-center font-black text-xs text-[#1E88FF] group-hover:text-[#00CFFF] shrink-0">
+                  <span className="w-5 text-center font-black text-xs text-[#94A3B8] group-hover:text-[#1E88FF] transition-colors duration-150 shrink-0">
                     0{rank}
                   </span>
-                  <div className="w-9 h-12 rounded-lg bg-[#050A14] overflow-hidden shrink-0 border border-white/10 group-hover:border-[#1E88FF]/40 transition-colors">
+                  <div className="w-9 h-12 rounded-lg bg-[#050A14] overflow-hidden shrink-0 border border-white/10 group-hover:border-[#1E88FF]/50 transition-colors duration-150">
                     <img
                       src={getOptimizedImageUrl(anime.poster, { width: 100, fallbackType: 'poster' })}
                       alt={anime.title}
                       loading="lazy"
                       decoding="async"
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-150"
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-semibold text-[#F8FAFC] truncate group-hover:text-[#00CFFF] transition-colors leading-snug">
+                    <h4 className="text-xs font-semibold text-white truncate group-hover:text-[#1E88FF] transition-colors duration-150 leading-snug">
                       {cleanAnimeTitle(anime.title)}
                     </h4>
-                    <p className="text-[10px] text-[#94A3B8] mt-0.5 truncate">
-                      <span className="text-[#00CFFF] font-medium">{anime.audioLanguage || (anime as any).language || 'Hindi Dub'}</span> · {anime.year || 2026}
+                    <p className="text-[11px] text-[#94A3B8] mt-0.5 truncate">
+                      {audioLabel} · {anime.year || 2026}
                     </p>
                   </div>
-                  <div className="flex items-center gap-0.5 text-[11px] font-bold text-amber-400 shrink-0">
-                    <Star className="w-3 h-3 fill-amber-400" />
+                  <div className="flex items-center gap-1 text-[11px] text-[#94A3B8] shrink-0 tabular-nums">
+                    <Star className="w-3 h-3 text-[#F59E0B] fill-[#F59E0B]" />
                     <span>{ratingVal}</span>
                   </div>
                 </div>
@@ -96,19 +97,19 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       )}
 
       {/* 2. GENRES GRID */}
-      <div className="bg-[#0B1324]/80 border border-white/5 rounded-2xl p-4 space-y-3 shadow-md">
+      <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 space-y-3 shadow-md">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1 h-3.5 bg-[#1E88FF] rounded-full" />
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-4 bg-[#1E88FF] rounded-full" />
             <h3 className="text-sm font-bold text-white tracking-wide">Popular Genres</h3>
           </div>
           <button
             type="button"
             onClick={() => navigate('/browse')}
-            className="text-[11px] font-semibold text-[#1E88FF] hover:text-[#00CFFF] flex items-center gap-0.5 transition-colors cursor-pointer"
+            className="text-xs font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity duration-150 cursor-pointer whitespace-nowrap"
           >
             <span>All</span>
-            <ChevronRight className="w-3 h-3" />
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -118,7 +119,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               key={genre}
               type="button"
               onClick={() => navigate(`/browse?genre=${encodeURIComponent(genre)}`)}
-              className="px-2.5 py-1.5 bg-[#050A14] hover:bg-[#1E88FF]/15 hover:text-[#00CFFF] hover:border-[#1E88FF]/30 border border-white/5 text-[11px] font-medium text-[#CBD5E1] rounded-lg text-center transition-all duration-200 truncate cursor-pointer"
+              className="px-2.5 py-1.5 bg-[#050A14] hover:bg-[#1E88FF]/15 hover:text-[#1E88FF] hover:border-[#1E88FF]/40 border border-white/10 text-[11px] font-medium text-[#CBD5E1] rounded-lg text-center transition-colors duration-150 truncate cursor-pointer"
             >
               {genre}
             </button>

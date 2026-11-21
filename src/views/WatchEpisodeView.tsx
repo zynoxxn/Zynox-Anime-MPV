@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import type { Anime } from '../types/anime';
 import type { Episode, VideoSource } from '../types/episode';
 import type { CmsSeoSettings } from '../types/cms';
@@ -6,9 +6,12 @@ import { useAuth } from '../lib/auth';
 import {
   getAnimeBySlug,
   getAnimeById,
+  getPublishedAnimes,
   getCachedPublishedAnimes,
   getLocalStoredAnimes,
   incrementAnimeViews,
+  isAnimeDeleted,
+  isHentaiAnime,
 } from '../lib/firestore/anime';
 import {
   getEpisodeById,
@@ -35,17 +38,24 @@ import {
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
 import type { WatchProgress, WatchlistStatus } from '../types/library';
-import { extractIframeSrc, transformStreamUrl } from '../lib/video-hosts';
+import { extractIframeSrc, transformStreamUrl, isAbyssPlayerUrl } from '../lib/video-hosts';
 import { openSystemShare } from '../lib/share';
 import { ReportEpisodeModal } from '../components/ReportEpisodeModal';
 import { ShareModal } from '../components/ShareModal';
 import { CommentSection } from '../components/community/CommentSection';
+import { AnimeCard } from '../components/AnimeCard';
 import { AdminSelect } from '../components/admin/AdminSelect';
 import {
   executeDownloadRedirect,
   getAllEpisodeDownloadMirrors,
   type DownloadMirror,
 } from '../lib/downloadRedirect';
+import {
+  formatDurationMinutes,
+  getUniqueServerLabels,
+  formatAndSortDownloadMirrors,
+} from '../lib/format-meta';
+import { getOptimizedImageUrl } from '../lib/image-optimizer';
 import { generateAnimeSeoMetadata } from '../lib/seo';
 import { usePageSeo } from '../hooks/usePageSeo';
 import {
@@ -59,10 +69,7 @@ import {
   Bookmark,
   Heart,
   Share2,
-  Shield,
-  Zap,
   Lock,
-  Layers,
   LayoutGrid,
   List,
   Search,
@@ -71,9 +78,16 @@ import {
   RefreshCw,
   FastForward,
   Monitor,
-  Maximize,
   Info,
+  MoreHorizontal,
+  Film,
   X,
+  ExternalLink,
+  Play,
+  Shield,
+  Zap,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 
 interface WatchEpisodeViewProps {
@@ -92,6 +106,46 @@ function safeDecodeParam(val: string): string {
   } catch {
     return val.trim();
   }
+}
+
+function selectRelatedSeries(currentAnime: Anime | null, catalog: Anime[], limit = 12): Anime[] {
+  if (!currentAnime || !catalog.length) return [];
+  const allowAdult = isHentaiAnime(currentAnime);
+  const currentGenres = new Set(
+    (currentAnime.genres || []).map((g) => g.toLowerCase().trim()).filter(Boolean)
+  );
+  const currentStudio = (currentAnime.studio || '').toLowerCase().trim();
+
+  const seen = new Set<string>();
+  const candidates = catalog.filter((a) => {
+    if (!a) return false;
+    const key = String(a.id || a.slug || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    if (a.id === currentAnime.id || a.slug === currentAnime.slug) return false;
+    if (isAnimeDeleted(a.id) || (a.slug && isAnimeDeleted(a.slug))) return false;
+    if (!allowAdult && isHentaiAnime(a)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const scored = candidates
+    .map((a) => {
+      const sameStudio = Boolean(
+        currentStudio && a.studio && a.studio.toLowerCase().trim() === currentStudio
+      );
+      const sharedGenreCount = (a.genres || []).reduce(
+        (acc, g) => acc + (currentGenres.has(g.toLowerCase().trim()) ? 1 : 0),
+        0
+      );
+      const score = sharedGenreCount * 10 + (sameStudio ? 8 : 0);
+      return { anime: a, score };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (Number(b.anime.rating) || 0) - (Number(a.anime.rating) || 0);
+    });
+
+  return scored.slice(0, limit).map((item) => item.anime);
 }
 
 function findCachedAnimeSynchronously(rawSlug: string): Anime | null {
@@ -185,6 +239,14 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const { user } = useAuth();
   const prefKeyPrefix = user?.uid ? `zynox_${user.uid}` : 'zynox_guest';
 
+  // Landscape fullscreen body class
+  useEffect(() => {
+    document.body.classList.add('watching-episode');
+    return () => {
+      document.body.classList.remove('watching-episode');
+    };
+  }, []);
+
   const initialCache = useMemo(() => {
     const cachedAnime = findCachedAnimeSynchronously(animeSlug);
     if (!cachedAnime) return { anime: null, episode: null, episodes: [] as Episode[] };
@@ -214,17 +276,34 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     Boolean(initialCache.episode && !episodeHasPlayableStream(initialCache.episode))
   );
   const [error, setError] = useState<string | null>(null);
+  const [relatedSeries, setRelatedSeries] = useState<Anime[]>(() =>
+    selectRelatedSeries(initialCache.anime, getCachedPublishedAnimes(), 12)
+  );
 
-  // Video & Stream Preferences remembered per user in localStorage
+  // Per-anime server & audio preferences (persisted under zynox_watch_pref_${animeKey})
   const [selectedCategory, setSelectedCategory] = useState<AudioCategory>(() => {
+    const animeKey = initialCache.anime?.id || initialCache.anime?.slug || safeDecodeParam(animeSlug);
     try {
+      const perAnimeRaw = localStorage.getItem(`zynox_watch_pref_${animeKey}`);
+      if (perAnimeRaw) {
+        const parsed = JSON.parse(perAnimeRaw);
+        if (parsed?.category === 'dub' || parsed?.category === 'sub') return parsed.category;
+      }
       const saved = localStorage.getItem(`${prefKeyPrefix}_audio`);
       if (saved === 'dub' || saved === 'sub') return saved;
     } catch {}
     return 'sub';
   });
   const [selectedServerIndex, setSelectedServerIndex] = useState<number>(() => {
+    const animeKey = initialCache.anime?.id || initialCache.anime?.slug || safeDecodeParam(animeSlug);
     try {
+      const perAnimeRaw = localStorage.getItem(`zynox_watch_pref_${animeKey}`);
+      if (perAnimeRaw) {
+        const parsed = JSON.parse(perAnimeRaw);
+        if (typeof parsed?.serverIndex === 'number' && parsed.serverIndex >= 0) {
+          return parsed.serverIndex;
+        }
+      }
       const saved = localStorage.getItem(`${prefKeyPrefix}_server_idx`);
       const parsed = saved ? parseInt(saved, 10) : 0;
       if (!isNaN(parsed) && parsed >= 0) return parsed;
@@ -248,7 +327,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [duration, setDuration] = useState<number>(1440);
   const pendingSeekRef = useRef<number | null>(null);
 
-  // UI Modes & Toggles
+  // UI Modes & Toggles (Default Episode list mode = 'grid')
   const [theaterMode, setTheaterMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem('zynox_theater_mode') === 'true';
@@ -263,24 +342,95 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     return true;
   });
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewModeState] = useState<'grid' | 'list'>(() => {
+    try {
+      const saved = localStorage.getItem('zynox_episode_view_mode');
+      if (saved === 'grid' || saved === 'list') return saved;
+    } catch {}
+    return 'list';
+  });
+  const setViewMode = useCallback((mode: 'grid' | 'list') => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem('zynox_episode_view_mode', mode);
+    } catch {}
+  }, []);
   const [episodeSearch, setEpisodeSearch] = useState<string>('');
   const [selectedSeasonFilter, setSelectedSeasonFilter] = useState<number | 'all'>('all');
   const [selectedRangeIndex, setSelectedRangeIndex] = useState<number>(0);
 
-  // Modals / Bottom Sheets
+  // Modals / Menus / Bottom Sheets
   const [reportOpen, setReportOpen] = useState<boolean>(false);
   const [shareOpen, setShareOpen] = useState<boolean>(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState<boolean>(false);
   const [downloadSheetOpen, setDownloadSheetOpen] = useState<boolean>(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
+  const [playerHighlight, setPlayerHighlight] = useState<boolean>(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
-  const activeEpisodeItemRef = useRef<HTMLDivElement | null>(null);
+  const activeEpisodeItemRef = useRef<HTMLElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const currentTimeRef = useRef<number>(0);
   currentTimeRef.current = currentTime;
+
+  // Populate and refresh Related Series whenever the active anime resolves
+  useEffect(() => {
+    if (!anime) return;
+    let active = true;
+    const cachedCatalog = getCachedPublishedAnimes();
+    if (cachedCatalog.length > 0) {
+      setRelatedSeries(selectRelatedSeries(anime, cachedCatalog, 12));
+    }
+    withTimeout(getPublishedAnimes(), 4500, cachedCatalog)
+      .then((catalog) => {
+        if (!active || !catalog.length) return;
+        setRelatedSeries(selectRelatedSeries(anime, catalog, 12));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [anime?.id, anime?.slug]);
+
+  // Sync per-anime server/audio preference whenever anime resolves
+  useEffect(() => {
+    const animeKey = anime?.id || anime?.slug;
+    if (!animeKey) return;
+    try {
+      const raw = localStorage.getItem(`zynox_watch_pref_${animeKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.category === 'dub' || parsed?.category === 'sub') {
+          setSelectedCategory(parsed.category);
+        }
+        if (typeof parsed?.serverIndex === 'number' && parsed.serverIndex >= 0) {
+          setSelectedServerIndex(parsed.serverIndex);
+        }
+      }
+    } catch {}
+  }, [anime?.id, anime?.slug]);
+
+  // Outside click / Escape for More menu
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [moreMenuOpen]);
 
   // SEO Metadata synced with Admin SEO settings
   const seoMetadata = useMemo(() => {
@@ -295,7 +445,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   }, [anime, episode, seoSettings]);
   usePageSeo(seoMetadata);
 
-  // Load Watch Data (cache-first, single episode fetch, non-blocking user activity)
+  // Load Watch Data
   useEffect(() => {
     let isMounted = true;
     const cleanSlug = safeDecodeParam(animeSlug);
@@ -329,7 +479,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setPlayerError(false);
     setCountdownSeconds(null);
 
-    // Failsafe guarantee so the full-screen loading spinner can never hang indefinitely
     const safetyTimer = setTimeout(() => {
       if (isMounted) {
         setLoading(false);
@@ -403,7 +552,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
           if (seasonNum) setSelectedSeasonFilter(seasonNum);
         }
 
-        // Fire views & user-activity non-blocking after player is already rendered
         if (animeData.id && epData.id) {
           incrementEpisodeViews(epData.id);
           incrementAnimeViews(animeData.id);
@@ -499,8 +647,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
       addSource(
         {
           id: 'primary-stream',
-          name: 'HD Server 1',
-          provider: 'Abyss High Definition',
+          name: 'Server 1',
+          provider: 'Primary Stream',
           embedUrl: episode.videoUrl.trim(),
           active: true,
           category: episode.defaultCategory || 'sub',
@@ -536,19 +684,23 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     return { subServers: sub, dubServers: dub };
   }, [episode]);
 
-  // Effective category automatically falls back if selected category has 0 servers
   const effectiveCategory: AudioCategory =
-    selectedCategory === 'sub'
-      ? subServers.length > 0
-        ? 'sub'
-        : 'dub'
-      : dubServers.length > 0
-      ? 'dub'
-      : 'sub';
-  const currentServers = effectiveCategory === 'sub' ? subServers : dubServers;
+    selectedCategory === 'dub'
+      ? dubServers.length > 0
+        ? 'dub'
+        : 'sub'
+      : subServers.length > 0
+      ? 'sub'
+      : 'dub';
+  const currentServers = effectiveCategory === 'dub' ? dubServers : subServers;
   const safeServerIndex = selectedServerIndex < currentServers.length ? selectedServerIndex : 0;
   const activeSource: VideoSource | undefined =
-    currentServers[safeServerIndex] || currentServers[0] || subServers[0] || dubServers[0];
+    currentServers[safeServerIndex] || currentServers[0] || dubServers[0] || subServers[0];
+
+  const uniqueServerLabels = useMemo(
+    () => getUniqueServerLabels(currentServers),
+    [currentServers]
+  );
 
   // Resolve stream URL
   const { currentStreamUrl, isDirectVideo, hasAlternateFrame } = useMemo(() => {
@@ -581,7 +733,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     };
   }, [activeSource, useAlternateFrame, episode?.videoUrl]);
 
-  // Auto-clear player loading overlay so slow/cross-origin iframe embeds never hang on spinner
+  // Auto-clear player loading overlay so cross-origin embeds never hang
   useEffect(() => {
     if (!currentStreamUrl) {
       setPlayerLoading(false);
@@ -605,7 +757,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const prevEpisode = currentIndex > 0 ? allEpisodes[currentIndex - 1] : null;
   const nextEpisode = currentIndex >= 0 && currentIndex < allEpisodes.length - 1 ? allEpisodes[currentIndex + 1] : null;
 
-  // Save helper
   const flushProgress = (sec: number) => {
     if (!anime?.id || !episode?.id) return;
     const totalDur = duration || Number(episode.duration) * 60 || 1440;
@@ -636,10 +787,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     }
   };
 
-  // Throttled Watch Progress saving every 10 seconds + on leave
   useEffect(() => {
     if (!anime?.id || !episode?.id) return;
-
     const interval = setInterval(() => {
       const sec = currentTimeRef.current > 0 ? currentTimeRef.current : 15;
       flushProgress(sec);
@@ -653,14 +802,13 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     };
   }, [anime, episode, user?.uid, duration, watchedEpNumbers]);
 
-  // Scroll active episode into view on load
+  // Scroll active episode into view inside desktop sticky panel
   useEffect(() => {
-    if (activeEpisodeItemRef.current) {
+    if (activeEpisodeItemRef.current && window.innerWidth >= 1024) {
       activeEpisodeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [episode?.id, viewMode]);
 
-  // Switch server helper (Preserves current playback time & saves pref per user)
   const handleSwitchServer = (cat: AudioCategory, idx: number) => {
     if (currentTimeRef.current > 0) {
       pendingSeekRef.current = currentTimeRef.current;
@@ -671,10 +819,35 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setPlayerLoading(true);
     setPlayerError(false);
 
+    const animeKey = anime?.id || anime?.slug;
     try {
+      if (animeKey) {
+        localStorage.setItem(
+          `zynox_watch_pref_${animeKey}`,
+          JSON.stringify({ category: cat, serverIndex: idx })
+        );
+      }
       localStorage.setItem(`${prefKeyPrefix}_audio`, cat);
       localStorage.setItem(`${prefKeyPrefix}_server_idx`, String(idx));
     } catch {}
+  };
+
+  const handleTryAnotherServer = () => {
+    if (currentServers.length > 1) {
+      const nextIdx = (safeServerIndex + 1) % currentServers.length;
+      handleSwitchServer(effectiveCategory, nextIdx);
+      return;
+    }
+    if (effectiveCategory === 'dub' && subServers.length > 0) {
+      handleSwitchServer('sub', 0);
+      return;
+    }
+    if (effectiveCategory === 'sub' && dubServers.length > 0) {
+      handleSwitchServer('dub', 0);
+      return;
+    }
+    setPlayerError(false);
+    setPlayerLoading(true);
   };
 
   const handleToggleWatchlist = async () => {
@@ -745,7 +918,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     onShowMessage?.(`Marked Episode ${episode.episodeNumber} as watched.`);
   };
 
-  // Fullscreen toggle
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
     if (!document.fullscreenElement) {
@@ -755,7 +927,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     }
   };
 
-  // Desktop Keyboard Shortcuts (Space, Left/Right 10s, F, N, M)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -767,11 +938,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
         case ' ':
           e.preventDefault();
           if (videoRef.current) {
-            if (videoRef.current.paused) {
-              videoRef.current.play();
-            } else {
-              videoRef.current.pause();
-            }
+            if (videoRef.current.paused) videoRef.current.play();
+            else videoRef.current.pause();
           }
           break;
         case 'ArrowLeft':
@@ -815,7 +983,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nextEpisode, anime, duration]);
 
-  // Autoplay countdown timer
   useEffect(() => {
     if (countdownSeconds === null) return;
     if (countdownSeconds <= 0) {
@@ -834,7 +1001,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     return () => clearTimeout(timer);
   }, [countdownSeconds, nextEpisode, anime]);
 
-  // Skip Intro / Outro Check
   const showSkipIntro = useMemo(() => {
     if (!episode?.introStart || !episode?.introEnd) return false;
     return currentTime >= episode.introStart && currentTime <= episode.introEnd;
@@ -859,7 +1025,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     }
   };
 
-  // Download Mirrors Sheet
   const handleOpenDownloadSheet = () => {
     if (!episode) return;
     const mirrors = getAllEpisodeDownloadMirrors(episode, anime);
@@ -867,14 +1032,40 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setDownloadSheetOpen(true);
   };
 
-  // Season Options for Episode List
+  const handleJumpToPlayerDownload = () => {
+    setDownloadSheetOpen(false);
+    setPlayerHighlight(true);
+    setTimeout(() => setPlayerHighlight(false), 2600);
+    if (playerContainerRef.current) {
+      playerContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    onShowMessage?.('Tap the ⬇ Download icon inside the video player to start downloading.');
+  };
+
+  const formattedDownloadRows = useMemo(
+    () => formatAndSortDownloadMirrors(downloadMirrors, effectiveCategory === 'dub' ? 'Dub' : 'Sub'),
+    [downloadMirrors, effectiveCategory]
+  );
+
+  const directDownloadRows = useMemo(
+    () => formattedDownloadRows.filter((r) => !r.mirror.isEmbedPlayer),
+    [formattedDownloadRows]
+  );
+
+  const embedDownloadRows = useMemo(
+    () => formattedDownloadRows.filter((r) => r.mirror.isEmbedPlayer),
+    [formattedDownloadRows]
+  );
+
+  const isCurrentStreamAbyss = isAbyssPlayerUrl(currentStreamUrl);
+
+  // Season & Range Filtering for Episode List
   const seasonsAvailable = useMemo(() => {
     const s = new Set<number>();
     allEpisodes.forEach((e) => s.add(Number(e.seasonNumber || e.season || 1)));
     return Array.from(s).sort((a, b) => a - b);
   }, [allEpisodes]);
 
-  // Range Pagination for Episode List
   const RANGE_SIZE = 50;
   const filteredEpisodes = useMemo(() => {
     let list = allEpisodes;
@@ -913,11 +1104,49 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setSelectedRangeIndex(0);
   }, [selectedSeasonFilter, episodeSearch]);
 
+  // Exact-dimension skeleton (0 layout shift)
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050A14] flex flex-col items-center justify-center text-[#94A3B8] gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#1E88FF]" />
-        <p className="text-xs font-semibold">Connecting to high-speed stream...</p>
+      <div className="min-h-screen bg-[#050A14] pb-16 overflow-x-clip">
+        <div className="max-w-[1500px] mx-auto px-3 sm:px-6 pt-3 pb-3 flex items-center justify-between gap-3">
+          <div className="h-4 w-48 bg-white/10 rounded animate-pulse" />
+          <div className="h-8 w-20 bg-white/10 rounded-lg animate-pulse" />
+        </div>
+        <div className="max-w-[1500px] mx-auto px-3 sm:px-6">
+          <div className="grid gap-6 grid-cols-1 lg:grid-cols-[minmax(0,1100px)_360px] justify-center">
+            <div className="min-w-0">
+              <div className="sticky top-14 lg:static z-30 -mx-3 sm:mx-0 bg-black">
+                <div className="aspect-video w-full bg-black sm:rounded-2xl border-y sm:border border-white/10 flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 animate-spin text-[#1E88FF]" />
+                </div>
+              </div>
+              <div className="py-4 border-b border-white/[0.08] space-y-2 animate-pulse">
+                <div className="h-3.5 w-36 bg-white/10 rounded" />
+                <div className="h-5 w-3/4 bg-white/15 rounded" />
+                <div className="h-3 w-28 bg-white/10 rounded" />
+              </div>
+              <div className="py-3.5 border-b border-white/[0.08] space-y-2.5 animate-pulse">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="h-11 bg-white/10 rounded-xl" />
+                  <div className="h-11 bg-[#1E88FF]/40 rounded-xl" />
+                </div>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-11 bg-white/5 rounded-xl" />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3 animate-pulse">
+              <div className="h-5 w-28 bg-white/10 rounded" />
+              <div className="grid grid-cols-6 gap-2">
+                {Array.from({ length: 18 }).map((_, i) => (
+                  <div key={i} className="h-12 bg-[#0B1324] rounded-xl border border-white/10" />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -926,7 +1155,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-4 py-20 bg-[#050A14]">
         <div className="max-w-md w-full bg-[#0B1324] border border-white/10 p-8 rounded-2xl text-center space-y-4 shadow-2xl">
-          <div className="w-14 h-14 rounded-2xl bg-[#101A30] border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-[#101A30] border border-white/10 text-[#94A3B8] mx-auto flex items-center justify-center">
             <AlertTriangle className="w-7 h-7" />
           </div>
           <div className="space-y-1.5">
@@ -938,7 +1167,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
           <button
             type="button"
             onClick={() => navigate(`/anime/${animeSlug}`)}
-            className="w-full h-11 bg-[#1E88FF] hover:bg-[#1570d8] text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full h-11 bg-[#1E88FF] hover:bg-[#1670D6] text-white text-sm font-semibold rounded-xl transition-colors duration-150 inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Anime Details</span>
@@ -948,9 +1177,17 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     );
   }
 
+  const audioMetaLabel =
+    effectiveCategory === 'dub'
+      ? anime.audioLanguage && anime.audioLanguage.toLowerCase().includes('hindi')
+        ? 'Hindi Dub'
+        : 'Dub'
+      : 'Sub';
+
+  const loadingThumb = episode.thumbnail || anime.banner || anime.poster || '';
+
   return (
-    <div className="min-h-screen bg-[#050A14] text-[#F8FAFC] pb-16 overflow-x-clip">
-      {/* Invisible link prefetch for next episode */}
+    <div className="min-h-screen bg-[#050A14] text-white pb-16 overflow-x-clip">
       {nextEpisode && (
         <link
           rel="prefetch"
@@ -958,13 +1195,13 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
         />
       )}
 
-      {/* TOP COMPACT BREADCRUMB & DETAILS ACTION */}
-      <div className="max-w-[1500px] mx-auto px-3 sm:px-6 pt-3 pb-3 flex items-center justify-between gap-3 text-xs text-[#94A3B8]">
-        <div className="flex items-center gap-1.5 truncate min-w-0">
+      {/* TOP COMPACT BREADCRUMB & DETAILS ACTION (Scrolls away normally) */}
+      <div className="watch-non-player-ui max-w-[1500px] mx-auto px-3 sm:px-6 pt-3 pb-2.5 flex items-center justify-between gap-2 text-xs text-[#94A3B8]">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 flex-1">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="hover:text-white transition-colors shrink-0 cursor-pointer"
+            className="hover:text-white transition-colors duration-150 shrink-0 cursor-pointer"
           >
             Home
           </button>
@@ -972,13 +1209,15 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
           <button
             type="button"
             onClick={() => navigate(`/anime/${anime.slug}`)}
-            className="hover:text-white transition-colors truncate max-w-[150px] sm:max-w-xs font-medium cursor-pointer"
+            className="hover:text-white transition-colors duration-150 truncate min-w-0 font-medium cursor-pointer"
           >
             {anime.title}
           </button>
           <span className="shrink-0 text-white/30">/</span>
-          <span className="text-[#00B4FF] font-bold shrink-0">Ep {episode.episodeNumber}</span>
-        </div>
+          <span className="text-[#1E88FF] font-semibold shrink-0 whitespace-nowrap">
+            Ep {episode.episodeNumber}
+          </span>
+        </nav>
 
         <div className="flex items-center gap-2 shrink-0">
           {/* Theater Mode Toggle (Desktop >= 1024px) */}
@@ -991,19 +1230,20 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 localStorage.setItem('zynox_theater_mode', String(nextMode));
               } catch {}
             }}
-            className="hidden lg:flex items-center gap-1.5 h-8 px-3 rounded-xl bg-[#0B1324] hover:bg-[#101A30] border border-white/10 text-xs font-semibold text-white transition-all cursor-pointer shrink-0"
+            className="hidden lg:inline-flex items-center gap-1.5 h-9 px-3 rounded-full bg-[#0B1324] hover:bg-[#101A30] border border-white/10 text-xs font-semibold text-[#CBD5E1] hover:text-white transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Monitor className="w-3.5 h-3.5 text-[#1E88FF]" />
             <span>{theaterMode ? 'Default View' : 'Theater Mode'}</span>
           </button>
 
-          {/* Details Button */}
+          {/* Details Pill Button */}
           <button
             type="button"
+            aria-label="Anime details"
             onClick={() => navigate(`/anime/${anime.slug}`)}
-            className="h-8 px-3 rounded-xl bg-[#0B1324] hover:bg-[#101A30] border border-[#1E88FF]/40 text-[#00B4FF] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+            className="h-9 px-3.5 rounded-full bg-[#0B1324] hover:bg-[#101A30] border border-white/15 text-[#CBD5E1] hover:text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap"
           >
-            <Info className="w-3.5 h-3.5 shrink-0" />
+            <Info className="w-4 h-4 text-[#1E88FF] shrink-0" />
             <span>Details</span>
           </button>
         </div>
@@ -1011,204 +1251,186 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
       {/* MAIN LAYOUT WRAPPER */}
       <div className="max-w-[1500px] mx-auto px-3 sm:px-6">
-        <div className={`grid gap-5 ${theaterMode ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[minmax(0,1100px)_360px] justify-center'}`}>
-          
-          {/* PLAYER COLUMN (Max 1100px in default view, full width in Theater mode) */}
-          <div className="space-y-4 min-w-0">
-            {/* 1. FRAMED VIDEO PLAYER CONTAINER (16:9, rounded-2xl, scrolls naturally with page) */}
-            <div
-              ref={playerContainerRef}
-              className="aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative select-none"
-            >
-              {/* Spinner / Thumbnail while loading stream or fetching fresh links */}
-              {(streamsRefreshing && !currentStreamUrl) || (playerLoading && !playerError && Boolean(currentStreamUrl)) ? (
-                <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-3 z-20 pointer-events-none">
-                  {(episode.thumbnail || anime.banner) && (
-                    <img
-                      src={episode.thumbnail || anime.banner}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-cover opacity-30 filter blur-sm"
-                    />
-                  )}
-                  <Loader2 className="w-9 h-9 animate-spin text-[#1E88FF] relative z-10" />
-                  <span className="text-xs font-semibold text-white relative z-10">Loading stream...</span>
-                </div>
-              ) : null}
-
-              {/* Player Error State */}
-              {!streamsRefreshing && (playerError || !currentStreamUrl) ? (
-                <div className="absolute inset-0 bg-[#0B1324] flex flex-col items-center justify-center p-6 text-center space-y-3 z-10">
-                  <AlertTriangle className="w-10 h-10 text-amber-400" />
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-bold text-white">Stream Failed to Load</h3>
-                    <p className="text-xs text-[#94A3B8] max-w-sm">
-                      This server is unavailable. Try another server or report this broken link.
-                    </p>
+        <div
+          className={`grid gap-5 lg:gap-6 ${
+            theaterMode
+              ? 'grid-cols-1'
+              : 'grid-cols-1 lg:grid-cols-[minmax(0,1100px)_360px] justify-center'
+          }`}
+        >
+          {/* PLAYER & DETAILS COLUMN */}
+          <div className="min-w-0 space-y-4">
+            {/* 1. 16:9 VIDEO PLAYER CARD */}
+            <div className="watch-player-sticky-wrap">
+              <div
+                ref={playerContainerRef}
+                className={`watch-player-frame aspect-video w-full bg-black rounded-2xl overflow-hidden border relative select-none shadow-2xl transition-all duration-300 ${
+                  playerHighlight
+                    ? 'border-[#1E88FF] ring-2 ring-[#1E88FF]/80 shadow-[0_0_24px_rgba(30,136,255,0.45)]'
+                    : 'border-white/10'
+                }`}
+              >
+                {/* Loading Overlay: Dimmed thumbnail 50% + 40px spinner */}
+                {(streamsRefreshing && !currentStreamUrl) ||
+                (playerLoading && !playerError && Boolean(currentStreamUrl)) ? (
+                  <div className="absolute inset-0 bg-black flex items-center justify-center z-20 pointer-events-none">
+                    {loadingThumb && (
+                      <img
+                        src={getOptimizedImageUrl(loadingThumb, { width: 960, fallbackType: 'banner' })}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover opacity-50"
+                      />
+                    )}
+                    <Loader2 className="w-10 h-10 animate-spin text-[#1E88FF] relative z-10" />
                   </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    {currentServers.length > 1 && (
+                ) : null}
+
+                {/* Player Error State */}
+                {!streamsRefreshing && (playerError || !currentStreamUrl) ? (
+                  <div className="absolute inset-0 bg-[#0B1324] flex flex-col items-center justify-center p-4 sm:p-6 text-center space-y-3 z-10">
+                    <AlertTriangle className="w-9 h-9 text-[#94A3B8]" />
+                    <p className="text-sm font-semibold text-white">
+                      This server isn&apos;t working
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-2.5 pt-0.5">
                       <button
                         type="button"
-                        onClick={() => {
-                          const nextIdx = (safeServerIndex + 1) % currentServers.length;
-                          handleSwitchServer(effectiveCategory, nextIdx);
-                        }}
-                        className="h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1570d8] text-white text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                        onClick={handleTryAnotherServer}
+                        className="h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors duration-150 whitespace-nowrap"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
+                        <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                         <span>Try another server</span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setReportOpen(true)}
-                      className="h-10 px-4 rounded-xl bg-[#101A30] hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-2 border border-white/10 cursor-pointer transition-colors whitespace-nowrap"
-                    >
-                      <Flag className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Report broken link</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportOpen(true)}
+                        className="h-10 px-4 rounded-xl bg-transparent hover:bg-white/5 text-[#CBD5E1] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 border border-white/15 cursor-pointer transition-colors duration-150 whitespace-nowrap"
+                      >
+                        <Flag className="w-3.5 h-3.5 shrink-0" />
+                        <span>Report broken link</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : !currentStreamUrl ? null : isDirectVideo ? (
-                /* Native HTML5 Video Player */
-                <video
-                  key={`vid-${episode.id}-${safeServerIndex}-${useAlternateFrame}-${currentStreamUrl}`}
-                  ref={videoRef}
-                  src={currentStreamUrl}
-                  controls
-                  playsInline
-                  autoPlay
-                  onLoadedMetadata={() => {
-                    if (videoRef.current && pendingSeekRef.current && pendingSeekRef.current > 0) {
-                      videoRef.current.currentTime = pendingSeekRef.current;
-                      pendingSeekRef.current = null;
-                    }
-                    setPlayerLoading(false);
-                  }}
-                  onLoadedData={() => setPlayerLoading(false)}
-                  onCanPlay={() => setPlayerLoading(false)}
-                  onPause={() => {
-                    if (videoRef.current) flushProgress(videoRef.current.currentTime);
-                  }}
-                  onError={() => {
-                    setPlayerLoading(false);
-                    setPlayerError(true);
-                  }}
-                  onTimeUpdate={() => {
-                    if (videoRef.current) {
-                      setCurrentTime(videoRef.current.currentTime);
-                      setDuration(videoRef.current.duration || 1440);
-                    }
-                  }}
-                  onEnded={() => {
-                    if (videoRef.current) flushProgress(videoRef.current.duration || duration);
-                    if (autoplayNext && nextEpisode) {
-                      setCountdownSeconds(5);
-                    }
-                  }}
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                /* Iframe Embed Player */
-                <iframe
-                  key={`frm-${episode.id}-${safeServerIndex}-${useAlternateFrame}-${currentStreamUrl}`}
-                  ref={iframeRef}
-                  src={currentStreamUrl}
-                  title={`Episode ${episode.episodeNumber} Stream`}
-                  allowFullScreen
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  onLoad={() => setPlayerLoading(false)}
-                  onError={() => {
-                    setPlayerLoading(false);
-                    setPlayerError(true);
-                  }}
-                  className="w-full h-full border-0"
-                />
-              )}
+                ) : !currentStreamUrl ? null : isDirectVideo ? (
+                  <video
+                    key={`vid-${episode.id}-${safeServerIndex}-${useAlternateFrame}-${currentStreamUrl}`}
+                    ref={videoRef}
+                    src={currentStreamUrl}
+                    controls
+                    playsInline
+                    autoPlay
+                    onLoadedMetadata={() => {
+                      if (videoRef.current && pendingSeekRef.current && pendingSeekRef.current > 0) {
+                        videoRef.current.currentTime = pendingSeekRef.current;
+                        pendingSeekRef.current = null;
+                      }
+                      setPlayerLoading(false);
+                    }}
+                    onLoadedData={() => setPlayerLoading(false)}
+                    onCanPlay={() => setPlayerLoading(false)}
+                    onPause={() => {
+                      if (videoRef.current) flushProgress(videoRef.current.currentTime);
+                    }}
+                    onError={() => {
+                      setPlayerLoading(false);
+                      setPlayerError(true);
+                    }}
+                    onTimeUpdate={() => {
+                      if (videoRef.current) {
+                        setCurrentTime(videoRef.current.currentTime);
+                        setDuration(videoRef.current.duration || 1440);
+                      }
+                    }}
+                    onEnded={() => {
+                      if (videoRef.current) flushProgress(videoRef.current.duration || duration);
+                      if (autoplayNext && nextEpisode) {
+                        setCountdownSeconds(5);
+                      }
+                    }}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <iframe
+                    key={`frm-${episode.id}-${safeServerIndex}-${useAlternateFrame}-${currentStreamUrl}`}
+                    ref={iframeRef}
+                    src={currentStreamUrl}
+                    title={`Episode ${episode.episodeNumber} Stream`}
+                    allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    onLoad={() => setPlayerLoading(false)}
+                    onError={() => {
+                      setPlayerLoading(false);
+                      setPlayerError(true);
+                    }}
+                    className="w-full h-full border-0"
+                  />
+                )}
 
-              {/* Floating Fullscreen Toggle Button for Embeds */}
-              {!isDirectVideo && !playerError && currentStreamUrl && (
-                <button
-                  type="button"
-                  onClick={toggleFullscreen}
-                  title="Fullscreen"
-                  aria-label="Toggle fullscreen"
-                  className="absolute top-3 right-3 z-20 w-9 h-9 rounded-lg bg-black/60 hover:bg-[#1E88FF] text-white border border-white/15 flex items-center justify-center backdrop-blur-md transition-colors cursor-pointer"
-                >
-                  <Maximize className="w-4 h-4" />
-                </button>
-              )}
+                {/* Bottom-Right Overlay Stack (Never covers native controls bar) */}
+                {(showSkipIntro || showSkipOutro || (countdownSeconds !== null && nextEpisode)) && (
+                  <div className="absolute bottom-14 sm:bottom-16 right-3 sm:right-4 z-20 flex flex-col items-end gap-2">
+                    {showSkipIntro && (
+                      <button
+                        type="button"
+                        onClick={handleSkipIntro}
+                        className="h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs font-semibold flex items-center gap-2 border border-white/20 shadow-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                      >
+                        <FastForward className="w-4 h-4" />
+                        <span>Skip Intro</span>
+                      </button>
+                    )}
 
-              {/* Floating Skip Intro Pill */}
-              {showSkipIntro && (
-                <button
-                  type="button"
-                  onClick={handleSkipIntro}
-                  className="absolute bottom-14 right-4 z-20 h-10 px-4 rounded-xl bg-[#1E88FF]/95 hover:bg-[#1E88FF] text-white text-xs font-bold flex items-center gap-2 backdrop-blur-md border border-white/20 shadow-2xl transition-all cursor-pointer"
-                >
-                  <FastForward className="w-4 h-4" />
-                  <span>Skip Intro</span>
-                </button>
-              )}
+                    {showSkipOutro && (
+                      <button
+                        type="button"
+                        onClick={handleSkipOutro}
+                        className="h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs font-semibold flex items-center gap-2 border border-white/20 shadow-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                      >
+                        <FastForward className="w-4 h-4" />
+                        <span>Skip Outro</span>
+                      </button>
+                    )}
 
-              {/* Floating Skip Outro Pill */}
-              {showSkipOutro && (
-                <button
-                  type="button"
-                  onClick={handleSkipOutro}
-                  className="absolute bottom-14 right-4 z-20 h-10 px-4 rounded-xl bg-[#1E88FF]/95 hover:bg-[#1E88FF] text-white text-xs font-bold flex items-center gap-2 backdrop-blur-md border border-white/20 shadow-2xl transition-all cursor-pointer"
-                >
-                  <FastForward className="w-4 h-4" />
-                  <span>Skip Outro</span>
-                </button>
-              )}
-
-              {/* Floating Autoplay Next 5s Countdown Pill */}
-              {countdownSeconds !== null && nextEpisode && (
-                <div className="absolute bottom-4 right-4 z-30 bg-[#0B1324]/95 border border-white/15 backdrop-blur-md rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-2xl">
-                  <span className="text-xs font-semibold text-white">
-                    Next episode in {countdownSeconds}s
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCountdownSeconds(null)}
-                    className="text-xs font-bold text-[#1E88FF] hover:underline cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+                    {countdownSeconds !== null && nextEpisode && (
+                      <div className="bg-[#0B1324]/95 border border-white/15 rounded-xl px-3.5 py-2 flex items-center gap-3 shadow-lg">
+                        <span className="text-xs font-semibold text-white whitespace-nowrap">
+                          Next episode in {countdownSeconds}s
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCountdownSeconds(null)}
+                          className="text-xs font-semibold text-[#1E88FF] hover:underline cursor-pointer whitespace-nowrap"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* 2. EPISODE INFO & PRIMARY ACTIONS CARD */}
-            <div>
-              <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
-                {/* Episode Counter, Title & Anime Series Line */}
+            {/* NON-PLAYER UI (Hidden in mobile landscape fullscreen) */}
+            <div className="watch-non-player-ui space-y-4">
+              {/* 2. EPISODE INFO & ACTION CONTROLS CARD */}
+              <section className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
                 <div className="space-y-1 min-w-0">
-                  <p className="text-[11px] sm:text-xs font-extrabold tracking-wider uppercase text-[#00B4FF]">
-                    EPISODE {episode.episodeNumber} OF{' '}
-                    {Math.max(
-                      allEpisodes.length || 0,
-                      anime.totalEpisodes || 0,
-                      episode.episodeNumber
-                    )}
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-[#1E88FF]">
+                    EPISODE {episode.episodeNumber} OF {allEpisodes.length || anime.totalEpisodes || 1}
                   </p>
-                  <h1 className="text-lg sm:text-xl font-extrabold text-white leading-snug line-clamp-2">
-                    {episode.title || `Episode ${episode.episodeNumber}`}
+                  <h1 className="text-lg sm:text-xl font-bold text-white leading-snug line-clamp-2">
+                    {episode.title || anime.title}
                   </h1>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/anime/${anime.slug}`)}
-                    className="text-xs sm:text-sm text-[#94A3B8] hover:text-[#1E88FF] transition-colors cursor-pointer block truncate text-left max-w-full"
-                  >
+                  <p className="text-xs text-[#94A3B8] truncate">
                     {anime.title}
                     {anime.year ? ` (${anime.year})` : ''}
-                  </button>
+                  </p>
                 </div>
 
-                {/* Row 1: Segmented Prev/Next + Download */}
+                {/* Action Row 1: Grouped Prev/Next capsule + Download button */}
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="inline-flex items-center rounded-xl border border-white/10 bg-[#050A14]/70 p-0.5 shrink-0">
+                  <div className="inline-flex items-center rounded-xl bg-[#101A30] border border-white/10 p-1">
                     <button
                       type="button"
                       disabled={!prevEpisode}
@@ -1218,17 +1440,15 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                           navigate(`/anime/${anime.slug}/episode/${prevEpisode.episodeNumber}?season=${s}`);
                         }
                       }}
-                      className={`h-9 px-3.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-all whitespace-nowrap ${
+                      className={`h-8 px-3 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors duration-150 whitespace-nowrap ${
                         prevEpisode
-                          ? 'text-white hover:bg-white/5 cursor-pointer'
+                          ? 'text-[#CBD5E1] hover:text-white hover:bg-white/5 cursor-pointer'
                           : 'text-[#94A3B8]/40 cursor-not-allowed'
                       }`}
                     >
                       <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
                       <span>Prev</span>
                     </button>
-
-                    <span className="w-px h-5 bg-white/10 mx-0.5" aria-hidden="true" />
 
                     <button
                       type="button"
@@ -1239,10 +1459,10 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                           navigate(`/anime/${anime.slug}/episode/${nextEpisode.episodeNumber}?season=${s}`);
                         }
                       }}
-                      className={`h-9 px-3.5 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-all whitespace-nowrap ${
+                      className={`h-8 px-3.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors duration-150 whitespace-nowrap ${
                         nextEpisode
-                          ? 'bg-[#1E88FF] hover:bg-[#1570d8] text-white cursor-pointer'
-                          : 'text-[#94A3B8]/40 cursor-not-allowed'
+                          ? 'bg-[#1E88FF] hover:bg-[#1670D6] text-white cursor-pointer shadow-sm'
+                          : 'bg-[#1E88FF]/25 text-white/40 cursor-not-allowed'
                       }`}
                     >
                       <span>Next</span>
@@ -1253,40 +1473,44 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenDownloadSheet}
-                    className="h-10 px-4 rounded-xl bg-[#050A14]/40 hover:bg-[#101A30] border border-white/10 text-[#CBD5E1] hover:text-white text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                    title="Download episode"
+                    aria-label="Download episode"
+                    className="h-10 px-4 rounded-xl bg-[#101A30] hover:bg-[#1E88FF]/15 border border-white/10 hover:border-[#1E88FF]/40 text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-colors duration-150 cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-4 h-4 shrink-0" />
                     <span>Download</span>
                   </button>
                 </div>
 
-                {/* Row 2: Watchlist + Favorite + Share + Mark Watched + Report */}
+                {/* Action Row 2: Watchlist pill + Favorite, Share, Mark Watched, Report icon buttons */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={handleToggleWatchlist}
-                    className={`h-10 px-4 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                    title={watchlistStatus ? 'In Watchlist' : 'Add to Watchlist'}
+                    aria-label={watchlistStatus ? 'Remove from watchlist' : 'Add to watchlist'}
+                    className={`h-10 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-colors duration-150 cursor-pointer whitespace-nowrap ${
                       watchlistStatus
-                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]/50 text-[#1E88FF]'
-                        : 'bg-[#050A14]/40 hover:bg-[#101A30] border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]/40 text-[#1E88FF]'
+                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
                     }`}
                   >
                     <Bookmark className={`w-4 h-4 shrink-0 ${watchlistStatus ? 'fill-current' : ''}`} />
-                    <span>{watchlistStatus ? 'In Watchlist' : 'Watchlist'}</span>
+                    <span>Watchlist</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleToggleFavorite}
                     title={fav ? 'Remove from Favorites' : 'Add to Favorites'}
-                    aria-label="Toggle favorite"
-                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                    aria-label={fav ? 'Remove from favorites' : 'Add to favorites'}
+                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                       fav
-                        ? 'bg-rose-500/15 border-rose-500/50 text-rose-400'
-                        : 'bg-[#050A14]/40 hover:bg-[#101A30] border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-red-500/15 border-red-500/35 text-red-500'
+                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
                     }`}
                   >
-                    <Heart className={`w-4 h-4 ${fav ? 'fill-current' : ''}`} />
+                    <Heart className={`w-4 h-4 shrink-0 ${fav ? 'fill-current' : ''}`} />
                   </button>
 
                   <button
@@ -1294,27 +1518,23 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     onClick={handleShareEpisode}
                     title="Share episode"
                     aria-label="Share episode"
-                    className="w-10 h-10 rounded-xl bg-[#050A14]/40 hover:bg-[#101A30] border border-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center transition-all cursor-pointer shrink-0"
+                    className="w-10 h-10 rounded-xl bg-[#101A30] hover:bg-white/5 border border-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
                   >
-                    <Share2 className="w-4 h-4" />
+                    <Share2 className="w-4 h-4 shrink-0" />
                   </button>
 
                   <button
                     type="button"
                     onClick={handleMarkWatchedClick}
-                    title={
+                    title={watchedEpNumbers.includes(episode.episodeNumber) ? 'Watched' : 'Mark as watched'}
+                    aria-label={watchedEpNumbers.includes(episode.episodeNumber) ? 'Watched' : 'Mark as watched'}
+                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                       watchedEpNumbers.includes(episode.episodeNumber)
-                        ? 'Watched'
-                        : 'Mark as watched'
-                    }
-                    aria-label="Mark episode watched"
-                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-                      watchedEpNumbers.includes(episode.episodeNumber)
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400'
-                        : 'bg-[#050A14]/40 hover:bg-[#101A30] border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]/40 text-[#1E88FF]'
+                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
                     }`}
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
                   </button>
 
                   <button
@@ -1322,175 +1542,194 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     onClick={() => setReportOpen(true)}
                     title="Report broken link"
                     aria-label="Report broken link"
-                    className="w-10 h-10 rounded-xl bg-[#050A14]/40 hover:bg-[#101A30] border border-white/10 text-[#CBD5E1] hover:text-rose-400 flex items-center justify-center transition-all cursor-pointer shrink-0"
+                    className="w-10 h-10 rounded-xl bg-[#101A30] hover:bg-white/5 border border-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
                   >
-                    <Flag className="w-4 h-4" />
+                    <Flag className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
-              </div>
-            </div>
+              </section>
 
-            {/* 3. AUTHORIZED STREAMS SERVER CARD */}
-            <div>
-              <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
-                <div className="flex items-center gap-2 min-w-0">
+              {/* 3. AUTHORIZED STREAMS CARD */}
+              <section className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex items-center gap-2">
                   <Shield className="w-4 h-4 text-[#1E88FF] shrink-0" />
-                  <h2 className="text-sm font-bold text-white truncate">Authorized Streams</h2>
+                  <h2 className="text-sm font-bold text-white">Authorized Streams</h2>
                 </div>
 
-                <div className="space-y-3">
-                  {subServers.length > 0 && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xs font-semibold text-[#94A3B8] min-w-[44px] shrink-0">
-                        Sub :
-                      </span>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {subServers.map((s, idx) => {
-                          const isActive =
-                            effectiveCategory === 'sub' && safeServerIndex === idx;
-                          return (
-                            <button
-                              key={s.id || `sub-${idx}`}
-                              type="button"
-                              onClick={() => handleSwitchServer('sub', idx)}
-                              className={`h-10 px-4 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                                isActive
-                                  ? 'bg-[#1E88FF] hover:bg-[#1570d8] text-white'
-                                  : 'bg-[#101A30] hover:bg-[#16223e] border border-white/10 text-[#CBD5E1] hover:text-white'
-                              }`}
-                            >
-                              <Zap className="w-3.5 h-3.5 shrink-0" />
-                              <span>{s.name || s.sourceName || `Server ${idx + 1}`}</span>
-                            </button>
-                          );
-                        })}
-
-                        {effectiveCategory === 'sub' && hasAlternateFrame && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (currentTimeRef.current > 0) {
-                                pendingSeekRef.current = currentTimeRef.current;
-                              }
-                              setUseAlternateFrame(!useAlternateFrame);
-                              setPlayerLoading(true);
-                            }}
-                            className={`h-10 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 border ${
-                              useAlternateFrame
-                                ? 'bg-[#1E88FF]/20 border-[#1E88FF] text-[#1E88FF]'
-                                : 'bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white'
-                            }`}
-                          >
-                            Mirror 2
-                          </button>
-                        )}
+                {dubServers.length === 0 && subServers.length === 0 ? (
+                  <p className="text-xs text-[#94A3B8]">
+                    No stream servers available for this episode yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {dubServers.length > 0 && (
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="text-xs font-semibold text-[#94A3B8] w-10 shrink-0">
+                          Dub :
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                          {dubServers.map((s, idx) => {
+                            const isActive = effectiveCategory === 'dub' && safeServerIndex === idx;
+                            const label = s.name || s.sourceName || `server ${idx + 1}`;
+                            return (
+                              <button
+                                key={s.id || `dub-${idx}`}
+                                type="button"
+                                onClick={() => handleSwitchServer('dub', idx)}
+                                className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 border ${
+                                  isActive
+                                    ? 'bg-[#1E88FF] border-[#1E88FF] text-white shadow-lg shadow-[#1E88FF]/20'
+                                    : 'bg-[#101A30] border-white/10 text-[#CBD5E1] hover:border-white/25 hover:text-white'
+                                }`}
+                              >
+                                <Zap className="w-3.5 h-3.5 shrink-0" />
+                                <span>{label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {dubServers.length > 0 && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xs font-semibold text-[#94A3B8] min-w-[44px] shrink-0">
-                        Dub :
-                      </span>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {dubServers.map((s, idx) => {
-                          const isActive =
-                            effectiveCategory === 'dub' && safeServerIndex === idx;
-                          return (
-                            <button
-                              key={s.id || `dub-${idx}`}
-                              type="button"
-                              onClick={() => handleSwitchServer('dub', idx)}
-                              className={`h-10 px-4 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                                isActive
-                                  ? 'bg-[#1E88FF] hover:bg-[#1570d8] text-white'
-                                  : 'bg-[#101A30] hover:bg-[#16223e] border border-white/10 text-[#CBD5E1] hover:text-white'
-                              }`}
-                            >
-                              <Zap className="w-3.5 h-3.5 shrink-0" />
-                              <span>{s.name || s.sourceName || `Server ${idx + 1}`}</span>
-                            </button>
-                          );
-                        })}
-
-                        {effectiveCategory === 'dub' && hasAlternateFrame && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (currentTimeRef.current > 0) {
-                                pendingSeekRef.current = currentTimeRef.current;
-                              }
-                              setUseAlternateFrame(!useAlternateFrame);
-                              setPlayerLoading(true);
-                            }}
-                            className={`h-10 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 border ${
-                              useAlternateFrame
-                                ? 'bg-[#1E88FF]/20 border-[#1E88FF] text-[#1E88FF]'
-                                : 'bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white'
-                            }`}
-                          >
-                            Mirror 2
-                          </button>
-                        )}
+                    {subServers.length > 0 && (
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="text-xs font-semibold text-[#94A3B8] w-10 shrink-0">
+                          Sub :
+                        </span>
+                        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                          {subServers.map((s, idx) => {
+                            const isActive = effectiveCategory === 'sub' && safeServerIndex === idx;
+                            const label = s.name || s.sourceName || `server ${idx + 1}`;
+                            return (
+                              <button
+                                key={s.id || `sub-${idx}`}
+                                type="button"
+                                onClick={() => handleSwitchServer('sub', idx)}
+                                className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 border ${
+                                  isActive
+                                    ? 'bg-[#1E88FF] border-[#1E88FF] text-white shadow-lg shadow-[#1E88FF]/20'
+                                    : 'bg-[#101A30] border-white/10 text-[#CBD5E1] hover:border-white/25 hover:text-white'
+                                }`}
+                              >
+                                <Zap className="w-3.5 h-3.5 shrink-0" />
+                                <span>{label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {subServers.length === 0 && dubServers.length === 0 && (
-                    <p className="text-xs text-[#94A3B8]">
-                      No stream servers available for this episode yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
+                    {hasAlternateFrame && (
+                      <div className="pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (currentTimeRef.current > 0) {
+                              pendingSeekRef.current = currentTimeRef.current;
+                            }
+                            setUseAlternateFrame(!useAlternateFrame);
+                            setPlayerLoading(true);
+                          }}
+                          className={`h-9 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors duration-150 cursor-pointer shrink-0 border ${
+                            useAlternateFrame
+                              ? 'bg-[#1E88FF]/15 border-[#1E88FF] text-[#1E88FF]'
+                              : 'bg-[#101A30] border-white/10 text-[#CBD5E1] hover:border-white/25 hover:text-white'
+                          }`}
+                        >
+                          Alternate Mirror
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
 
-            {/* MOBILE / THEATER EPISODE LIST (Shown below player controls on <1024px or in Theater Mode) */}
-            <div className={theaterMode ? 'block' : 'block lg:hidden'}>
-              <EpisodeListSection
-                allEpisodes={displayedListEpisodes}
-                currentEpisodeNumber={episode.episodeNumber}
-                watchedEpNumbers={watchedEpNumbers}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                episodeSearch={episodeSearch}
-                setEpisodeSearch={setEpisodeSearch}
-                seasonsAvailable={seasonsAvailable}
-                selectedSeasonFilter={selectedSeasonFilter}
-                setSelectedSeasonFilter={setSelectedSeasonFilter}
-                episodeRanges={episodeRanges}
-                selectedRangeIndex={selectedRangeIndex}
-                setSelectedRangeIndex={setSelectedRangeIndex}
-                onSelectEpisode={(ep) => {
-                  const s = ep.seasonNumber || ep.season || 1;
-                  navigate(`/anime/${anime.slug}/episode/${ep.episodeNumber}?season=${s}`);
-                }}
-                activeRef={activeEpisodeItemRef}
-              />
-            </div>
-
-            {/* 5. COMMENTS SECTION (Lazy Loaded via CommentSection IntersectionObserver) */}
-            <div className="pt-1">
-              <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-6">
-                <CommentSection
-                  targetType="episode"
-                  animeId={anime.id || animeSlug}
-                  animeSlug={anime.slug}
-                  animeTitle={anime.title}
-                  episodeId={episode.id}
-                  episodeNumber={episode.episodeNumber}
-                  onShowMessage={onShowMessage || (() => {})}
-                  navigate={navigate}
+              {/* MOBILE / THEATER EPISODE LIST */}
+              <div className={theaterMode ? 'block' : 'block lg:hidden'}>
+                <EpisodeListSection
+                  totalEpisodeCount={allEpisodes.length}
+                  allEpisodes={displayedListEpisodes}
+                  currentEpisodeNumber={episode.episodeNumber}
+                  watchedEpNumbers={watchedEpNumbers}
+                  viewMode={viewMode}
+                  setViewMode={setViewMode}
+                  episodeSearch={episodeSearch}
+                  setEpisodeSearch={setEpisodeSearch}
+                  seasonsAvailable={seasonsAvailable}
+                  selectedSeasonFilter={selectedSeasonFilter}
+                  setSelectedSeasonFilter={setSelectedSeasonFilter}
+                  episodeRanges={episodeRanges}
+                  selectedRangeIndex={selectedRangeIndex}
+                  setSelectedRangeIndex={setSelectedRangeIndex}
+                  fallbackPoster={anime.poster}
+                  onSelectEpisode={(ep) => {
+                    const s = ep.seasonNumber || ep.season || 1;
+                    navigate(`/anime/${anime.slug}/episode/${ep.episodeNumber}?season=${s}`);
+                  }}
+                  activeRef={activeEpisodeItemRef}
                 />
               </div>
+
+              {/* 5. COMMENTS SECTION */}
+              <div className="pt-4">
+                <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-6">
+                  <CommentSection
+                    targetType="episode"
+                    animeId={anime.id || animeSlug}
+                    animeSlug={anime.slug}
+                    animeTitle={anime.title}
+                    episodeId={episode.id}
+                    episodeNumber={episode.episodeNumber}
+                    onShowMessage={onShowMessage || (() => {})}
+                    navigate={navigate}
+                  />
+                </div>
+              </div>
+
+              {/* 6. RELATED SERIES */}
+              {relatedSeries.length > 0 && (
+                <section className="pt-4 space-y-2.5 sm:space-y-3">
+                  <div className="h-8 min-h-[32px] flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Sparkles className="w-[18px] h-[18px] text-[#94A3B8] shrink-0" />
+                      <h2 className="text-[16px] font-bold text-white tracking-tight truncate leading-none">
+                        Related Series
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/browse')}
+                      className="text-[13px] font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+                    >
+                      <span>View All</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div
+                    className={`grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-[10px] sm:gap-3 ${
+                      theaterMode ? 'xl:grid-cols-6 2xl:grid-cols-7' : 'xl:grid-cols-6'
+                    }`}
+                  >
+                    {relatedSeries.map((rel) => (
+                      <AnimeCard
+                        key={rel.id || rel.slug}
+                        anime={rel}
+                        navigate={navigate}
+                        onShowMessage={onShowMessage}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           </div>
 
-          {/* 6. RIGHT COLUMN: STICKY EPISODE LIST (Desktop default mode, 360px wide, max-h calc(100dvh - 120px)) */}
+          {/* 6. RIGHT COLUMN: STICKY EPISODE LIST ON DESKTOP (360px wide) */}
           {!theaterMode && (
-            <div className="hidden lg:block sticky top-20 max-h-[calc(100dvh-120px)] overflow-y-auto no-scrollbar">
+            <div className="watch-non-player-ui hidden lg:block sticky top-20 max-h-[calc(100dvh-120px)] overflow-y-auto no-scrollbar">
               <EpisodeListSection
+                totalEpisodeCount={allEpisodes.length}
                 allEpisodes={displayedListEpisodes}
                 currentEpisodeNumber={episode.episodeNumber}
                 watchedEpNumbers={watchedEpNumbers}
@@ -1504,6 +1743,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 episodeRanges={episodeRanges}
                 selectedRangeIndex={selectedRangeIndex}
                 setSelectedRangeIndex={setSelectedRangeIndex}
+                fallbackPoster={anime.poster}
                 onSelectEpisode={(ep) => {
                   const s = ep.seasonNumber || ep.season || 1;
                   navigate(`/anime/${anime.slug}/episode/${ep.episodeNumber}?season=${s}`);
@@ -1517,67 +1757,133 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
       {/* DOWNLOAD BOTTOM SHEET MODAL */}
       {downloadSheetOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="w-full sm:max-w-lg bg-[#0B1324] border-t sm:border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 space-y-5 shadow-2xl max-h-[85dvh] overflow-y-auto pb-[calc(24px+env(safe-area-inset-bottom))]">
-            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setDownloadSheetOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-lg bg-[#0B1324] border-t sm:border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl max-h-[85dvh] overflow-y-auto pb-[calc(20px+env(safe-area-inset-bottom))]"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <div className="min-w-0 pr-3">
-                <h3 className="text-base font-bold text-white truncate">Download EP {episode.episodeNumber}</h3>
+                <h3 className="text-base font-bold text-white truncate">
+                  Download EP {episode.episodeNumber}
+                </h3>
                 <p className="text-xs text-[#94A3B8] truncate">{anime.title}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setDownloadSheetOpen(false)}
                 aria-label="Close downloads"
-                className="w-8 h-8 rounded-xl bg-[#101A30] hover:bg-white/10 text-white flex items-center justify-center cursor-pointer shrink-0"
+                className="w-9 h-9 rounded-xl bg-[#101A30] hover:bg-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center cursor-pointer transition-colors duration-150 shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {downloadMirrors.length === 0 ? (
+            {formattedDownloadRows.length === 0 && !isCurrentStreamAbyss ? (
               <div className="py-8 text-center space-y-2">
-                <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+                <AlertTriangle className="w-8 h-8 text-[#94A3B8] mx-auto" />
                 <p className="text-sm font-semibold text-white">No Direct Download Links</p>
                 <p className="text-xs text-[#94A3B8]">
                   Downloads for this episode have not been added yet.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {downloadMirrors.map((m, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      executeDownloadRedirect(
-                        m.url,
-                        `${anime.title} - Episode ${episode.episodeNumber} [${m.quality}]`,
-                        onShowMessage
-                      );
-                      setDownloadSheetOpen(false);
-                    }}
-                    className="w-full p-3.5 rounded-xl bg-[#101A30] hover:bg-[#1E88FF]/15 border border-white/10 hover:border-[#1E88FF]/50 text-left transition-all flex items-center justify-between gap-3 group cursor-pointer"
-                  >
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-white group-hover:text-[#1E88FF]">
-                          {m.quality}
-                        </span>
-                        {m.size && (
-                          <span className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-[#94A3B8]">
-                            {m.size}
-                          </span>
-                        )}
+              <div className="space-y-3">
+                {/* 1. Direct File / Cloud Download Mirrors */}
+                {directDownloadRows.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                      Direct Download Links
+                    </p>
+                    {directDownloadRows.map((row, idx) => (
+                      <button
+                        key={`direct-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          executeDownloadRedirect(
+                            row.mirror.url,
+                            `${anime.title} - Episode ${episode.episodeNumber} [${row.title}]`,
+                            onShowMessage
+                          );
+                          setDownloadSheetOpen(false);
+                        }}
+                        className="w-full p-3 rounded-xl bg-[#101A30] hover:bg-[#1E88FF]/15 border border-white/10 hover:border-[#1E88FF]/50 text-left transition-colors duration-150 flex items-center justify-between gap-3 group cursor-pointer"
+                      >
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <p className="text-[14px] font-semibold text-white group-hover:text-[#1E88FF] truncate transition-colors duration-150">
+                            {row.title}
+                          </p>
+                          <p className="text-[12px] text-[#94A3B8] truncate">
+                            {row.meta}
+                          </p>
+                        </div>
+                        <div className="w-11 h-11 rounded-xl bg-[#1E88FF] text-white flex items-center justify-center shrink-0">
+                          <Download className="w-4 h-4" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 2. Abyss / In-Player Built-in Download Section */}
+                {(isCurrentStreamAbyss || embedDownloadRows.length > 0) && (
+                  <div className="space-y-2.5">
+                    <div className="p-3.5 rounded-xl bg-[#1E88FF]/10 border border-[#1E88FF]/30 space-y-2.5">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-[#1E88FF]/20 text-[#00CFFF] flex items-center justify-center shrink-0 mt-0.5">
+                          <Play className="w-4 h-4 fill-current" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <p className="text-xs sm:text-sm font-semibold text-white">
+                            Abyss Player Built-in Download
+                          </p>
+                          <p className="text-[11px] text-[#CBD5E1] leading-relaxed">
+                            Browser security prevents external buttons from auto-clicking inside an embedded player. Use the ⬇ Download icon inside the video player or open the player directly.
+                          </p>
+                        </div>
                       </div>
-                      <span className="text-[11px] text-[#94A3B8] block truncate">
-                        Host: {m.host || 'Direct Mirror'}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={handleJumpToPlayerDownload}
+                        className="w-full h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors duration-150 cursor-pointer"
+                      >
+                        <Download className="w-4 h-4 shrink-0" />
+                        <span>Use Built-in Player Download (⬇)</span>
+                      </button>
                     </div>
-                    <div className="w-9 h-9 rounded-xl bg-[#1E88FF] text-white flex items-center justify-center shrink-0 shadow-md">
-                      <Download className="w-4 h-4" />
-                    </div>
-                  </button>
-                ))}
+
+                    {embedDownloadRows.map((row, idx) => (
+                      <button
+                        key={`embed-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          executeDownloadRedirect(
+                            row.mirror.url,
+                            `${anime.title} - Episode ${episode.episodeNumber} [${row.title}]`,
+                            onShowMessage
+                          );
+                          setDownloadSheetOpen(false);
+                        }}
+                        className="w-full p-3 rounded-xl bg-[#101A30] hover:bg-white/[0.07] border border-white/10 hover:border-white/25 text-left transition-colors duration-150 flex items-center justify-between gap-3 group cursor-pointer"
+                      >
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <p className="text-[14px] font-semibold text-white group-hover:text-[#00CFFF] truncate transition-colors duration-150">
+                            {row.title} · Open Player
+                          </p>
+                          <p className="text-[12px] text-[#94A3B8] truncate">
+                            {row.meta} · Tap ⬇ inside player
+                          </p>
+                        </div>
+                        <div className="w-11 h-11 rounded-xl bg-white/10 group-hover:bg-[#1E88FF] text-white flex items-center justify-center shrink-0 transition-colors">
+                          <ExternalLink className="w-4 h-4" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1612,6 +1918,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
 /* REUSABLE EPISODE LIST COMPONENT */
 interface EpisodeListSectionProps {
+  totalEpisodeCount: number;
   allEpisodes: Episode[];
   currentEpisodeNumber: number;
   watchedEpNumbers: number[];
@@ -1625,11 +1932,13 @@ interface EpisodeListSectionProps {
   episodeRanges: { start: number; end: number; label: string }[];
   selectedRangeIndex: number;
   setSelectedRangeIndex: (i: number) => void;
+  fallbackPoster?: string;
   onSelectEpisode: (ep: Episode) => void;
-  activeRef: React.RefObject<HTMLDivElement | null>;
+  activeRef: React.RefObject<HTMLElement | null>;
 }
 
 const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
+  totalEpisodeCount,
   allEpisodes,
   currentEpisodeNumber,
   watchedEpNumbers,
@@ -1643,6 +1952,7 @@ const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
   episodeRanges,
   selectedRangeIndex,
   setSelectedRangeIndex,
+  fallbackPoster,
   onSelectEpisode,
   activeRef,
 }) => {
@@ -1656,88 +1966,98 @@ const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
   const rangeOptions = useMemo(() => {
     return episodeRanges.map((r, idx) => ({
       value: String(idx),
-      label: `EP ${r.label}`,
+      label: r.label,
     }));
   }, [episodeRanges]);
 
+  const showControlsRow = true;
+
   return (
-    <div className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 space-y-3">
-      {/* Header & Controls */}
-      <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/5">
+    <section className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3.5">
+      {/* Header: Layers icon + EPISODES (N) + List/Grid toggle */}
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Layers className="w-4 h-4 text-[#1E88FF] shrink-0" />
-          <h3 className="text-xs font-bold text-white uppercase tracking-wider truncate">Episodes</h3>
-          <span className="text-xs text-[#94A3B8] shrink-0">({allEpisodes.length})</span>
+          <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white truncate">
+            EPISODES <span className="text-[#94A3B8] font-semibold">({allEpisodes.length})</span>
+          </h3>
         </div>
 
-        {/* View mode toggle */}
         <div className="flex items-center gap-1 bg-[#101A30] p-1 rounded-xl border border-white/10 shrink-0">
           <button
             type="button"
             onClick={() => setViewMode('list')}
-            className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-              viewMode === 'list' ? 'bg-[#1E88FF] text-white shadow' : 'text-[#94A3B8]'
+            aria-pressed={viewMode === 'list'}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer ${
+              viewMode === 'list' ? 'bg-[#1E88FF] text-white' : 'text-[#94A3B8] hover:text-white'
             }`}
             title="List View"
             aria-label="List view"
           >
-            <List className="w-3.5 h-3.5" />
+            <List className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={() => setViewMode('grid')}
-            className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-              viewMode === 'grid' ? 'bg-[#1E88FF] text-white shadow' : 'text-[#94A3B8]'
+            aria-pressed={viewMode === 'grid'}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer ${
+              viewMode === 'grid' ? 'bg-[#1E88FF] text-white' : 'text-[#94A3B8] hover:text-white'
             }`}
             title="Grid View"
             aria-label="Grid view"
           >
-            <LayoutGrid className="w-3.5 h-3.5" />
+            <LayoutGrid className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Season / Range / Search row (Custom AdminSelect - no native select) */}
-      <div className="flex flex-wrap items-center gap-2">
-        {seasonsAvailable.length > 1 && (
-          <div className="w-32 shrink-0">
-            <AdminSelect
-              value={String(selectedSeasonFilter)}
-              onChange={(val) => setSelectedSeasonFilter(val === 'all' ? 'all' : Number(val))}
-              options={seasonOptions}
-              sheetTitle="Select Season"
-              buttonClassName="h-8 text-xs bg-[#101A30]"
+      {/* Search + Season / Range controls */}
+      {showControlsRow && (
+        <div className="flex flex-wrap items-center gap-2">
+          {seasonsAvailable.length > 1 && (
+            <div className="w-32 shrink-0">
+              <AdminSelect
+                value={String(selectedSeasonFilter)}
+                onChange={(val) => setSelectedSeasonFilter(val === 'all' ? 'all' : Number(val))}
+                options={seasonOptions}
+                sheetTitle="Select Season"
+                buttonClassName="h-10 text-xs bg-[#050A14]"
+              />
+            </div>
+          )}
+
+          {totalEpisodeCount > 50 && episodeRanges.length > 1 && (
+            <div className="w-28 shrink-0">
+              <AdminSelect
+                value={String(selectedRangeIndex)}
+                onChange={(val) => setSelectedRangeIndex(Number(val))}
+                options={rangeOptions}
+                sheetTitle="Episode Range"
+                buttonClassName="h-10 text-xs bg-[#050A14]"
+              />
+            </div>
+          )}
+
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search ep..."
+              value={episodeSearch}
+              onChange={(e) => setEpisodeSearch(e.target.value)}
+              className="w-full h-10 pl-9 pr-3 rounded-xl bg-[#050A14] border border-white/10 text-xs text-white placeholder-[#94A3B8] focus:outline-none focus:border-[#1E88FF]"
             />
           </div>
-        )}
-
-        {episodeRanges.length > 0 && (
-          <div className="w-28 shrink-0">
-            <AdminSelect
-              value={String(selectedRangeIndex)}
-              onChange={(val) => setSelectedRangeIndex(Number(val))}
-              options={rangeOptions}
-              sheetTitle="Episode Range"
-              buttonClassName="h-8 text-xs bg-[#101A30]"
-            />
-          </div>
-        )}
-
-        <div className="relative flex-1 min-w-[110px]">
-          <Search className="w-3 h-3 text-[#94A3B8] absolute left-2.5 top-2.5 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search ep..."
-            value={episodeSearch}
-            onChange={(e) => setEpisodeSearch(e.target.value)}
-            className="w-full h-8 pl-7 pr-2 rounded-lg bg-[#101A30] border border-white/10 text-xs text-white placeholder-[#94A3B8] focus:outline-none focus:border-[#1E88FF]"
-          />
         </div>
-      </div>
+      )}
 
-      {/* Episode Tiles or List Items */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-5 gap-2 max-h-[420px] overflow-y-auto no-scrollbar p-0.5">
+      {/* Episode List (Default, matching screenshot) or 6-col Grid */}
+      {allEpisodes.length === 0 ? (
+        <div className="py-6 text-center text-xs text-[#94A3B8]">
+          No episodes matched your filter.
+        </div>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-6 gap-1.5 sm:gap-2">
           {allEpisodes.map((ep) => {
             const isCurrent = Number(ep.episodeNumber) === Number(currentEpisodeNumber);
             const isWatched = watchedEpNumbers.includes(ep.episodeNumber);
@@ -1749,79 +2069,92 @@ const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
                 type="button"
                 onClick={() => onSelectEpisode(ep)}
                 ref={isCurrent ? (activeRef as any) : null}
-                className={`h-11 rounded-xl flex items-center justify-center font-bold text-xs transition-all cursor-pointer relative ${
+                aria-label={`Episode ${ep.episodeNumber}${isCurrent ? ' (Playing)' : ''}`}
+                className={`h-12 w-full rounded-xl flex items-center justify-center font-semibold text-xs transition-colors duration-150 cursor-pointer relative ${
                   isCurrent
-                    ? 'bg-[#1E88FF] text-white border-2 border-white'
+                    ? 'border-2 border-[#1E88FF] bg-[#1E88FF]/15 text-white'
                     : isWatched
-                    ? 'bg-[#101A30] border border-emerald-500/30 text-emerald-400'
+                    ? 'bg-[#050A14] border border-white/10 text-[#94A3B8] hover:text-white'
                     : isUpcoming
-                    ? 'border border-dashed border-amber-500/30 text-amber-300 bg-amber-500/5'
-                    : 'bg-[#101A30] hover:bg-[#16223e] border border-white/5 text-white'
+                    ? 'border border-dashed border-white/20 text-[#94A3B8] bg-[#050A14]/60'
+                    : 'bg-[#101A30] hover:border-white/25 border border-white/10 text-white'
                 }`}
               >
-                <span>{ep.episodeNumber}</span>
-                {isWatched && !isCurrent && (
-                  <Check className="w-2.5 h-2.5 text-emerald-400 absolute bottom-1 right-1" />
+                <span className="tabular-nums">{ep.episodeNumber}</span>
+                {isCurrent && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-[#1E88FF] absolute top-1.5 right-1.5"
+                    aria-hidden="true"
+                  />
                 )}
-                {isUpcoming && (
-                  <Lock className="w-2.5 h-2.5 text-amber-400 absolute bottom-1 right-1" />
+                {isWatched && !isCurrent && (
+                  <Check className="w-3 h-3 text-[#94A3B8] absolute bottom-1 right-1" />
+                )}
+                {isUpcoming && !isCurrent && !isWatched && (
+                  <Lock className="w-2.5 h-2.5 text-[#94A3B8] absolute bottom-1 right-1" />
                 )}
               </button>
             );
           })}
         </div>
       ) : (
-        <div className="space-y-1.5 max-h-[420px] overflow-y-auto no-scrollbar p-0.5">
+        <div className="space-y-2">
           {allEpisodes.map((ep) => {
             const isCurrent = Number(ep.episodeNumber) === Number(currentEpisodeNumber);
             const isWatched = watchedEpNumbers.includes(ep.episodeNumber);
-            const isUpcoming = ep.status === 'upcoming' || Boolean(ep.isUpcoming);
 
             return (
               <div
                 key={ep.id || ep.episodeNumber}
                 ref={isCurrent ? (activeRef as any) : null}
                 onClick={() => onSelectEpisode(ep)}
-                className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectEpisode(ep);
+                  }
+                }}
+                className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors duration-150 cursor-pointer ${
                   isCurrent
-                    ? 'bg-[#1E88FF]/15 border-[#1E88FF] shadow-sm'
-                    : 'bg-[#101A30] hover:bg-[#16223e] border-white/5 hover:border-white/10'
+                    ? 'bg-[#1E88FF]/10 border-[#1E88FF]'
+                    : 'bg-[#101A30]/70 hover:bg-[#101A30] border-white/10'
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <span
-                    className={`text-xs font-bold px-2 py-1 rounded-lg shrink-0 ${
-                      isCurrent ? 'bg-[#1E88FF] text-white' : 'bg-white/5 text-[#94A3B8]'
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 tabular-nums ${
+                      isCurrent
+                        ? 'bg-[#1E88FF] text-white'
+                        : 'bg-white/10 text-[#CBD5E1]'
                     }`}
                   >
                     EP {ep.episodeNumber}
                   </span>
-                  <div className="min-w-0">
-                    <p className={`text-xs font-semibold truncate ${isCurrent ? 'text-white' : 'text-[#F8FAFC]'}`}>
+
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="text-xs sm:text-sm font-semibold text-white truncate">
                       {ep.title || `Episode ${ep.episodeNumber}`}
                     </p>
-                    {ep.duration && (
-                      <span className="text-[10px] text-[#94A3B8]">{ep.duration}m</span>
-                    )}
+                    <p className="text-[11px] text-[#94A3B8] truncate">
+                      {formatDurationMinutes(ep.duration)}
+                    </p>
                   </div>
                 </div>
 
-                <div className="shrink-0 flex items-center gap-1.5">
-                  {isCurrent ? (
-                    <span className="px-2 py-0.5 rounded-md bg-[#1E88FF] text-white text-[10px] font-bold">
-                      Playing
-                    </span>
-                  ) : isWatched ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : isUpcoming ? (
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
-                  ) : null}
-                </div>
+                {isCurrent ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-[#1E88FF] text-white text-[11px] font-bold shrink-0">
+                    Playing
+                  </span>
+                ) : isWatched ? (
+                  <Check className="w-4 h-4 text-[#1E88FF] shrink-0" />
+                ) : null}
               </div>
             );
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 };

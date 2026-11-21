@@ -335,9 +335,8 @@ export const AdminReportsView: React.FC<AdminReportsViewProps> = ({
                           label: 'Open watch page',
                           icon: ExternalLink,
                           onClick: () =>
-                            window.open(
-                              `/watch/${item.animeId}/${item.episodeId || item.episodeNumber}`,
-                              '_blank'
+                            navigate(
+                              `/watch/${item.animeId}/${item.episodeId || item.episodeNumber}`
                             ),
                         },
                         ...(!isResolved

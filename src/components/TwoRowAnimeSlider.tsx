@@ -108,17 +108,17 @@ export const TwoRowAnimeSlider: React.FC<TwoRowAnimeSliderProps> = ({
   return (
     <section className="space-y-3">
       {/* Section Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {icon}
-          <h2 className="text-base sm:text-lg font-black text-[#F5F9FF] tracking-tight">{title}</h2>
+      <div className="h-8 min-h-[32px] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon && <span className="text-[#94A3B8] shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]">{icon}</span>}
+          <h2 className="text-[16px] font-bold text-white tracking-tight truncate">{title}</h2>
         </div>
 
         {viewAllPath && (
           <button
             type="button"
             onClick={() => navigate(viewAllPath)}
-            className="text-xs font-bold text-[#00A8FF] hover:text-[#00D9FF] flex items-center gap-0.5 transition-colors"
+            className="text-[13px] font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity whitespace-nowrap shrink-0"
           >
             <span>View All</span>
             <ChevronRight className="w-3.5 h-3.5" />
@@ -148,14 +148,14 @@ export const TwoRowAnimeSlider: React.FC<TwoRowAnimeSliderProps> = ({
             onMouseUp={handleMouseUpOrLeaveR1}
             onMouseLeave={handleMouseUpOrLeaveR1}
             style={{ touchAction: 'pan-y' }}
-            className={`flex items-center gap-2.5 sm:gap-3.5 overflow-x-auto no-scrollbar scroll-smooth pb-1 cursor-grab active:cursor-grabbing ${
+            className={`flex items-start gap-[10px] overflow-x-auto no-scrollbar snap-x snap-proximity scroll-smooth pb-1 px-4 sm:px-0 scroll-pl-4 sm:scroll-pl-0 cursor-grab active:cursor-grabbing ${
               isDraggingR1 ? 'scroll-auto' : ''
             }`}
           >
             {row1Items.map(({ anime, origIndex }) => (
               <div
                 key={`slider-r1-${anime.id || anime.slug}-${origIndex}`}
-                className="w-[105px] sm:w-[125px] md:w-[140px] lg:w-[155px] shrink-0 pointer-events-auto"
+                className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[132px] lg:w-[160px] snap-start pointer-events-auto"
               >
                 <AnimeCard
                   anime={anime}
@@ -199,14 +199,14 @@ export const TwoRowAnimeSlider: React.FC<TwoRowAnimeSliderProps> = ({
               onMouseUp={handleMouseUpOrLeaveR2}
               onMouseLeave={handleMouseUpOrLeaveR2}
               style={{ touchAction: 'pan-y' }}
-              className={`flex items-center gap-2.5 sm:gap-3.5 overflow-x-auto no-scrollbar scroll-smooth pb-1 cursor-grab active:cursor-grabbing ${
+              className={`flex items-start gap-[10px] overflow-x-auto no-scrollbar snap-x snap-proximity scroll-smooth pb-1 px-4 sm:px-0 scroll-pl-4 sm:scroll-pl-0 cursor-grab active:cursor-grabbing ${
                 isDraggingR2 ? 'scroll-auto' : ''
               }`}
             >
               {row2Items.map(({ anime, origIndex }) => (
                 <div
                   key={`slider-r2-${anime.id || anime.slug}-${origIndex}`}
-                  className="w-[105px] sm:w-[125px] md:w-[140px] lg:w-[155px] shrink-0 pointer-events-auto"
+                  className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[132px] lg:w-[160px] snap-start pointer-events-auto"
                 >
                   <AnimeCard
                     anime={anime}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { Anime } from '../types/anime';
 import { Star, Play, Heart, Bookmark, Sparkles } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -10,9 +10,12 @@ import {
   isFavoriteCached,
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
-import { cleanAnimeTitle } from '../lib/firestore/anime';
+import { cleanAnimeTitle, getAnimeUploadTimestamp } from '../lib/firestore/anime';
+import { formatCardAudioLabel } from '../lib/format-meta';
 import {
   getOptimizedImageUrl,
+  getOptimizedPosterSrcSet,
+  POSTER_IMAGE_SIZES,
   FALLBACK_ANIME_POSTER,
   isImagePreloaded,
   markImagePreloaded,
@@ -24,6 +27,7 @@ interface AnimeCardProps {
   showRankingBadge?: number;
   onShowMessage?: (msg: string) => void;
   progressPercentage?: number;
+  priority?: boolean;
 }
 
 const AnimeCardComponent: React.FC<AnimeCardProps> = ({
@@ -31,12 +35,15 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
   navigate,
   onShowMessage,
   progressPercentage,
+  priority = false,
 }) => {
   const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const optimizedPoster = getOptimizedImageUrl(anime.poster, { width: 340, fallbackType: 'poster' });
+  const optimizedPoster = getOptimizedImageUrl(anime.poster, { width: 240, fallbackType: 'poster' });
+  const posterSrcSet = getOptimizedPosterSrcSet(anime.poster);
   const [imageLoaded, setImageLoaded] = useState(() => isImagePreloaded(optimizedPoster));
   const [isHovered, setIsHovered] = useState(false);
   const [popoverAlign, setPopoverAlign] = useState<'left' | 'right'>('right');
@@ -48,8 +55,9 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
     return getAnimeWatchlistStatusCached(anime.id || anime.slug);
   });
 
-  useEffect(() => {
-    if (isImagePreloaded(optimizedPoster)) {
+  useLayoutEffect(() => {
+    if (isImagePreloaded(optimizedPoster) || (imgRef.current?.complete && imgRef.current.naturalWidth > 0)) {
+      markImagePreloaded(optimizedPoster);
       setImageLoaded(true);
     } else {
       setImageLoaded(false);
@@ -160,39 +168,10 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
   const animeType = anime.type || 'TV';
   const rawEpisodes = anime.totalEpisodes || (anime as any).episodesCount || (anime.type === 'Movie' ? 'Movie' : '12');
   const epFormatted = typeof rawEpisodes === 'number' ? `EP ${rawEpisodes}` : String(rawEpisodes).startsWith('EP') ? rawEpisodes : `EP ${rawEpisodes}`;
-
-  // Audio label calculation
-  const rawAudio = (anime.audioLanguage || '').toLowerCase();
-  const hasSub = (anime as any).hasSub !== false;
-  const hasDub = Boolean((anime as any).hasDub || rawAudio.includes('dub') || rawAudio.includes('english'));
-  const hasHindi = Boolean(
-    (anime as any).hasHindiDub ||
-    rawAudio.includes('hindi') ||
-    anime.languages?.some((l) => l.toLowerCase().includes('hindi'))
-  );
-  const displayLanguage = (() => {
-    if (anime.audioLanguage && anime.audioLanguage.trim()) {
-      const trimmed = anime.audioLanguage.trim();
-      if (trimmed.toLowerCase() === 'hindi') return 'Hindi Dub';
-      if (trimmed.length > 18) {
-        if (trimmed.toLowerCase().includes('hindi')) return 'Hindi Dub';
-        if (trimmed.toLowerCase().includes('multi')) return 'Multi Audio';
-      }
-      return trimmed;
-    }
-    if ((anime as any).language && typeof (anime as any).language === 'string' && (anime as any).language.trim()) {
-      const trimmed = (anime as any).language.trim();
-      if (trimmed.toLowerCase() === 'hindi') return 'Hindi Dub';
-      return trimmed;
-    }
-    if (anime.audioTags && anime.audioTags.length > 0) {
-      return anime.audioTags[0];
-    }
-    if (hasHindi) return 'Hindi Dub';
-    if (hasDub && hasSub) return 'Sub / Dub';
-    if (hasDub) return 'Dub';
-    return 'Sub';
-  })();
+  const displayLanguage = formatCardAudioLabel(anime);
+  const cleanTitle = cleanAnimeTitle(anime.title);
+  const uploadTs = getAnimeUploadTimestamp(anime);
+  const isNewWithin7Days = uploadTs > 0 && Date.now() - uploadTs <= 7 * 24 * 60 * 60 * 1000;
 
   return (
     <div
@@ -206,24 +185,26 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
       }}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}
-      className="group relative cursor-pointer flex flex-col select-none transition-transform duration-200 lg:hover:scale-[1.04] will-change-transform"
+      className="group relative cursor-pointer flex flex-col select-none transition-transform duration-150 lg:hover:scale-[1.03] will-change-transform min-w-0"
     >
-      {/* Poster Image Container - 2:3 Aspect Ratio */}
-      <div className="relative aspect-[2/3] w-full bg-[#0B1324] rounded-xl sm:rounded-2xl overflow-hidden border border-white/5 group-hover:border-[#1E88FF]/50 transition-all duration-200 shadow-md">
-        
-        {/* Shimmer loading skeleton */}
+      {/* Poster Image Container - 2:3 Aspect Ratio, 10px radius */}
+      <div className="relative aspect-[2/3] w-full bg-[#0B1324] rounded-[10px] overflow-hidden border border-white/10 group-hover:border-[#1E88FF]/60 transition-colors duration-150">
         {!imageLoaded && (
-          <div className="absolute inset-0 bg-[#0B1324] animate-pulse flex items-center justify-center">
-            <div className="w-7 h-7 rounded-full border-2 border-white/10 border-t-[#1E88FF] animate-spin opacity-50" />
-          </div>
+          <div className="absolute inset-0 bg-[#0B1324] animate-pulse" />
         )}
 
-        {/* Poster Image */}
+        {/* Poster Image (<= 240px width, lazy, async) */}
         {anime.poster ? (
           <img
+            ref={imgRef}
             src={optimizedPoster}
-            alt={anime.title}
+            srcSet={posterSrcSet}
+            sizes={posterSrcSet ? POSTER_IMAGE_SIZES : undefined}
+            alt={cleanTitle}
+            width={160}
+            height={240}
             loading="lazy"
+            fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
             referrerPolicy="no-referrer"
             draggable={false}
@@ -232,11 +213,10 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
               markImagePreloaded(optimizedPoster);
               setImageLoaded(true);
             }}
-            className={`w-full h-full object-cover transition-opacity duration-200 select-none pointer-events-none ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
+            className="relative w-full h-full object-cover select-none pointer-events-none"
             onError={(e) => {
               const target = e.target as HTMLImageElement;
+              target.srcset = '';
               if (target.src !== FALLBACK_ANIME_POSTER) {
                 target.src = FALLBACK_ANIME_POSTER;
                 setImageLoaded(true);
@@ -244,49 +224,46 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#64748B] bg-[#050A14] font-bold text-[10px] tracking-widest uppercase">
+          <div className="w-full h-full flex items-center justify-center text-[#94A3B8] bg-[#0B1324] font-bold text-[10px] tracking-widest uppercase">
             ZYNOX
           </div>
         )}
 
-        {/* Center Hover Play Icon */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-10 h-10 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200">
-            <Play className="w-4 h-4 fill-white ml-0.5" />
-          </div>
-        </div>
+        {/* Minimal 8px NEW dot top-right ONLY for items added within 7 days */}
+        {isNewWithin7Days && (
+          <span
+            aria-label="New release"
+            title="New"
+            className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1E88FF] ring-2 ring-[#050A14] pointer-events-none"
+          />
+        )}
 
-        {/* Progress Bar (if provided in Continue Watching) */}
+        {/* Progress Bar (only when provided) */}
         {progressPercentage !== undefined && progressPercentage > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60 overflow-hidden">
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/60 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-[#1E88FF] to-[#00CFFF]"
+              className="h-full bg-[#1E88FF]"
               style={{ width: `${Math.min(100, Math.max(5, progressPercentage))}%` }}
             />
           </div>
         )}
       </div>
 
-      {/* Content BELOW the poster: Title + Anime Language & Rating */}
-      <div className="pt-1.5 min-w-0 space-y-0.5">
+      {/* ONLY 2 compact lines below poster: Line 1 = 12px/600 lh 16px, Line 2 = 11px muted "Hindi Dub · ★ 8.5" */}
+      <div className="mt-[6px] min-w-0 space-y-0.5">
         <h3
-          title={cleanAnimeTitle(anime.title)}
-          className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight"
+          title={cleanTitle}
+          className="text-[12px] font-semibold leading-[16px] text-white truncate group-hover:text-[#1E88FF] transition-colors duration-150"
         >
-          {cleanAnimeTitle(anime.title)}
+          {cleanTitle}
         </h3>
 
-        {/* Anime Title ke niche: Language & Rating */}
-        <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8] leading-none min-w-0">
-          <span className="text-[#00CFFF] font-semibold truncate">
-            {displayLanguage}
-          </span>
-          <span className="text-white/30 shrink-0">·</span>
-          <span className="inline-flex items-center gap-0.5 text-amber-400 font-bold shrink-0">
-            <Star className="w-3 h-3 fill-amber-400" />
-            <span>{ratingValue}</span>
-          </span>
-        </div>
+        <p className="text-[11px] leading-[15px] text-[#94A3B8] font-normal truncate flex items-center gap-1 min-w-0">
+          <span className="truncate">{displayLanguage}</span>
+          <span className="shrink-0">·</span>
+          <Star className="w-2.5 h-2.5 text-[#F59E0B] fill-[#F59E0B] shrink-0" />
+          <span className="shrink-0 tabular-nums">{ratingValue}</span>
+        </p>
       </div>
 
       {/* Desktop Hover Popover (stays inside viewport) */}
@@ -295,11 +272,11 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
           onClick={(e) => e.stopPropagation()}
           className={`hidden lg:block absolute top-0 ${
             popoverAlign === 'left' ? 'right-full mr-3' : 'left-full ml-3'
-          } w-[280px] bg-[#0B1324] border border-[#1E88FF]/40 rounded-2xl shadow-2xl p-4 z-50 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150 ring-1 ring-black/80`}
+          } w-[280px] bg-[#0B1324] border border-white/15 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-black/80`}
         >
           <div className="space-y-1 pb-2 border-b border-white/10">
-            <h4 className="text-sm font-black text-white leading-snug line-clamp-2">
-              {cleanAnimeTitle(anime.title)}
+            <h4 className="text-sm font-bold text-white leading-snug line-clamp-2">
+              {cleanTitle}
             </h4>
             {anime.altTitles?.[0] && (
               <p className="text-[11px] text-[#94A3B8] line-clamp-1 italic">
@@ -309,8 +286,8 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
           </div>
 
           <div className="py-2 flex items-center justify-between text-xs text-[#94A3B8]">
-            <span className="inline-flex items-center gap-1 text-amber-400 font-bold">
-              <Star className="w-3.5 h-3.5 fill-amber-400" />
+            <span className="inline-flex items-center gap-1">
+              <Star className="w-3.5 h-3.5 text-[#F59E0B] fill-[#F59E0B]" />
               <span>{ratingValue}</span>
             </span>
             <span>{animeType}</span>
@@ -323,7 +300,7 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
               {anime.genres.slice(0, 3).map((g) => (
                 <span
                   key={g}
-                  className="px-2 py-0.5 rounded-md bg-[#101A30] text-[#00CFFF] text-[10px] font-medium border border-white/5"
+                  className="px-2 py-0.5 rounded-md bg-[#101A30] text-[#CBD5E1] text-[10px] font-medium border border-white/5"
                 >
                   {g}
                 </span>

@@ -164,7 +164,7 @@ router.post('/users/comment-restriction', async (req: AuthenticatedRequest, res)
     const db = getAdminDb();
     await db.collection('users').doc(targetUid).set(
       {
-        commentsRestricted: Boolean(restricted),
+        commentingRestricted: Boolean(restricted),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }

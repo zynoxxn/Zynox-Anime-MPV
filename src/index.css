@@ -41,7 +41,7 @@
 
 html {
   scroll-behavior: smooth;
-  overflow-x: hidden;
+  overflow-x: clip;
   height: -webkit-fill-available;
 }
 
@@ -59,7 +59,7 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior-y: auto;
   touch-action: pan-y pinch-zoom;
@@ -163,5 +163,33 @@ a:focus:not(:focus-visible),
 
 .animate-shimmer {
   animation: shimmer 1.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Mobile landscape fullscreen on Watch Page hides all non-player UI */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.watching-episode header,
+  body.watching-episode footer,
+  body.watching-episode .watch-non-player-ui {
+    display: none !important;
+  }
+  body.watching-episode main {
+    padding-top: 0 !important;
+  }
+  body.watching-episode .watch-player-sticky-wrap {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 50 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    margin: 0 !important;
+    background: #000000 !important;
+  }
+  body.watching-episode .watch-player-frame {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: auto !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+  }
 }
 

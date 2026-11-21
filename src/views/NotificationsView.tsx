@@ -96,12 +96,14 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   const getNotifIcon = (type: string) => {
     switch (type) {
       case 'episode_release':
+      case 'new_episode':
         return <Film className="w-4 h-4 text-emerald-400" />;
       case 'comment_reply':
         return <MessageSquare className="w-4 h-4 text-[#1E88FF]" />;
       case 'comment_like':
         return <Heart className="w-4 h-4 text-rose-400" />;
       case 'request_status':
+      case 'request_update':
         return <Send className="w-4 h-4 text-amber-400" />;
       case 'system_announcement':
       case 'announcement':
@@ -115,12 +117,14 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     if (filter === 'unread') return !n.read;
     if (filter === 'announcements')
       return n.type === 'system_announcement' || n.type === 'announcement';
-    if (filter === 'episodes') return n.type === 'episode_release';
+    if (filter === 'episodes')
+      return n.type === 'episode_release' || n.type === 'new_episode';
     if (filter === 'community')
       return (
         n.type === 'comment_reply' ||
         n.type === 'comment_like' ||
-        n.type === 'request_status'
+        n.type === 'request_status' ||
+        n.type === 'request_update'
       );
     return true;
   });

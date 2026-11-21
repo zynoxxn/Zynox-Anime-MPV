@@ -213,8 +213,39 @@ const AppContent: React.FC = () => {
 
   // Update page title when public site is in maintenance mode
   const [rawPath] = (currentPath || '').split('?');
+  const isHomePage = rawPath === '/' || rawPath === '';
   const isAdminRoute = (rawPath || '').startsWith('/admin');
   const inMaintenance = Boolean(siteConfig.maintenanceMode && !isSuperAdmin && !isAdminRoute);
+
+  // IntersectionObserver sentinel (40px tall at top of Home page) for transparent-to-opaque header
+  const heroSentinelRef = useRef<HTMLDivElement>(null);
+  const [isHeaderOverHero, setIsHeaderOverHero] = useState<boolean>(isHomePage);
+
+  useEffect(() => {
+    if (!isHomePage) {
+      setIsHeaderOverHero(false);
+      return;
+    }
+
+    const sentinel = heroSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') {
+      setIsHeaderOverHero(true);
+      return;
+    }
+
+    setIsHeaderOverHero(window.scrollY < 40);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry) {
+          setIsHeaderOverHero(entry.isIntersecting);
+        }
+      },
+      { threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isHomePage]);
 
   useEffect(() => {
     if (inMaintenance && typeof document !== 'undefined') {
@@ -387,10 +418,41 @@ const AppContent: React.FC = () => {
 
     // Static routes
     if (path === '/' || path === '') {
-      return <HomeView navigate={navigate} onShowMessage={showToast} />;
+      return (
+        <HomeView
+          navigate={navigate}
+          onShowMessage={showToast}
+          onOpenLegal={(tab) => {
+            setLegalModalTab(tab);
+            setLegalModalOpen(true);
+          }}
+        />
+      );
     }
     if (path === '/schedule' || (path === '/browse' && searchParams.get('sort') === 'schedule')) {
       return <ScheduleView key="schedule-view" navigate={navigate} onShowMessage={showToast} />;
+    }
+    if (path === '/ongoing' || path === '/upcoming' || path === '/completed') {
+      const statusSlug = path.slice(1);
+      return (
+        <BrowseView
+          key={`browse-status-${statusSlug}`}
+          navigate={navigate}
+          onShowMessage={showToast}
+          initialStatus={statusSlug}
+          initialSort={searchParams.get('sort') || 'popular'}
+        />
+      );
+    }
+    if (path === '/trending' || path === '/top-airing') {
+      return (
+        <BrowseView
+          key={`browse-${path.slice(1)}`}
+          navigate={navigate}
+          onShowMessage={showToast}
+          initialSort="popular"
+        />
+      );
     }
     if (path === '/browse' || path === '/search' || path === '/genres' || path.startsWith('/genre/')) {
       const genreFromPath = path.startsWith('/genre/') ? decodeURIComponent(path.replace('/genre/', '')) : '';
@@ -425,13 +487,13 @@ const AppContent: React.FC = () => {
     if (path === '/login') {
       return <LoginView navigate={navigate} onShowMessage={showToast} />;
     }
-    if (path === '/signup') {
+    if (path === '/signup' || path === '/register') {
       return <SignupView navigate={navigate} onShowMessage={showToast} />;
     }
     if (path === '/profile') {
       return <ProfileView navigate={navigate} onShowMessage={showToast} />;
     }
-    if (path === '/requests') {
+    if (path === '/requests' || path === '/request') {
       return <AnimeRequestsView navigate={navigate} onShowMessage={showToast} />;
     }
     if (path.startsWith('/user/')) {
@@ -558,6 +620,9 @@ const AppContent: React.FC = () => {
     if (path === '/contact') {
       return <LegalView key="legal-contact" tab="contact" navigate={navigate} onShowMessage={showToast} />;
     }
+    if (path === '/guidelines' || path === '/community-guidelines') {
+      return <LegalView key="legal-guidelines" tab="guidelines" navigate={navigate} onShowMessage={showToast} />;
+    }
 
     // Dynamic episode player route: /anime/:animeSlug/episode/:episodeNumber
     if (path.startsWith('/anime/') && path.includes('/episode/')) {
@@ -672,11 +737,15 @@ const AppContent: React.FC = () => {
         <div
           id="toast-notification-container"
           style={{
-            bottom: hasSaveBar
+            bottom: isFooterVisible
+              ? 'calc(112px + env(safe-area-inset-bottom, 0px))'
+              : hasSaveBar
               ? 'calc(128px + env(safe-area-inset-bottom, 0px) + 12px)'
-              : 'calc(64px + env(safe-area-inset-bottom, 0px) + 12px)',
+              : 'calc(76px + env(safe-area-inset-bottom, 0px))',
           }}
-          className="fixed left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 md:!bottom-6 z-[60] w-[min(92vw,420px)] md:w-auto md:max-w-md pointer-events-none flex flex-col gap-2 items-center md:items-end transition-all duration-200"
+          className={`fixed left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-[60] w-[min(92vw,420px)] md:w-auto md:max-w-md pointer-events-none flex flex-col gap-2 items-center md:items-end transition-all duration-150 ${
+            isFooterVisible ? 'md:!bottom-24' : 'md:!bottom-6'
+          }`}
         >
           {toasts.map((t) => (
             <div
@@ -745,13 +814,26 @@ const AppContent: React.FC = () => {
       ) : (
         /* Main Public Page Layout Wrapper */
         <div
-          className={`flex flex-col flex-1 transition-[filter] duration-300 ${
+          className={`relative flex flex-col flex-1 transition-[filter] duration-300 ${
             popupNoticeOpen ? 'filter blur-[6px] pointer-events-none select-none' : ''
           }`}
         >
-          <Header currentPath={currentPath} navigate={navigate} onShowMessage={showToast} />
+          {isHomePage && (
+            <div
+              ref={heroSentinelRef}
+              aria-hidden="true"
+              className="absolute top-0 left-0 w-px h-[40px] pointer-events-none"
+            />
+          )}
 
-          <main className="flex-1 pt-16 md:pt-[72px]">
+          <Header
+            currentPath={currentPath}
+            navigate={navigate}
+            onShowMessage={showToast}
+            transparentOverHero={isHomePage && isHeaderOverHero}
+          />
+
+          <main className={`flex-1 ${isHomePage ? 'pt-0' : 'pt-14 md:pt-[68px]'}`}>
             <Suspense fallback={<RouteFallback />}>{renderRoute()}</Suspense>
           </main>
 

@@ -8,11 +8,13 @@ interface EpisodeCardProps {
   item: LatestEpisodeItem;
   navigate: (path: string) => void;
   variant?: 'landscape-card' | 'mobile-row';
+  priority?: boolean;
 }
 
 export const EpisodeCard: React.FC<EpisodeCardProps> = ({
   item,
   navigate,
+  priority = false,
 }) => {
   const { episode, animeTitle, animeSlug, animePoster, animeBanner } = item;
   const sNum = episode.seasonNumber || episode.season || 1;
@@ -72,23 +74,26 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
     animePoster ||
     FALLBACK_ANIME_BANNER;
 
-  const thumbnail = getOptimizedImageUrl(rawThumbnail, { width: 320, fallbackType: 'banner' });
+  const thumbnail = getOptimizedImageUrl(rawThumbnail, { width: 200, fallbackType: 'banner' });
   const displayTitle = cleanAnimeTitle(animeTitle);
 
   return (
     <div
       onClick={() => navigate(targetUrl)}
-      className="h-[68px] sm:h-[72px] flex items-center gap-3 p-1.5 sm:p-2 rounded-lg bg-[#0B1324] border border-white/5 hover:border-[#1E88FF]/30 active:scale-[0.99] cursor-pointer group transition-all min-w-0"
+      className="h-[64px] flex items-center gap-2.5 px-2 rounded-[10px] bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 active:scale-[0.99] cursor-pointer group transition-colors duration-150 min-w-0"
     >
-      {/* 16:9 Thumbnail (96px wide) */}
-      <div className="relative w-[96px] h-full aspect-video bg-[#050A14] rounded-md overflow-hidden shrink-0 border border-white/10">
+      {/* 88x50 Thumbnail */}
+      <div className="relative w-[88px] h-[50px] bg-[#050A14] rounded-[6px] overflow-hidden shrink-0 border border-white/10">
         <img
           src={thumbnail}
           alt=""
-          loading="lazy"
+          width={88}
+          height={50}
+          loading={priority ? 'eager' : 'lazy'}
+          fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
           referrerPolicy="no-referrer"
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-150"
           onError={(e) => {
             const target = e.target as HTMLImageElement;
             if (animePoster && target.src !== animePoster) {
@@ -96,23 +101,23 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             }
           }}
         />
-        {/* Play icon in center */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Play icon on desktop hover */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <div className="w-6 h-6 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md">
             <Play className="w-3 h-3 fill-white ml-0.5" />
           </div>
         </div>
       </div>
 
-      {/* Info: Title (1 line) + one muted line "Ep 12 · 2h ago" (No extra chips) */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+      {/* Info: Title (1 line 13px/600) + meta (11px muted "Ep 12 · 2h ago") */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
         <h4
           title={displayTitle}
-          className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight"
+          className="text-[13px] font-semibold leading-[18px] text-white truncate group-hover:text-[#1E88FF] transition-colors duration-150"
         >
           {displayTitle}
         </h4>
-        <p className="text-[11px] sm:text-xs text-[#94A3B8] truncate leading-none">
+        <p className="text-[11px] leading-[15px] text-[#94A3B8] truncate">
           Ep {episode.episodeNumber} · {timeAgoStr}
         </p>
       </div>

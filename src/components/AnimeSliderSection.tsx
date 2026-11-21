@@ -216,67 +216,70 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
   };
 
   return (
-    <section id={id} className="space-y-3 sm:space-y-4 select-none relative group/slider">
-      {/* 1. Header with Title, Slider Navigation Controls & View All */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <span className="w-1 h-4 bg-[#1683FF] rounded-full inline-block shrink-0" />
-          {icon && <span className="flex items-center shrink-0">{icon}</span>}
-          <h2 className="text-[18px] font-bold text-white tracking-wide">
+    <section id={id} className="space-y-2.5 sm:space-y-3 select-none relative group/slider">
+      {/* 1. Compact Section Header: height 32px, 16px/700 title, 18px muted icon, 13px primary View All */}
+      <div className="h-8 min-h-[32px] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon && (
+            <span className="flex items-center text-[#94A3B8] shrink-0 [&>svg]:w-[18px] [&>svg]:h-[18px]">
+              {icon}
+            </span>
+          )}
+          <h2 className="text-[16px] font-bold text-white tracking-tight truncate leading-none">
             {title}
           </h2>
           {badge && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#1683FF]/20 text-[#00CFFF] border border-[#1683FF]/30">
-              {badge}
+            <span className="text-[11px] font-medium text-[#1E88FF] shrink-0">
+              · {badge}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Header Slider Control Arrows (Desktop only) */}
-          <div className="hidden md:flex items-center gap-1 bg-[#081426] p-0.5 rounded-lg border border-white/5">
+          <div className="hidden md:flex items-center gap-1 bg-[#0B1324] p-0.5 rounded-lg border border-white/10">
             <button
               type="button"
               onClick={() => slide('left')}
-              className="w-7 h-7 rounded-md flex items-center justify-center transition-all bg-transparent hover:bg-[#1683FF] text-[#A1A1AA] hover:text-white cursor-pointer active:scale-90"
+              className="w-6 h-6 rounded-md flex items-center justify-center transition-colors duration-150 bg-transparent hover:bg-[#1E88FF] text-[#94A3B8] hover:text-white cursor-pointer active:scale-95"
               title={`Slide ${title} Left`}
               aria-label={`Slide ${title} Left`}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
 
             <button
               type="button"
               onClick={() => slide('right')}
-              className="w-7 h-7 rounded-md flex items-center justify-center transition-all bg-transparent hover:bg-[#1683FF] text-[#A1A1AA] hover:text-white cursor-pointer active:scale-90"
+              className="w-6 h-6 rounded-md flex items-center justify-center transition-colors duration-150 bg-transparent hover:bg-[#1E88FF] text-[#94A3B8] hover:text-white cursor-pointer active:scale-95"
               title={`Slide ${title} Right`}
               aria-label={`Slide ${title} Right`}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* View All Link (14px) */}
+          {/* View All Link (13px primary) */}
           {viewAllPath && (
             <button
               type="button"
               onClick={() => navigate(viewAllPath)}
-              className="text-[14px] font-semibold text-[#1683FF] hover:text-[#00CFFF] flex items-center gap-0.5 transition-colors ml-1 cursor-pointer"
+              className="text-[13px] font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity duration-150 cursor-pointer whitespace-nowrap shrink-0"
             >
               <span>View All</span>
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       </div>
 
       {/* 2. Interactive Slider Viewport */}
-      <div className="relative">
+      <div className="relative -mx-4 sm:mx-0">
         {/* Left Floating Arrow on Track */}
         <button
           type="button"
           onClick={() => slide('left')}
-          className="hidden md:flex absolute -left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-[#050A14]/90 hover:bg-[#1683FF] text-white border border-white/15 items-center justify-center transition-all opacity-0 group-hover/slider:opacity-100 shadow-xl cursor-pointer"
+          className="hidden md:flex absolute -left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-[#050A14]/90 hover:bg-[#1E88FF] text-white border border-white/15 items-center justify-center transition-opacity duration-150 opacity-0 group-hover/slider:opacity-100 shadow-xl cursor-pointer"
           title="Previous"
           aria-label="Previous items"
         >
@@ -287,7 +290,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
         <button
           type="button"
           onClick={() => slide('right')}
-          className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-[#050A14]/90 hover:bg-[#1683FF] text-white border border-white/15 items-center justify-center transition-all opacity-0 group-hover/slider:opacity-100 shadow-xl cursor-pointer"
+          className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-[#050A14]/90 hover:bg-[#1E88FF] text-white border border-white/15 items-center justify-center transition-opacity duration-150 opacity-0 group-hover/slider:opacity-100 shadow-xl cursor-pointer"
           title="Next"
           aria-label="Next items"
         >
@@ -296,15 +299,15 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
 
         {/* Left Gradient Edge Fade */}
         {canScrollLeft && (
-          <div className="hidden sm:block pointer-events-none absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#030712]/90 to-transparent z-10 transition-opacity" />
+          <div className="hidden sm:block pointer-events-none absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#050A14]/90 to-transparent z-10 transition-opacity duration-150" />
         )}
 
         {/* Right Gradient Edge Fade */}
         {canScrollRight && (
-          <div className="hidden sm:block pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#030712]/90 to-transparent z-10 transition-opacity" />
+          <div className="hidden sm:block pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#050A14]/90 to-transparent z-10 transition-opacity duration-150" />
         )}
 
-        {/* Sliding Cards Track: 12px gap, 12 items max */}
+        {/* Sliding Cards Track: 10px gap, 16px horizontal padding, snap-x snap-proximity */}
         <div
           ref={trackRef}
           onPointerDown={handlePointerDown}
@@ -317,7 +320,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
             touchAction: 'pan-x pan-y',
             overscrollBehaviorX: 'contain',
           }}
-          className={`flex items-start gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2 pt-1 px-0.5 pr-4 sm:pr-6 lg:pr-8 ${
+          className={`flex items-start gap-[10px] overflow-x-auto no-scrollbar snap-x snap-proximity pb-1 pt-0.5 px-4 sm:px-0 scroll-pl-4 sm:scroll-pl-0 ${
             isDraggingState ? 'cursor-grabbing select-none' : 'cursor-grab'
           }`}
           onClickCapture={(e) => {
@@ -330,7 +333,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
           {animes.slice(0, 12).map((anime, idx) => (
             <div
               key={`slider-${title.toLowerCase().replace(/\s+/g, '-')}-${anime.id || anime.slug}-${idx}`}
-              className="w-[120px] sm:w-[150px] md:w-[180px] shrink-0 snap-start"
+              className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[132px] lg:w-[160px] snap-start"
               draggable={false}
             >
               <AnimeCard
@@ -338,6 +341,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
                 showRankingBadge={showRankingBadge ? idx + 1 : undefined}
                 navigate={navigate}
                 onShowMessage={onShowMessage}
+                priority={idx < 4}
               />
             </div>
           ))}

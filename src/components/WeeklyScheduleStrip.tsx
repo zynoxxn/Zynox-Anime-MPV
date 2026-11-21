@@ -54,10 +54,10 @@ const ScheduleCardItem: React.FC<ScheduleCardItemProps> = ({ item, dayShort, nav
   return (
     <div
       onClick={() => navigate(targetUrl)}
-      className="h-[68px] sm:h-[72px] flex items-center gap-3 p-1.5 sm:p-2 rounded-lg bg-[#0B1324] border border-white/5 hover:border-[#1E88FF]/30 active:scale-[0.99] cursor-pointer group transition-all min-w-0"
+      className="h-[64px] flex items-center gap-2.5 px-2 rounded-[10px] bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 active:scale-[0.99] cursor-pointer group transition-colors duration-150 min-w-0"
     >
-      {/* Left Thumbnail 16:9 (96px wide) */}
-      <div className="relative w-[96px] h-full aspect-video bg-[#050A14] rounded-md overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+      {/* Left Thumbnail 88x50 */}
+      <div className="relative w-[88px] h-[50px] bg-[#050A14] rounded-[6px] overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
         {imgFailed ? (
           <div className="w-full h-full bg-gradient-to-br from-[#0B1324] to-[#101A30] flex items-center justify-center">
             <Film className="w-4 h-4 text-[#64748B]" />
@@ -66,30 +66,32 @@ const ScheduleCardItem: React.FC<ScheduleCardItemProps> = ({ item, dayShort, nav
           <img
             src={currentImg}
             alt=""
+            width={88}
+            height={50}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-150"
             onError={handleImageError}
           />
         )}
 
-        <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <div className="w-6 h-6 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-md">
             <Play className="w-3 h-3 fill-white ml-0.5" />
           </div>
         </div>
       </div>
 
-      {/* Right Info: Title (1 line) + "Wed · 21:00 · EP 12" */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+      {/* Right Info: Title (1 line 13px/600) + "Wed · 21:00 · EP 12" (11px muted) */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
         <h4
           title={displayTitle}
-          className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight"
+          className="text-[13px] font-semibold leading-[18px] text-white truncate group-hover:text-[#1E88FF] transition-colors duration-150"
         >
           {displayTitle}
         </h4>
-        <p className="text-[11px] sm:text-xs text-[#94A3B8] truncate leading-none">
+        <p className="text-[11px] leading-[15px] text-[#94A3B8] truncate">
           {dayShort} · {item.releaseTime || 'TBA'} · EP {epNumber}
         </p>
       </div>
@@ -134,13 +136,12 @@ export const WeeklyScheduleStrip: React.FC<WeeklyScheduleStripProps> = ({
   }, [scheduleItems, selectedDay]);
 
   return (
-    <section className="space-y-3 pb-8 select-none">
-      {/* 1. Header: 18px Bold Title & Full Schedule Link (14px) */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <span className="w-1 h-4 bg-[#1E88FF] rounded-full inline-block shrink-0" />
-          <Calendar className="w-4 h-4 text-[#00CFFF] shrink-0" />
-          <h2 className="text-[18px] font-bold text-white tracking-wide">
+    <section className="space-y-2.5 sm:space-y-3 pb-4 select-none">
+      {/* 1. Compact Section Header: height 32px, 16px/700 title, 18px muted icon, 13px primary View All */}
+      <div className="h-8 min-h-[32px] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Calendar className="w-[18px] h-[18px] text-[#94A3B8] shrink-0" />
+          <h2 className="text-[16px] font-bold text-white tracking-tight truncate leading-none">
             Weekly Schedule
           </h2>
         </div>
@@ -148,10 +149,10 @@ export const WeeklyScheduleStrip: React.FC<WeeklyScheduleStripProps> = ({
         <button
           type="button"
           onClick={() => navigate('/schedule')}
-          className="text-[14px] font-semibold text-[#1E88FF] hover:text-[#00CFFF] flex items-center gap-0.5 transition-colors cursor-pointer"
+          className="text-[13px] font-semibold text-[#1E88FF] hover:opacity-85 flex items-center gap-0.5 transition-opacity duration-150 cursor-pointer whitespace-nowrap shrink-0"
         >
           <span>View All</span>
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -170,17 +171,17 @@ export const WeeklyScheduleStrip: React.FC<WeeklyScheduleStripProps> = ({
               ref={isToday ? todayButtonRef : undefined}
               type="button"
               onClick={() => setSelectedDayIndex(idx)}
-              className={`flex-1 min-w-[46px] sm:min-w-[56px] py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer border flex items-center justify-center gap-1 leading-none ${
+              className={`flex-1 min-w-[46px] sm:min-w-[56px] py-1.5 px-2 rounded-lg text-center transition-colors duration-150 cursor-pointer border flex items-center justify-center gap-1 leading-none ${
                 isSelected
                   ? 'bg-[#1E88FF] border-[#1E88FF] text-white font-bold'
-                  : 'bg-[#0B1324] hover:bg-[#101A30] border-white/5 text-[#94A3B8] hover:text-white text-xs'
+                  : 'bg-[#0B1324] hover:bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white text-xs'
               }`}
             >
               <span className="text-xs">{dayObj.short}</span>
               {isToday && (
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isSelected ? 'bg-white' : 'bg-[#00CFFF] animate-pulse'
+                    isSelected ? 'bg-white' : 'bg-[#1E88FF]'
                   }`}
                   title="Today"
                 />

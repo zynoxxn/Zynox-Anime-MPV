@@ -277,33 +277,38 @@ export const AnimeRequestsView: React.FC<AnimeRequestsViewProps> = ({
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {activeList.map((r) => (
-            <div
-              key={r.id}
-              className="bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 rounded-2xl p-4 sm:p-5 space-y-3 transition-colors flex flex-col justify-between min-w-0"
-            >
-              <div className="space-y-2.5 min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-sm font-bold text-white leading-snug break-words min-w-0">
-                    {r.animeTitle}
-                  </h3>
-                  {getStatusBadge(r.status)}
+          {activeList.map((r) => {
+            const displayTitle = r.animeTitle || (r as any).title || 'Untitled Request';
+            const displayReason = r.reason || (r as any).preferredLanguage || 'General Request';
+            const displayNotes = r.message || r.notes;
+            return (
+              <div
+                key={r.id || displayTitle}
+                className="bg-[#0B1324] border border-white/10 hover:border-[#1E88FF]/40 rounded-2xl p-4 sm:p-5 space-y-3 transition-colors flex flex-col justify-between min-w-0"
+              >
+                <div className="space-y-2.5 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-sm font-bold text-white leading-snug break-words min-w-0">
+                      {displayTitle}
+                    </h3>
+                    {getStatusBadge(r.status)}
+                  </div>
+
+                  <div className="text-xs text-[#CBD5E1] bg-[#101A30] border border-white/5 rounded-xl p-3 space-y-1">
+                    <span className="text-[10px] font-bold text-[#1E88FF] uppercase tracking-wider block">
+                      Reason / Category
+                    </span>
+                    <p className="break-words">{displayReason}</p>
+                    {displayNotes && <p className="text-[#94A3B8] break-words">{displayNotes}</p>}
+                  </div>
                 </div>
 
-                <div className="text-xs text-[#CBD5E1] bg-[#101A30] border border-white/5 rounded-xl p-3 space-y-1">
-                  <span className="text-[10px] font-bold text-[#1E88FF] uppercase tracking-wider block">
-                    Reason / Category
-                  </span>
-                  <p className="break-words">{r.reason}</p>
-                  {r.message && <p className="text-[#94A3B8] break-words">{r.message}</p>}
+                <div className="flex items-center justify-between text-[11px] text-[#64748B] pt-2 border-t border-white/10 font-medium">
+                  <span className="truncate">Requested by {r.userName || 'Community Fan'}</span>
                 </div>
               </div>
-
-              <div className="flex items-center justify-between text-[11px] text-[#64748B] pt-2 border-t border-white/10 font-medium">
-                <span className="truncate">Requested by {r.userName || 'Community Fan'}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

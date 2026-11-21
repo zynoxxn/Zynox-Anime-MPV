@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import type { Anime } from '../types/anime';
 import type { Episode } from '../types/episode';
 import type { WatchlistStatus, WatchProgress } from '../types/library';
@@ -44,7 +44,12 @@ import {
 import { isValidSafeUrl } from '../lib/security';
 import { generateAnimeSeoMetadata } from '../lib/seo';
 import { usePageSeo } from '../hooks/usePageSeo';
-import { getOptimizedImageUrl } from '../lib/image-optimizer';
+import {
+  getOptimizedImageUrl,
+  getHeroBlurPlaceholder,
+  isImagePreloaded,
+  markImagePreloaded,
+} from '../lib/image-optimizer';
 import {
   ArrowLeft,
   Play,
@@ -152,6 +157,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
   const [downloadModalSubtitle, setDownloadModalSubtitle] = useState('');
+  const [heroBannerState, setHeroBannerState] = useState<'placeholder' | 'loaded'>('placeholder');
+  const [posterState, setPosterState] = useState<'placeholder' | 'loaded'>('placeholder');
+  const heroBackdropRef = useRef<HTMLImageElement | null>(null);
+  const posterImgRef = useRef<HTMLImageElement | null>(null);
 
   // SEO synchronized with Admin SEO Settings & Site Name
   const seoMetadata = useMemo(() => {
@@ -169,6 +178,48 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
     if (selectedSeasonNumber === 'all' || !anime?.seasonsList) return null;
     return anime.seasonsList.find((s) => Number(s.seasonNumber) === Number(selectedSeasonNumber)) || null;
   }, [anime?.seasonsList, selectedSeasonNumber]);
+
+  const syncedPosterUrl = useMemo(() => {
+    if (!anime) return '';
+    const raw = activeSeasonEntry?.poster || anime.poster;
+    return getOptimizedImageUrl(raw, { width: 600, fallbackType: 'poster' });
+  }, [anime, activeSeasonEntry?.poster]);
+
+  const syncedBannerUrl = useMemo(() => {
+    if (!anime) return '';
+    const raw = activeSeasonEntry?.banner || anime.banner || activeSeasonEntry?.poster || anime.poster;
+    return getOptimizedImageUrl(raw, { width: 1400, fallbackType: 'banner' });
+  }, [anime, activeSeasonEntry?.banner, activeSeasonEntry?.poster]);
+
+  useEffect(() => {
+    if (!syncedBannerUrl) {
+      setHeroBannerState('placeholder');
+    } else if (
+      isImagePreloaded(syncedBannerUrl) ||
+      (heroBackdropRef.current?.src === syncedBannerUrl &&
+        heroBackdropRef.current.complete &&
+        heroBackdropRef.current.naturalWidth > 0)
+    ) {
+      markImagePreloaded(syncedBannerUrl);
+      setHeroBannerState('loaded');
+    } else {
+      setHeroBannerState('placeholder');
+    }
+
+    if (!syncedPosterUrl) {
+      setPosterState('placeholder');
+    } else if (
+      isImagePreloaded(syncedPosterUrl) ||
+      (posterImgRef.current?.src === syncedPosterUrl &&
+        posterImgRef.current.complete &&
+        posterImgRef.current.naturalWidth > 0)
+    ) {
+      markImagePreloaded(syncedPosterUrl);
+      setPosterState('loaded');
+    } else {
+      setPosterState('placeholder');
+    }
+  }, [syncedBannerUrl, syncedPosterUrl]);
 
   // Fetch Anime details
   useEffect(() => {
@@ -423,6 +474,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
   const rawBanner = activeSeasonEntry?.banner || anime.banner || rawPoster;
   const currentPoster = getOptimizedImageUrl(rawPoster, { width: 600, fallbackType: 'poster' });
   const currentBanner = getOptimizedImageUrl(rawBanner, { width: 1400, fallbackType: 'banner' });
+  const detailBlurPlaceholder = getHeroBlurPlaceholder(String(anime.id || anime.slug || anime.title || 'detail'));
   const currentDescription = activeSeasonEntry?.description || anime.description || 'No synopsis available.';
 
   // Target episode for primary Watch button
@@ -497,28 +549,69 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
 
         {/* 1. HEADER / HERO DETAILS CARD */}
         <div className="bg-[#07111F] border border-white/[0.06] rounded-3xl p-5 sm:p-8 md:p-10 shadow-2xl relative overflow-hidden">
-          {/* Subtle Blurred Backdrop inside Card */}
-          {currentBanner && (
-            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+          {/* Subtle Blurred Backdrop inside Card with Immediate Placeholder State */}
+          <div
+            className="absolute inset-0 pointer-events-none select-none overflow-hidden"
+            data-banner-state={heroBannerState}
+            style={{
+              background:
+                'radial-gradient(circle at 75% 25%, rgba(30, 136, 255, 0.16) 0%, rgba(7, 17, 31, 0.92) 55%, #07111F 100%)',
+            }}
+          >
+            <img
+              src={detailBlurPlaceholder}
+              alt=""
+              decoding="sync"
+              aria-hidden="true"
+              className={`absolute inset-0 w-full h-full object-cover scale-110 blur-xl transition-opacity duration-500 ${
+                heroBannerState === 'loaded' ? 'opacity-0' : 'opacity-30'
+              }`}
+            />
+            {currentBanner && (
               <img
+                ref={heroBackdropRef}
                 src={currentBanner}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover opacity-20 blur-md scale-105"
+                onLoad={() => {
+                  markImagePreloaded(currentBanner);
+                  setHeroBannerState('loaded');
+                }}
+                onError={() => setHeroBannerState('placeholder')}
+                className={`w-full h-full object-cover blur-md scale-105 transition-opacity duration-500 ${
+                  heroBannerState === 'loaded' || isImagePreloaded(currentBanner)
+                    ? 'opacity-20'
+                    : 'opacity-0'
+                }`}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/90 to-[#07111F]/70" />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#07111F] via-[#07111F]/80 to-transparent" />
-            </div>
-          )}
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/90 to-[#07111F]/70" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#07111F] via-[#07111F]/80 to-transparent" />
+          </div>
 
           <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6 sm:gap-8">
             {/* Large Poster Container (2:3 aspect) */}
             <div className="relative w-44 sm:w-56 md:w-64 aspect-[2/3] shrink-0 rounded-2xl bg-[#050A14] border border-[#1E88FF]/20 shadow-2xl overflow-hidden group">
               <img
+                src={detailBlurPlaceholder}
+                alt=""
+                aria-hidden="true"
+                className={`absolute inset-0 w-full h-full object-cover scale-110 blur-lg transition-opacity duration-300 ${
+                  posterState === 'loaded' || isImagePreloaded(currentPoster) ? 'opacity-0' : 'opacity-100'
+                }`}
+              />
+              <img
+                ref={posterImgRef}
                 src={currentPoster}
                 alt={anime.title}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                onLoad={() => {
+                  markImagePreloaded(currentPoster);
+                  setPosterState('loaded');
+                }}
+                className={`relative w-full h-full object-cover transition-all duration-300 group-hover:scale-105 ${
+                  posterState === 'loaded' || isImagePreloaded(currentPoster) ? 'opacity-100' : 'opacity-0'
+                }`}
               />
               {anime.rating && (
                 <div className="absolute top-2.5 left-2.5 px-2 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-amber-400 text-xs font-bold flex items-center gap-1 shadow-md">
@@ -752,7 +845,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 Explore All
               </button>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-3.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-[10px] sm:gap-3">
               {relatedAnimes.map((rel) => (
                 <AnimeCard
                   key={rel.id || rel.slug}

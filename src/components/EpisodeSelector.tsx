@@ -78,7 +78,19 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [internalSeason, setInternalSeason] = useState<number | 'all'>('all');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewModeState] = useState<'list' | 'grid'>(() => {
+    try {
+      const saved = localStorage.getItem('zynox_episode_view_mode');
+      if (saved === 'grid' || saved === 'list') return saved;
+    } catch {}
+    return 'list';
+  });
+  const setViewMode = (mode: 'list' | 'grid') => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem('zynox_episode_view_mode', mode);
+    } catch {}
+  };
   const [selectedRangeIndex, setSelectedRangeIndex] = useState<number>(0);
   const selectedSeason = controlledSeason !== undefined ? controlledSeason : internalSeason;
 
@@ -189,6 +201,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           <button
             type="button"
             onClick={() => setViewMode('list')}
+            aria-pressed={viewMode === 'list'}
             className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
               viewMode === 'list' ? 'bg-[#1E88FF] text-white shadow' : 'text-[#94A3B8] hover:text-white'
             }`}
@@ -200,6 +213,7 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           <button
             type="button"
             onClick={() => setViewMode('grid')}
+            aria-pressed={viewMode === 'grid'}
             className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
               viewMode === 'grid' ? 'bg-[#1E88FF] text-white shadow' : 'text-[#94A3B8] hover:text-white'
             }`}

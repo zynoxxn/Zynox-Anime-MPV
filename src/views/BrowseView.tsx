@@ -9,8 +9,11 @@ import {
   isHentaiAnime,
 } from '../lib/firestore/anime';
 import { getCmsGenres, getCmsSiteSettings } from '../lib/firestore/cms';
+import { formatCardAudioLabel } from '../lib/format-meta';
 import {
   getOptimizedImageUrl,
+  getOptimizedPosterSrcSet,
+  POSTER_IMAGE_SIZES,
   FALLBACK_ANIME_POSTER,
   isImagePreloaded,
   markImagePreloaded,
@@ -56,54 +59,26 @@ const QUICK_CHIPS = [
   'Movies',
   'TV Series',
   'Ongoing',
+  'Upcoming',
   'Completed',
 ] as const;
 
 type QuickChip = typeof QUICK_CHIPS[number];
 
-// Minimal Result Card: Poster + 1-line Title ONLY (Crunchyroll minimal style)
+// Minimal Compact Result Card: Poster + 1-line Title + 1-line Meta
 const ExploreCard: React.FC<{
   anime: Anime;
   navigate: (path: string) => void;
 }> = React.memo(({ anime, navigate }) => {
-  const optimizedPoster = getOptimizedImageUrl(anime.poster, { width: 340, fallbackType: 'poster' });
+  const optimizedPoster = getOptimizedImageUrl(anime.poster, { width: 240, fallbackType: 'poster' });
+  const posterSrcSet = getOptimizedPosterSrcSet(anime.poster);
   const [imageLoaded, setImageLoaded] = useState(() => isImagePreloaded(optimizedPoster));
 
   const ratingValue = anime.rating ? Number(anime.rating).toFixed(1) : '8.5';
-
-  const rawAudio = (anime.audioLanguage || (anime as any).language || '').toLowerCase();
-  const hasSub = (anime as any).hasSub !== false;
-  const hasDub = Boolean((anime as any).hasDub || rawAudio.includes('dub') || rawAudio.includes('english'));
-  const hasHindi = Boolean(
-    (anime as any).hasHindiDub ||
-    rawAudio.includes('hindi') ||
-    anime.languages?.some((l) => l.toLowerCase().includes('hindi')) ||
-    anime.audioTags?.some((t) => t.toLowerCase().includes('hindi'))
-  );
-
-  const displayLanguage = (() => {
-    if (anime.audioLanguage && anime.audioLanguage.trim()) {
-      const trimmed = anime.audioLanguage.trim();
-      if (trimmed.toLowerCase() === 'hindi') return 'Hindi Dub';
-      if (trimmed.length > 18) {
-        if (trimmed.toLowerCase().includes('hindi')) return 'Hindi Dub';
-        if (trimmed.toLowerCase().includes('multi')) return 'Multi Audio';
-      }
-      return trimmed;
-    }
-    if ((anime as any).language && typeof (anime as any).language === 'string' && (anime as any).language.trim()) {
-      const trimmed = (anime as any).language.trim();
-      if (trimmed.toLowerCase() === 'hindi') return 'Hindi Dub';
-      return trimmed;
-    }
-    if (anime.audioTags && anime.audioTags.length > 0) {
-      return anime.audioTags[0];
-    }
-    if (hasHindi) return 'Hindi Dub';
-    if (hasDub && hasSub) return 'Sub / Dub';
-    if (hasDub) return 'Dub';
-    return 'Sub';
-  })();
+  const displayLanguage = formatCardAudioLabel(anime);
+  const cleanTitle = cleanAnimeTitle(anime.title);
+  const uploadTs = getAnimeUploadTimestamp(anime);
+  const isNewWithin7Days = uploadTs > 0 && Date.now() - uploadTs <= 7 * 24 * 60 * 60 * 1000;
 
   const handleClick = () => {
     const slug = (anime.slug || anime.id || '').trim();
@@ -113,20 +88,22 @@ const ExploreCard: React.FC<{
   return (
     <div
       onClick={handleClick}
-      className="group relative cursor-pointer flex flex-col select-none transition-transform duration-150 will-change-transform"
+      className="group relative cursor-pointer flex flex-col select-none transition-transform duration-150 will-change-transform min-w-0"
     >
-      {/* Poster 2:3 */}
-      <div className="relative aspect-[2/3] w-full bg-[#0B1324] rounded-xl overflow-hidden border border-white/5 group-hover:border-[#1E88FF]/50 transition-all duration-200 shadow-sm">
+      {/* Poster 2:3, radius 10px */}
+      <div className="relative aspect-[2/3] w-full bg-[#0B1324] rounded-[10px] overflow-hidden border border-white/10 group-hover:border-[#1E88FF]/60 transition-colors duration-150">
         {!imageLoaded && (
-          <div className="absolute inset-0 bg-[#0B1324] animate-pulse flex items-center justify-center">
-            <div className="w-6 h-6 rounded-full border-2 border-white/10 border-t-[#1E88FF] animate-spin opacity-50" />
-          </div>
+          <div className="absolute inset-0 bg-[#0B1324] animate-pulse" />
         )}
 
         {anime.poster ? (
           <img
             src={optimizedPoster}
-            alt=""
+            srcSet={posterSrcSet}
+            sizes={posterSrcSet ? POSTER_IMAGE_SIZES : undefined}
+            alt={cleanTitle}
+            width={160}
+            height={240}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
@@ -136,49 +113,46 @@ const ExploreCard: React.FC<{
             }}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
+              target.srcset = '';
               if (target.src !== FALLBACK_ANIME_POSTER) {
                 target.src = FALLBACK_ANIME_POSTER;
                 setImageLoaded(true);
               }
             }}
-            className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-200 pointer-events-none ${
+            className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-150 pointer-events-none ${
               imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#64748B] bg-[#050A14] font-bold text-[10px] uppercase">
+          <div className="w-full h-full flex items-center justify-center text-[#94A3B8] bg-[#0B1324] font-bold text-[10px] uppercase">
             ZYNOX
           </div>
         )}
 
-        {/* Hover Center Play Button */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-9 h-9 rounded-full bg-[#1E88FF] text-white flex items-center justify-center shadow-lg transform scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-150">
-            <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
-          </div>
-        </div>
+        {isNewWithin7Days && (
+          <span
+            aria-label="New release"
+            title="New"
+            className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1E88FF] ring-2 ring-[#050A14] pointer-events-none"
+          />
+        )}
       </div>
 
-      {/* Content BELOW the poster: Title + Anime Language & Rating */}
-      <div className="pt-1.5 min-w-0 space-y-0.5">
+      {/* ONLY 2 compact lines below poster: Line 1 = 12px/600 lh 16px, Line 2 = 11px muted "Hindi Dub · ★ 8.5" */}
+      <div className="mt-[6px] min-w-0 space-y-0.5">
         <h3
-          title={cleanAnimeTitle(anime.title)}
-          className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-[#00CFFF] transition-colors leading-tight"
+          title={cleanTitle}
+          className="text-[12px] font-semibold leading-[16px] text-white truncate group-hover:text-[#1E88FF] transition-colors duration-150"
         >
-          {cleanAnimeTitle(anime.title)}
+          {cleanTitle}
         </h3>
 
-        {/* Anime Title ke niche: Language & Rating */}
-        <div className="flex items-center gap-1.5 text-[11px] text-[#94A3B8] leading-none min-w-0">
-          <span className="text-[#00CFFF] font-semibold truncate">
-            {displayLanguage}
-          </span>
-          <span className="text-white/30 shrink-0">·</span>
-          <span className="inline-flex items-center gap-0.5 text-amber-400 font-bold shrink-0">
-            <Star className="w-3 h-3 fill-amber-400" />
-            <span>{ratingValue}</span>
-          </span>
-        </div>
+        <p className="text-[11px] leading-[15px] text-[#94A3B8] font-normal truncate flex items-center gap-1 min-w-0">
+          <span className="truncate">{displayLanguage}</span>
+          <span className="shrink-0">·</span>
+          <Star className="w-2.5 h-2.5 text-[#F59E0B] fill-[#F59E0B] shrink-0" />
+          <span className="shrink-0 tabular-nums">{ratingValue}</span>
+        </p>
       </div>
     </div>
   );
@@ -439,6 +413,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   initialType = '',
   initialStatus = '',
   initialLanguage = '',
+  initialLetter = 'all',
 }) => {
   // Read params from current URL
   const getUrlParam = (key: string, fallback: string = ''): string => {
@@ -458,15 +433,19 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   const [quickChip, setQuickChip] = useState<QuickChip>(() => {
     const val = getUrlParam('chip');
     if (val && (QUICK_CHIPS as readonly string[]).includes(val)) return val as QuickChip;
-    if (initialLanguage && /hindi/i.test(initialLanguage)) return 'Hindi Dub';
-    if (initialType && /movie/i.test(initialType)) return 'Movies';
-    if (initialType && /tv/i.test(initialType)) return 'TV Series';
-    if (initialStatus && /ongoing/i.test(initialStatus)) return 'Ongoing';
-    if (initialStatus && /completed/i.test(initialStatus)) return 'Completed';
+    const lang = getUrlParam('language', initialLanguage);
+    if (lang && /hindi/i.test(lang)) return 'Hindi Dub';
+    const typeParam = getUrlParam('type', initialType);
+    if (typeParam && /movie/i.test(typeParam)) return 'Movies';
+    if (typeParam && /tv/i.test(typeParam)) return 'TV Series';
+    const statusParam = getUrlParam('status', initialStatus);
+    if (statusParam && /ongoing/i.test(statusParam)) return 'Ongoing';
+    if (statusParam && /upcoming/i.test(statusParam)) return 'Upcoming';
+    if (statusParam && /completed/i.test(statusParam)) return 'Completed';
     return 'All';
   });
 
-  // Filters State: ONLY Genre & Release Year
+  // Filters State: Genre, Release Year, and A-Z Letter
   const [selectedGenres, setSelectedGenres] = useState<string[]>(() => {
     const val = getUrlParam('genre', initialGenre);
     if (!val || val.toLowerCase() === 'all') return [];
@@ -474,6 +453,9 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
   });
   const [selectedYear, setSelectedYear] = useState<string>(() =>
     getUrlParam('year', initialYear)
+  );
+  const [selectedLetter, setSelectedLetter] = useState<string>(() =>
+    getUrlParam('letter', initialLetter) || 'all'
   );
 
   // Sort State: ONE place only (Default: Most Popular)
@@ -552,13 +534,14 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     return list;
   }, []);
 
-  // Sync state to URL params (?q=&chip=&genre=&year=&sort=)
+  // Sync state to URL params (?q=&chip=&genre=&year=&letter=&sort=)
   useEffect(() => {
     const sp = new URLSearchParams();
     if (debouncedQuery) sp.set('q', debouncedQuery);
     if (quickChip !== 'All') sp.set('chip', quickChip);
     if (selectedGenres.length > 0) sp.set('genre', selectedGenres.join(','));
     if (selectedYear && selectedYear !== 'all') sp.set('year', selectedYear);
+    if (selectedLetter && selectedLetter !== 'all') sp.set('letter', selectedLetter);
     if (sortBy && sortBy !== 'popular') sp.set('sort', sortBy);
 
     const qs = sp.toString();
@@ -566,7 +549,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     if (typeof window !== 'undefined' && window.location.pathname + window.location.search !== targetUrl) {
       window.history.replaceState({}, '', targetUrl);
     }
-  }, [debouncedQuery, quickChip, selectedGenres, selectedYear, sortBy]);
+  }, [debouncedQuery, quickChip, selectedGenres, selectedYear, selectedLetter, sortBy]);
 
   // Listen for browser Back/Forward (popstate)
   useEffect(() => {
@@ -582,6 +565,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
       const g = sp.get('genre');
       setSelectedGenres(g && g !== 'all' ? g.split(',').filter(Boolean) : []);
       setSelectedYear(sp.get('year') || 'all');
+      setSelectedLetter(sp.get('letter') || 'all');
       setSortBy(sp.get('sort') || 'popular');
     };
 
@@ -648,6 +632,9 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
           case 'Ongoing':
             if (aStatus !== 'ongoing') return false;
             break;
+          case 'Upcoming':
+            if (aStatus !== 'upcoming' && !anime.isUpcoming) return false;
+            break;
           case 'Completed':
             if (aStatus !== 'completed') return false;
             break;
@@ -666,6 +653,17 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
         if (anime.year !== Number(selectedYear)) return false;
       }
 
+      // 7. A–Z Letter Filter
+      if (selectedLetter && selectedLetter !== 'all') {
+        const cleaned = cleanAnimeTitle(anime.title).trim();
+        const firstChar = cleaned.charAt(0).toUpperCase();
+        if (selectedLetter === '0-9') {
+          if (!firstChar || /[A-Z]/.test(firstChar)) return false;
+        } else {
+          if (firstChar !== selectedLetter.toUpperCase()) return false;
+        }
+      }
+
       return true;
     }).sort((a, b) => {
       // Sort Order: Most Popular (default) · Latest · Highest Rating · A–Z
@@ -681,12 +679,12 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
       // Default: 'popular' (views count)
       return (b.viewsCount || 0) - (a.viewsCount || 0) || (Number(b.rating) || 0) - (Number(a.rating) || 0);
     });
-  }, [catalog, debouncedQuery, quickChip, selectedGenres, selectedYear, sortBy]);
+  }, [catalog, debouncedQuery, quickChip, selectedGenres, selectedYear, selectedLetter, sortBy]);
 
   // Reset pagination on filter change
   useEffect(() => {
     setDisplayCount(PAGE_SIZE);
-  }, [debouncedQuery, quickChip, selectedGenres, selectedYear, sortBy]);
+  }, [debouncedQuery, quickChip, selectedGenres, selectedYear, selectedLetter, sortBy]);
 
   // Infinite Scroll with IntersectionObserver
   const hasMore = displayCount < filteredAnimes.length;
@@ -817,6 +815,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     setQuickChip('All');
     setSelectedGenres([]);
     setSelectedYear('all');
+    setSelectedLetter('all');
   };
 
   // Close sheet on Esc
@@ -826,18 +825,6 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSheetOpen]);
-
-  // Lock body scroll when sheet is open
-  useEffect(() => {
-    if (isSheetOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [isSheetOpen]);
 
   usePageSeo({
@@ -937,8 +924,8 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
         </div>
       </div>
 
-      {/* 4. ACTIVE FILTER CHIPS ROW: ONLY when Genre or Year is selected */}
-      {(selectedGenres.length > 0 || selectedYear !== 'all') && (
+      {/* 4. ACTIVE FILTER CHIPS ROW: ONLY when Genre, Year, or Letter is selected */}
+      {(selectedGenres.length > 0 || selectedYear !== 'all' || selectedLetter !== 'all') && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-xs">
           {selectedGenres.map((genre) => (
             <span
@@ -971,14 +958,29 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
             </span>
           )}
 
+          {selectedLetter !== 'all' && (
+            <span className="h-8 px-2.5 rounded-lg bg-[#0B1324] border border-white/10 text-[#CBD5E1] text-xs flex items-center gap-1.5 shrink-0">
+              <span>Starts with: {selectedLetter}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedLetter('all')}
+                className="hover:text-white text-[#94A3B8] p-0.5 cursor-pointer"
+                title="Remove letter filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+
           {/* Single "Clear all" link */}
           <button
             type="button"
             onClick={() => {
               setSelectedGenres([]);
               setSelectedYear('all');
+              setSelectedLetter('all');
             }}
-            className="text-xs font-semibold text-[#1E88FF] hover:text-[#00CFFF] whitespace-nowrap ml-2 cursor-pointer transition-colors"
+            className="text-xs font-semibold text-[#1E88FF] hover:opacity-85 whitespace-nowrap ml-2 cursor-pointer transition-colors"
           >
             Clear all
           </button>
@@ -996,10 +998,10 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
 
       {/* 6. RESULTS GRID / COMPACT EMPTY STATE */}
       {loading ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3 min-h-[360px]">
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-[10px] sm:gap-3 min-h-[360px]">
           {Array.from({ length: 12 }).map((_, idx) => (
             <div key={`explore-skel-${idx}`} className="space-y-1.5">
-              <div className="aspect-[2/3] w-full rounded-xl bg-[#0B1324] animate-pulse border border-white/5" />
+              <div className="aspect-[2/3] w-full rounded-[10px] bg-[#0B1324] animate-pulse border border-white/5" />
               <div className="h-3 w-3/4 bg-white/5 rounded animate-pulse" />
             </div>
           ))}
@@ -1024,7 +1026,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
         </div>
       ) : (
         <div className="min-h-[360px]">
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-[10px] sm:gap-3">
             {displayedItems.map((anime) => (
               <ExploreCard
                 key={anime.id || anime.slug}
@@ -1110,7 +1112,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setDraftGenres([])}
-                      className="text-xs font-semibold text-[#1E88FF] hover:text-[#00CFFF] transition-colors cursor-pointer"
+                      className="text-xs font-semibold text-[#1E88FF] hover:opacity-85 transition-colors cursor-pointer"
                     >
                       Clear
                     </button>
@@ -1147,7 +1149,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAllGenresInSheet((prev) => !prev)}
-                    className="text-xs font-semibold text-[#1E88FF] hover:text-[#00CFFF] transition-colors cursor-pointer pt-2 block"
+                    className="text-xs font-semibold text-[#1E88FF] hover:opacity-85 transition-colors cursor-pointer pt-2 block"
                   >
                     {showAllGenresInSheet ? 'Show less' : `+ Show ${availableGenres.length - 10} more genres`}
                   </button>

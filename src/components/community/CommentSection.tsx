@@ -128,10 +128,12 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   }, [animeId, targetType, episodeNumber, sortBy, user?.uid]);
 
   useEffect(() => {
-    if (hasIntersected) {
+    if (hasIntersected && commentsEnabled) {
       fetchAll();
+    } else if (!commentsEnabled) {
+      setLoading(false);
     }
-  }, [hasIntersected, fetchAll]);
+  }, [hasIntersected, commentsEnabled, fetchAll]);
 
   // Lock body scroll on phone when sort dropdown sheet is open
   useEffect(() => {
@@ -170,6 +172,19 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   const currentSortLabel = SORT_OPTIONS.find((s) => s.value === sortBy)?.label || 'Newest';
   const visibleComments = comments.slice(0, displayLimit);
   const hasMore = comments.length > displayLimit;
+
+  if (!commentsEnabled) {
+    return (
+      <div
+        ref={containerRef}
+        className="border-t border-white/[0.08] pt-5 sm:pt-6 px-4 sm:px-6 max-w-[800px] w-full mx-auto"
+      >
+        <div className="py-6 text-center text-sm text-zinc-400 bg-[#0B1324] border border-white/10 rounded-xl">
+          Comments are currently disabled.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

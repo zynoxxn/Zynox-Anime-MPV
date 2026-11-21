@@ -1,35 +1,23 @@
 import React from 'react';
+import { HERO_BLUR_PLACEHOLDER_BASE64 } from '../lib/image-optimizer';
 
 /**
  * Single Portrait Anime Card Skeleton with Shimmer Wave Animation
  * (used in Trending, Popular, Explore, Browse, and Related grids)
  */
 export const AnimeCardSkeleton: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`flex flex-col select-none group/skel ${className}`}>
-    {/* 2:3 Aspect Ratio Poster with shimmering gradient wave */}
-    <div className="relative aspect-[2/3] bg-[#081426] rounded-lg sm:rounded-xl border border-white/5 overflow-hidden shadow-sm">
-      {/* Subtle depth gradient backdrop */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#050A14] via-transparent to-black/20" />
-
-      {/* Shimmer sweep effect */}
-      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none" />
-
-      {/* Top right type/season tag placeholder */}
-      <div className="absolute top-1.5 right-1.5 w-6 h-3.5 bg-white/10 rounded border border-white/5" />
-
-      {/* Bottom left rating badge placeholder matching AnimeCard */}
-      <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 border border-white/10">
-        <div className="w-2.5 h-2.5 rounded-full bg-amber-400/40" />
-        <div className="w-4 h-2 bg-white/20 rounded" />
-      </div>
+  <div className={`flex flex-col select-none group/skel min-w-0 ${className}`}>
+    {/* 2:3 Aspect Ratio Poster with shimmer wave */}
+    <div className="relative aspect-[2/3] bg-[#0B1324] rounded-[10px] border border-white/5 overflow-hidden">
+      <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[0.07] to-transparent pointer-events-none" />
     </div>
 
-    {/* Title & Metadata below poster with shimmer */}
-    <div className="pt-2 space-y-1.5">
-      <div className="relative h-3 sm:h-3.5 bg-white/10 rounded w-4/5 overflow-hidden">
+    {/* Compact 2 lines below poster (mt-6px, 12px title + 11px meta) */}
+    <div className="mt-[6px] space-y-1">
+      <div className="relative h-3 bg-white/10 rounded w-4/5 overflow-hidden">
         <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       </div>
-      <div className="relative h-2 sm:h-2.5 bg-white/5 rounded w-1/3 overflow-hidden">
+      <div className="relative h-2.5 bg-white/5 rounded w-1/2 overflow-hidden">
         <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       </div>
     </div>
@@ -45,14 +33,11 @@ export const AnimeGridSkeleton: React.FC<{
   className?: string;
 }> = ({
   count = 12,
-  columns = 'default',
   className = '',
 }) => {
   const gridColsClass =
     className ||
-    (columns === 'home'
-      ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3'
-      : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4');
+    'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-[10px] sm:gap-3';
 
   return (
     <div className={gridColsClass}>
@@ -64,168 +49,147 @@ export const AnimeGridSkeleton: React.FC<{
 };
 
 /**
- * Landscape Episode Card Skeleton (Desktop 16:9 card used in Latest Episodes & Scheduled Anime)
+ * Compact Episode Row Skeleton (64px height, 88x50 thumbnail)
  */
 export const LandscapeCardSkeleton: React.FC = () => (
-  <div className="flex flex-col animate-pulse select-none">
-    {/* 16:9 Landscape Thumbnail */}
-    <div className="relative aspect-video bg-[#081426] rounded-xl border border-white/5 overflow-hidden flex items-center justify-center">
-      {/* Center play button circle placeholder */}
-      <div className="w-9 h-9 rounded-full bg-white/10 border border-white/5" />
-      {/* Top right ep badge placeholder */}
-      <div className="absolute top-2 right-2 w-12 h-4 bg-white/10 rounded" />
-    </div>
-    {/* Title & info below thumbnail */}
-    <div className="pt-2 space-y-1.5">
-      <div className="h-3.5 bg-white/10 rounded w-3/4" />
+  <div className="h-[64px] flex items-center gap-2.5 px-2 rounded-[10px] bg-[#0B1324] border border-white/5 animate-pulse select-none">
+    <div className="w-[88px] h-[50px] bg-[#050A14] rounded-[6px] shrink-0 border border-white/5" />
+    <div className="flex-1 space-y-1.5 min-w-0">
+      <div className="h-3 bg-white/10 rounded w-3/4" />
       <div className="h-2.5 bg-white/5 rounded w-1/3" />
     </div>
   </div>
 );
 
 /**
- * Mobile Episode Row Skeleton (Stacked horizontal row for small screens)
+ * Mobile Episode Row Skeleton (matches 64px height, 88x50 thumbnail)
  */
 export const MobileEpisodeRowSkeleton: React.FC = () => (
-  <div className="flex items-center gap-3 p-2 rounded-xl bg-[#081426]/70 border border-white/5 animate-pulse select-none">
-    <div className="relative w-28 sm:w-32 aspect-video bg-[#050A14] rounded-lg overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
-      <div className="w-7 h-7 rounded-full bg-white/10" />
-    </div>
-    <div className="flex-1 space-y-2 min-w-0">
-      <div className="h-3.5 bg-white/10 rounded w-3/4" />
+  <div className="h-[64px] flex items-center gap-2.5 px-2 rounded-[10px] bg-[#0B1324] border border-white/5 animate-pulse select-none">
+    <div className="w-[88px] h-[50px] bg-[#050A14] rounded-[6px] shrink-0 border border-white/5" />
+    <div className="flex-1 space-y-1.5 min-w-0">
+      <div className="h-3 bg-white/10 rounded w-3/4" />
       <div className="h-2.5 bg-white/5 rounded w-1/3" />
     </div>
   </div>
 );
 
 /**
- * Full Hero Carousel Banner Skeleton
+ * Full-Bleed Edge-to-Edge Hero Banner Skeleton (zero border, zero radius, exact height)
  */
 export const HeroSkeleton: React.FC = () => (
-  <div className="w-full aspect-[16/10] sm:aspect-video min-h-[300px] sm:min-h-[360px] md:min-h-[440px] lg:min-h-[500px] max-h-[600px] bg-[#07111F] border border-white/10 rounded-2xl animate-pulse p-4 sm:p-6 md:p-8 flex flex-col justify-end relative overflow-hidden shadow-xl">
-    {/* Ambient radial glow background effect */}
-    <div className="absolute inset-0 bg-gradient-to-t from-[#07111F] via-[#07111F]/70 to-transparent z-10" />
+  <div
+    className="relative w-full h-[clamp(400px,62dvh,540px)] md:h-[560px] lg:h-[clamp(520px,72vh,720px)] bg-[#050A14] overflow-hidden animate-pulse select-none"
+    style={{
+      background:
+        'radial-gradient(circle at 75% 25%, rgba(30, 136, 255, 0.2) 0%, rgba(11, 22, 44, 0.92) 48%, #050A14 100%)',
+    }}
+  >
+    {/* Immediate base64 blurry background */}
+    <img
+      src={HERO_BLUR_PLACEHOLDER_BASE64}
+      alt=""
+      aria-hidden="true"
+      className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-80 pointer-events-none"
+    />
+    {/* Seamless bottom blend gradient */}
+    <div
+      className="absolute inset-0 z-10 pointer-events-none"
+      style={{
+        background:
+          'linear-gradient(to top, #050A14 0%, rgba(5,10,20,0.92) 18%, rgba(5,10,20,0.5) 45%, transparent 75%)',
+      }}
+    />
 
-    <div className="relative z-20 space-y-4 max-w-xl">
-      {/* Spotlight badge */}
-      <div className="h-5 bg-[#1683FF]/25 border border-[#1683FF]/30 rounded-full w-28" />
-
-      {/* Main Title */}
-      <div className="space-y-2">
-        <div className="h-8 sm:h-11 bg-white/15 rounded-xl w-4/5" />
-        <div className="h-6 sm:h-8 bg-white/10 rounded-xl w-3/5" />
+    <div className="relative z-20 max-w-[1600px] mx-auto w-full h-full flex flex-col justify-end gap-[10px] px-4 md:px-8 lg:px-10 pt-20 pb-[28px]">
+      {/* Title placeholder */}
+      <div className="space-y-2 max-w-xl">
+        <div className="h-8 sm:h-11 bg-white/15 rounded-lg w-4/5" />
+        <div className="h-7 sm:h-9 bg-white/10 rounded-lg w-3/5" />
       </div>
 
-      {/* Synopsis teaser */}
-      <div className="space-y-1.5 pt-1">
-        <div className="h-3 sm:h-3.5 bg-white/10 rounded w-full" />
-        <div className="h-3 sm:h-3.5 bg-white/5 rounded w-2/3" />
-      </div>
+      {/* Genres line placeholder */}
+      <div className="h-3.5 bg-white/10 rounded w-48" />
 
-      {/* Primary Action Buttons */}
-      <div className="flex items-center gap-3 pt-3">
-        <div className="h-11 bg-[#1683FF]/40 rounded-xl w-32 sm:w-36" />
-        <div className="h-11 bg-white/10 rounded-xl w-28 sm:w-32" />
+      {/* Buttons + right-aligned dots placeholder */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-3">
+          <div className="h-[44px] w-[108px] bg-[#1E88FF]/40 rounded-full" />
+          <div className="h-[44px] w-[118px] bg-white/10 border border-white/20 rounded-full" />
+        </div>
+        <div className="flex items-center gap-[6px]">
+          <div className="w-[18px] h-[6px] bg-[#1E88FF]/50 rounded-full" />
+          <div className="w-[6px] h-[6px] bg-white/25 rounded-full" />
+          <div className="w-[6px] h-[6px] bg-white/25 rounded-full" />
+        </div>
       </div>
-    </div>
-
-    {/* Carousel dots indicators placeholder */}
-    <div className="absolute bottom-4 right-6 z-20 flex gap-1.5">
-      <div className="w-6 h-1.5 bg-[#1683FF]/50 rounded-full" />
-      <div className="w-2 h-1.5 bg-white/20 rounded-full" />
-      <div className="w-2 h-1.5 bg-white/20 rounded-full" />
     </div>
   </div>
 );
 
 /**
- * Section Header Skeleton (Title pill + title text + view all link)
+ * Section Header Skeleton (32px height, 16px title + view all link)
  */
 export const SectionHeaderSkeleton: React.FC<{ titleWidth?: string }> = ({
-  titleWidth = 'w-32 sm:w-40',
+  titleWidth = 'w-28 sm:w-36',
 }) => (
-  <div className="flex items-center justify-between animate-pulse">
+  <div className="h-8 min-h-[32px] flex items-center justify-between animate-pulse">
     <div className="flex items-center gap-2">
-      <span className="w-1 h-3.5 sm:h-4 bg-[#1683FF]/50 rounded-full inline-block" />
-      <div className={`h-4 sm:h-5 bg-white/10 rounded ${titleWidth}`} />
+      <div className="w-[18px] h-[18px] bg-white/10 rounded" />
+      <div className={`h-4 bg-white/10 rounded ${titleWidth}`} />
     </div>
-    <div className="h-3 bg-white/5 rounded w-16" />
+    <div className="h-3 bg-white/5 rounded w-14" />
   </div>
 );
 
 export const AnimeSliderSkeleton: React.FC<{ titleWidth?: string }> = ({
   titleWidth = 'w-32',
 }) => (
-  <section className="space-y-3 sm:space-y-4">
+  <section className="space-y-2.5 sm:space-y-3">
     <SectionHeaderSkeleton titleWidth={titleWidth} />
-    <div className="flex items-center gap-2.5 sm:gap-3.5 overflow-hidden">
-      {Array.from({ length: 7 }).map((_, i) => (
-        <div key={`slider-skel-${i}`} className="w-[115px] sm:w-[135px] md:w-[155px] lg:w-[170px] xl:w-[180px] shrink-0">
-          <AnimeCardSkeleton />
-        </div>
-      ))}
+    <div className="-mx-4 sm:mx-0">
+      <div className="flex items-start gap-[10px] overflow-hidden px-4 sm:px-0">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={`slider-skel-${i}`}
+            className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[132px] lg:w-[160px]"
+          >
+            <AnimeCardSkeleton />
+          </div>
+        ))}
+      </div>
     </div>
   </section>
 );
 
 /**
- * Comprehensive HomeView Sections Skeleton (placed directly below Hero Banner)
+ * Comprehensive HomeView Sections Skeleton (placed directly below full-bleed Hero Banner)
  */
 export const HomeSectionsSkeleton: React.FC = () => (
-  <div className="space-y-7 sm:space-y-9">
+  <div className="space-y-5 sm:space-y-8">
     {/* 1. Trending Now Skeleton (Slider) */}
     <AnimeSliderSkeleton titleWidth="w-32" />
 
-    {/* 2. Latest Episodes Skeleton (Landscape cards on desktop, rows on mobile) */}
-    <section className="space-y-3 sm:space-y-4">
+    {/* 2. Latest Episodes Skeleton */}
+    <section className="space-y-2.5 sm:space-y-3">
       <SectionHeaderSkeleton titleWidth="w-36" />
-      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {Array.from({ length: 4 }).map((_, i) => (
-          <LandscapeCardSkeleton key={`ep-skel-desk-${i}`} />
-        ))}
-      </div>
-      <div className="md:hidden space-y-2.5">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <MobileEpisodeRowSkeleton key={`ep-skel-mob-${i}`} />
+          <LandscapeCardSkeleton key={`ep-skel-${i}`} />
         ))}
       </div>
     </section>
 
-    {/* 3. Latest Anime Skeleton (Slider) */}
-    <AnimeSliderSkeleton titleWidth="w-36" />
-
-    {/* 4. Popular Anime Skeleton (Slider) */}
+    {/* 3. Popular Anime Skeleton (Slider) */}
     <AnimeSliderSkeleton titleWidth="w-32" />
 
-    {/* 5. Scheduled Anime Skeleton */}
-    <section className="space-y-3 sm:space-y-4 pt-1">
-      <SectionHeaderSkeleton titleWidth="w-36" />
-      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <LandscapeCardSkeleton key={`sched-skel-desk-${i}`} />
-        ))}
-      </div>
-      <div className="md:hidden space-y-2.5">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <MobileEpisodeRowSkeleton key={`sched-skel-mob-${i}`} />
-        ))}
-      </div>
-    </section>
+    {/* 4. Recently Added Skeleton (Slider) */}
+    <AnimeSliderSkeleton titleWidth="w-36" />
 
-    {/* 6. Explore Anime Skeleton with Category Pills */}
-    <section className="space-y-3 sm:space-y-4 pt-1">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-pulse">
-        <div className="flex items-center gap-2">
-          <span className="w-1 h-3.5 sm:h-4 bg-[#1683FF]/50 rounded-full inline-block" />
-          <div className="h-4 sm:h-5 bg-white/10 rounded w-32" />
-        </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={`filter-skel-${i}`} className="h-7 w-16 bg-[#07111F] rounded-full border border-white/5 shrink-0" />
-          ))}
-        </div>
-      </div>
-      <AnimeGridSkeleton columns="home" count={14} />
+    {/* 5. Explore Anime Skeleton */}
+    <section className="space-y-2.5 sm:space-y-3">
+      <SectionHeaderSkeleton titleWidth="w-36" />
+      <AnimeGridSkeleton columns="home" count={12} />
     </section>
   </div>
 );
@@ -363,7 +327,7 @@ export const AnimeDetailSkeleton: React.FC = () => (
         <div className="w-4 h-4 bg-[#1683FF]/30 rounded" />
         <div className="h-5 bg-white/10 rounded w-32" />
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-[10px] sm:gap-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <AnimeCardSkeleton key={`detail-rel-skel-${i}`} />
         ))}

@@ -1,14 +1,39 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
+import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { securityHeadersMiddleware, createRateLimiter, validateVideoUrlServer } from './server/security';
 import adminRoutes from './server/routes/admin';
 import communityRoutes from './server/routes/community';
 import driveAvatarsRouter from './server/routes/drive-avatars';
 
+function resolvePort(): number {
+  const portFlagIndex = process.argv.indexOf('--port');
+  if (portFlagIndex !== -1 && process.argv[portFlagIndex + 1]) {
+    const parsedFlag = parseInt(process.argv[portFlagIndex + 1], 10);
+    if (Number.isFinite(parsedFlag) && parsedFlag > 0) return parsedFlag;
+  }
+  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : NaN;
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : 3000;
+}
+
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const httpServer = http.createServer(app);
+  const PORT = resolvePort();
+  let viteServer: ViteDevServer | null = null;
+
+  // Prevent transient socket/abort errors during pre-warming from crashing the dev server
+  process.on('unhandledRejection', (reason) => {
+    console.error('[SERVER UNHANDLED REJECTION]:', reason);
+  });
+  process.on('uncaughtException', (err: any) => {
+    const code = err?.code || '';
+    if (code === 'ECONNRESET' || code === 'EPIPE' || code === 'ERR_STREAM_PREMATURE_CLOSE') {
+      return;
+    }
+    console.error('[SERVER UNCAUGHT EXCEPTION]:', err);
+  });
 
   // Trust proxy for secure headers & accurate client IP behind nginx/Cloud Run
   app.set('trust proxy', 1);
@@ -93,7 +118,30 @@ async function startServer() {
     );
   });
 
-  // 5. Global safe error handling middleware (Never leak technical stack traces to clients)
+  // 5. Vite middleware for development / Static file serving for production
+  if (process.env.NODE_ENV !== 'production') {
+    const hmrConfig =
+      process.env.DISABLE_HMR === 'true'
+        ? false
+        : { server: httpServer };
+
+    viteServer = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: hmrConfig,
+      },
+      appType: 'spa',
+    });
+    app.use(viteServer.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  // 6. Global safe error handling middleware (mounted after routes & Vite middleware)
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (res.headersSent) {
       return next(err);
@@ -107,24 +155,42 @@ async function startServer() {
     });
   });
 
-  // 6. Vite middleware for development / Static file serving for production
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  let listenRetries = 0;
+  httpServer.on('error', (err: any) => {
+    if (err?.code === 'EADDRINUSE' && listenRetries < 5) {
+      listenRetries++;
+      console.warn(`[SERVER] Port ${PORT} busy, retrying (${listenRetries}/5)...`);
+      setTimeout(() => {
+        httpServer.close(() => {
+          httpServer.listen(PORT, '0.0.0.0');
+        });
+      }, 400);
+      return;
+    }
+    console.error('[SERVER LISTEN ERROR]:', err);
+    process.exit(1);
+  });
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[ZYNOX SECURITY] Full-stack server running securely on port ${PORT}`);
   });
+
+  const shutdown = async () => {
+    try {
+      if (viteServer) {
+        await viteServer.close();
+      }
+    } catch {
+      // ignore close errors
+    }
+    httpServer.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 1500).unref();
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {

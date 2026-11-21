@@ -285,7 +285,7 @@ export const AdminLegalPagesView: React.FC<AdminLegalPagesViewProps> = ({
             {
               label: 'View on site',
               icon: ExternalLink,
-              onClick: () => window.open(activeDef.publicPath, '_blank'),
+              onClick: () => navigate(activeDef.publicPath),
             },
           ]}
         />

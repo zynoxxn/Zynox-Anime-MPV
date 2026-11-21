@@ -4,6 +4,8 @@
 const DEFAULT_ALLOWED_HOSTS = [
   'abysscdn.com',
   'abyss.to',
+  'abyssplayer.com',
+  'player.abyssplayer.com',
   'short.ink',
   'streamtape.com',
   'streamtape.net',
@@ -96,7 +98,8 @@ export function transformStreamUrl(rawUrl?: string | null): {
   if (
     lowerUrl.includes('short.ink') ||
     lowerUrl.includes('abysscdn.com') ||
-    lowerUrl.includes('abyss.to')
+    lowerUrl.includes('abyss.to') ||
+    lowerUrl.includes('abyssplayer.com')
   ) {
     return {
       url,
@@ -291,5 +294,16 @@ export function validateFrameCode(frameCode: string): { isValid: boolean; extrac
     hostname: urlValidation.hostname,
     error: urlValidation.error
   };
+}
+
+export function isAbyssPlayerUrl(rawUrl?: string | null): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const lower = rawUrl.toLowerCase();
+  return (
+    lower.includes('abyssplayer.com') ||
+    lower.includes('abysscdn.com') ||
+    lower.includes('abyss.to') ||
+    lower.includes('short.ink')
+  );
 }
 

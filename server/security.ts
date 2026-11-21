@@ -6,6 +6,8 @@ import type { Request, Response, NextFunction } from 'express';
 export const ALLOWED_VIDEO_HOSTS = [
   'abysscdn.com',
   'abyss.to',
+  'abyssplayer.com',
+  'player.abyssplayer.com',
   'short.ink',
   'streamtape.com',
   'streamtape.net',
@@ -119,7 +121,7 @@ export function createRateLimiter(options: {
   const statusCode = options.statusCode || 429;
 
   // Cleanup expired entries every 2 minutes
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const now = Date.now();
     for (const [ip, record] of store.entries()) {
       if (now > record.resetTime) {
@@ -127,6 +129,7 @@ export function createRateLimiter(options: {
       }
     }
   }, 120000);
+  cleanupTimer.unref();
 
   return (req: Request, res: Response, next: NextFunction) => {
     // Resolve client IP safely
