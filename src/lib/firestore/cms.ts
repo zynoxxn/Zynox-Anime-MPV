@@ -1026,9 +1026,9 @@ export const DEFAULT_SEO_SETTINGS: CmsSeoSettings = {
   homepageTitle: 'ZYNOX ANIME — Watch Anime in Hindi Dub & English Sub in 1080p HD',
   homepageDescription: 'Stream and download your favorite anime series and movies online in Multi Audio (Hindi Dub, English Sub, Japanese) in crystal clear 1080p HD with zero lag.',
   homepageKeywords: 'anime hindi dub, download anime in hindi, watch anime online, the angel next door hindi dub, alya sometimes hides her feelings in russian hindi dub, anime 1080p, anime zip batch download, ZYNOX ANIME',
-  defaultOgImage: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&auto=format&fit=crop&q=80',
+  defaultOgImage: 'https://www.zynoxanime.cv/logo.png',
   siteDescription: 'High performance anime streaming portal featuring instant episode releases and multi-language player options.',
-  robotsTxt: 'User-agent: *\nAllow: /\n\nSitemap: https://ais-pre-dtndjeqftnisrncgqh376s-1073184695775.asia-southeast1.run.app/sitemap.xml',
+  robotsTxt: 'User-agent: *\nAllow: /\n\nSitemap: https://www.zynoxanime.cv/sitemap.xml',
   animeTitleTemplate: 'Watch {title} in Hindi Dub & English Sub (All Episodes HD) — {siteName}',
   downloadTitleTemplate: 'Download {title} [Hindi Dubbed] All Episodes 720p 1080p HD Batch Zip — {siteName}',
   episodeTitleTemplate: 'Watch {title} Episode {epNumber} [Hindi Dub & Sub] 1080p HD Online — {siteName}',
@@ -1039,19 +1039,33 @@ export const DEFAULT_SEO_SETTINGS: CmsSeoSettings = {
   twitterHandle: '@zynoxanimes',
 };
 
+const LEGACY_UNSPLASH_OG_FRAGMENT = 'photo-1578632767115-351597cf2477';
+
+function normalizeSeoSettings(raw: CmsSeoSettings): CmsSeoSettings {
+  const og = (raw.defaultOgImage || '').trim();
+  const safeOg =
+    !og || og.includes(LEGACY_UNSPLASH_OG_FRAGMENT)
+      ? DEFAULT_SEO_SETTINGS.defaultOgImage
+      : og;
+  return { ...raw, defaultOgImage: safeOg };
+}
+
 export async function getCmsSeoSettings(): Promise<CmsSeoSettings> {
   try {
     const docRef = doc(db, CMS_CONFIG, 'seo');
     const snap = await withTimeout(getDoc(docRef), 2000, null);
     if (snap && snap.exists()) {
-      const merged = { ...DEFAULT_SEO_SETTINGS, ...(snap.data() as Partial<CmsSeoSettings>) };
+      const merged = normalizeSeoSettings({
+        ...DEFAULT_SEO_SETTINGS,
+        ...(snap.data() as Partial<CmsSeoSettings>),
+      });
       setStoredCache('cms_seo_settings', merged);
       return merged;
     }
   } catch (err) {
     console.warn('Using default CMS SEO settings:', err);
   }
-  return getStoredCache<CmsSeoSettings>('cms_seo_settings', DEFAULT_SEO_SETTINGS);
+  return normalizeSeoSettings(getStoredCache<CmsSeoSettings>('cms_seo_settings', DEFAULT_SEO_SETTINGS));
 }
 
 export async function saveCmsSeoSettings(seo: CmsSeoSettings): Promise<void> {

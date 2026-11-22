@@ -1,10 +1,13 @@
 // ZYNOX ANIME Service Worker for PWA installability and offline support
-const CACHE_NAME = 'zynox-anime-v3';
+const CACHE_NAME = 'zynox-anime-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/offline.html',
   '/manifest.json',
-  '/icon.svg',
+  '/favicon.ico',
+  '/favicon-48x48.png',
+  '/favicon-96x96.png',
+  '/logo.png',
   '/icon-192.png',
   '/icon-512.png',
 ];

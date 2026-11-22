@@ -22,10 +22,11 @@ export interface AnimeSeoOptions {
 }
 
 const DEFAULT_SITE_NAME = 'ZYNOX ANIME';
+const DEFAULT_OG_IMAGE = 'https://www.zynoxanime.cv/logo.png';
 const DEFAULT_SITE_URL =
   typeof window !== 'undefined' && window.location.origin
     ? window.location.origin
-    : 'https://ais-pre-dtndjeqftnisrncgqh376s-1073184695775.asia-southeast1.run.app';
+    : 'https://www.zynoxanime.cv';
 
 /**
  * Generate targeted Google Search keywords and tags for an anime
@@ -298,10 +299,13 @@ export function updateDocumentSeo(metadata: SeoMetadata): void {
     setMetaTag('name', 'twitter:description', metadata.description);
   }
 
-  if (metadata.ogImage) {
-    setMetaTag('property', 'og:image', metadata.ogImage);
-    setMetaTag('name', 'twitter:image', metadata.ogImage);
-  }
+  const resolvedOgImage =
+    metadata.ogImage && !metadata.ogImage.includes('photo-1578632767115-351597cf2477')
+      ? metadata.ogImage
+      : DEFAULT_OG_IMAGE;
+  setMetaTag('property', 'og:image', resolvedOgImage);
+  setMetaTag('name', 'twitter:image', resolvedOgImage);
+  setMetaTag('itemprop', 'image', resolvedOgImage);
 
   if (metadata.ogType) {
     setMetaTag('property', 'og:type', metadata.ogType);

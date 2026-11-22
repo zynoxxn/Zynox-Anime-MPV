@@ -25,13 +25,20 @@
     <meta property="og:url" content="https://www.zynoxanime.cv/" />
     <meta property="og:title" content="Zynox Anime - Watch &amp; download Indian Regional Dubbed Anime Online" />
     <meta property="og:description" content="Watch your favorite Indian regional dubbed anime in Hindi Dub &amp; Sub, and more! Zynox Anime brings you the best anime content online. Start watching now!" />
-    <meta property="og:image" content="/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png" />
+    <meta property="og:image" content="https://www.zynoxanime.cv/logo.png" />
+    <meta property="og:image:secure_url" content="https://www.zynoxanime.cv/logo.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="ZYNOX ANIME Official Logo" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Zynox Anime - Watch &amp; download Indian Regional Dubbed Anime Online" />
     <meta name="twitter:description" content="Watch your favorite Indian regional dubbed anime in Hindi Dub &amp; Sub, and more! Zynox Anime brings you the best anime content online. Start watching now!" />
-    <meta name="twitter:image" content="/assets/aistudio/file_00000000d05c82118a47e15fb7b4a381_e8184cc9.png" />
+    <meta name="twitter:image" content="https://www.zynoxanime.cv/logo.png" />
+    <meta name="twitter:image:alt" content="ZYNOX ANIME Official Logo" />
+    <meta itemprop="image" content="https://www.zynoxanime.cv/logo.png" />
 
     <meta name="theme-color" content="#050A14" />
     <meta name="application-name" content="Zynox Anime" />
@@ -40,9 +47,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Zynox Anime" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/icon-192.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
     <link rel="dns-prefetch" href="https://lh3.googleusercontent.com">
     <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
@@ -51,24 +62,52 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-    <!-- Schema.org JSON-LD Structured Data for Google Search -->
+    <!-- Schema.org JSON-LD Structured Data for Google Search (Organization Logo + WebSite) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "Zynox Anime",
-      "alternateName": ["ZynoxAnime", "Zynox Anime Online"],
-      "url": "https://www.zynoxanime.cv/",
-      "description": "Watch your favorite Indian regional dubbed anime in Hindi Dub & Sub, and more! Zynox Anime brings you the best anime content online. Start watching now!",
-      "inLanguage": ["hi", "en"],
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": {
-          "@type": "EntryPoint",
-          "urlTemplate": "https://www.zynoxanime.cv/browse?q={search_term_string}"
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://www.zynoxanime.cv/#organization",
+          "name": "ZYNOX ANIME",
+          "alternateName": ["Zynox Anime", "ZynoxAnime"],
+          "url": "https://www.zynoxanime.cv/",
+          "logo": {
+            "@type": "ImageObject",
+            "@id": "https://www.zynoxanime.cv/#logo",
+            "url": "https://www.zynoxanime.cv/logo.png",
+            "contentUrl": "https://www.zynoxanime.cv/logo.png",
+            "width": 512,
+            "height": 512,
+            "caption": "ZYNOX ANIME"
+          },
+          "image": {
+            "@id": "https://www.zynoxanime.cv/#logo"
+          }
         },
-        "query-input": "required name=search_term_string"
-      }
+        {
+          "@type": "WebSite",
+          "@id": "https://www.zynoxanime.cv/#website",
+          "name": "ZYNOX ANIME",
+          "alternateName": ["Zynox Anime", "ZynoxAnime", "Zynox Anime Online"],
+          "url": "https://www.zynoxanime.cv/",
+          "description": "Watch your favorite Indian regional dubbed anime in Hindi Dub & Sub, and more! Zynox Anime brings you the best anime content online. Start watching now!",
+          "inLanguage": ["hi", "en"],
+          "publisher": {
+            "@id": "https://www.zynoxanime.cv/#organization"
+          },
+          "image": "https://www.zynoxanime.cv/logo.png",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://www.zynoxanime.cv/browse?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
     }
     </script>
   </head>
