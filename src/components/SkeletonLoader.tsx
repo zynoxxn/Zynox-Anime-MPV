@@ -79,7 +79,7 @@ export const MobileEpisodeRowSkeleton: React.FC = () => (
  */
 export const HeroSkeleton: React.FC = () => (
   <div
-    className="relative w-full h-[clamp(400px,62dvh,540px)] md:h-[560px] lg:h-[clamp(520px,72vh,720px)] bg-[#050A14] overflow-hidden animate-pulse select-none"
+    className="relative w-full h-[clamp(400px,62svh,540px)] md:h-[560px] lg:h-[clamp(520px,72vh,720px)] bg-[#050A14] overflow-hidden animate-pulse select-none"
     style={{
       background:
         'radial-gradient(circle at 75% 25%, rgba(30, 136, 255, 0.2) 0%, rgba(11, 22, 44, 0.92) 48%, #050A14 100%)',
