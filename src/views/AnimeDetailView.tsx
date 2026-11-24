@@ -65,6 +65,7 @@ import {
   Tv,
   Calendar,
   Clock,
+  Layers,
 } from 'lucide-react';
 
 interface AnimeDetailViewProps {
@@ -626,27 +627,27 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
               {/* Metadata Badges Row */}
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                 {anime.type && (
-                  <span className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/10 text-white text-xs font-semibold">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#1A263D] border border-[#2A3A57] text-white text-xs font-semibold">
                     {anime.type}
                   </span>
                 )}
                 {anime.year && (
-                  <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[#CBD5E1] text-xs font-medium">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#121D33] border border-[#223250] text-[#CBD5E1] text-xs font-medium">
                     {anime.year}
                   </span>
                 )}
-                <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[#CBD5E1] text-xs font-medium">
+                <span className="px-2.5 py-1 rounded-lg bg-[#121D33] border border-[#223250] text-[#CBD5E1] text-xs font-medium">
                   {episodes.length || anime.totalEpisodes || 0} Episodes
                 </span>
                 {anime.status && (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-xs font-semibold capitalize">
+                  <span className="px-2.5 py-1 rounded-lg bg-[#0B2A28] border border-[#145349] text-emerald-400 text-xs font-semibold capitalize">
                     {anime.status}
                   </span>
                 )}
                 {audioBadges.map((badge) => (
                   <span
                     key={badge}
-                    className="px-2.5 py-1 rounded-lg bg-[#1E88FF]/15 border border-[#1E88FF]/30 text-[#1E88FF] text-xs font-bold"
+                    className="px-2.5 py-1 rounded-lg bg-[#0E2444] border border-[#1E4B8A] text-[#3B9BFF] text-xs font-bold"
                   >
                     {badge}
                   </span>
@@ -753,7 +754,7 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleDownloadClick()}
-                  className="h-11 sm:h-12 px-5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-sm font-semibold rounded-xl transition-all inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                  className="h-11 sm:h-12 px-5 bg-[#0C2F2B] hover:bg-[#11423C] border border-[#176459] text-emerald-400 text-sm font-semibold rounded-xl transition-colors inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
                 >
                   <Download className="w-4 h-4 shrink-0" />
                   <span>Download</span>
@@ -762,10 +763,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                 <button
                   type="button"
                   onClick={handleWatchlistToggle}
-                  className={`h-11 sm:h-12 px-4 rounded-xl border text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                  className={`h-11 sm:h-12 px-4 rounded-xl border text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
                     watchlistStatus
-                      ? 'bg-[#1E88FF]/15 border-[#1E88FF]/50 text-[#1E88FF]'
-                      : 'bg-[#050A14] hover:bg-[#101A30] border-white/10 text-[#CBD5E1] hover:text-white'
+                      ? 'bg-[#0E2444] border-[#1E88FF] text-[#3B9BFF]'
+                      : 'bg-[#050A14] hover:bg-[#101A30] border-[#1E2A42] text-[#CBD5E1] hover:text-white'
                   }`}
                 >
                   <Bookmark className={`w-4 h-4 shrink-0 ${watchlistStatus ? 'fill-current' : ''}`} />
@@ -777,10 +778,10 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
                   onClick={handleFavoriteClick}
                   title={fav ? 'Favorited' : 'Add to Favorites'}
                   aria-label="Toggle favorite"
-                  className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                  className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     fav
-                      ? 'bg-rose-500/15 border-rose-500/50 text-rose-400'
-                      : 'bg-[#050A14] hover:bg-[#101A30] border-white/10 text-[#94A3B8] hover:text-white'
+                      ? 'bg-[#2B1221] border-[#881337] text-rose-400'
+                      : 'bg-[#050A14] hover:bg-[#101A30] border-[#1E2A42] text-[#94A3B8] hover:text-white'
                   }`}
                 >
                   <Heart className={`w-5 h-5 ${fav ? 'fill-current' : ''}`} />
@@ -800,6 +801,96 @@ export const AnimeDetailView: React.FC<AnimeDetailViewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* 1.5 SEASONS POSTER STRIP (displays each season's custom poster when multiple seasons exist) */}
+        {anime.seasonsList && anime.seasonsList.length > 1 && (
+          <section className="space-y-2.5">
+            <div className="h-8 min-h-[32px] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Layers className="w-[18px] h-[18px] text-[#94A3B8] shrink-0" />
+                <h2 className="text-[16px] font-bold text-white tracking-tight truncate leading-none">
+                  Seasons
+                </h2>
+              </div>
+              <span className="text-xs text-[#94A3B8] font-medium shrink-0">
+                {anime.seasonsList.length} Seasons
+              </span>
+            </div>
+
+            <div className="-mx-4 sm:mx-0">
+              <div className="flex items-start gap-[10px] overflow-x-auto no-scrollbar snap-x snap-proximity px-4 sm:px-0 scroll-pl-4 sm:scroll-pl-0 pb-1">
+                {[...anime.seasonsList]
+                  .sort((a, b) => Number(a.seasonNumber) - Number(b.seasonNumber))
+                  .map((s) => {
+                    const sNum = Number(s.seasonNumber) || 1;
+                    const isActive =
+                      selectedSeasonNumber !== 'all' && Number(selectedSeasonNumber) === sNum;
+                    const seasonPosterUrl = getOptimizedImageUrl(s.poster || anime.poster, {
+                      width: 240,
+                      fallbackType: 'poster',
+                    });
+
+                    return (
+                      <button
+                        key={s.id || `season-card-${sNum}`}
+                        type="button"
+                        onClick={() => {
+                          if (s.slug && s.slug !== anime.slug) {
+                            navigate(`/anime/${encodeURIComponent(s.slug)}`);
+                          } else {
+                            setSelectedSeasonNumber(sNum);
+                          }
+                        }}
+                        className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[128px] lg:w-[144px] snap-start text-left group cursor-pointer focus:outline-none"
+                      >
+                        <div
+                          className={`relative aspect-[2/3] w-full rounded-[10px] overflow-hidden bg-[#0B1324] border-2 transition-all duration-150 ${
+                            isActive
+                              ? 'border-[#1E88FF] shadow-[0_0_16px_rgba(30,136,255,0.35)]'
+                              : 'border-white/10 group-hover:border-[#1E88FF]/60'
+                          }`}
+                        >
+                          <img
+                            src={seasonPosterUrl}
+                            alt={s.title || `Season ${sNum}`}
+                            loading="lazy"
+                            decoding="async"
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#050A14]/90 via-[#050A14]/40 to-transparent pointer-events-none" />
+                          <span
+                            className={`absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold leading-none ${
+                              isActive
+                                ? 'bg-[#1E88FF] text-white'
+                                : 'bg-black/70 text-white border border-white/15'
+                            }`}
+                          >
+                            S{sNum}
+                          </span>
+                        </div>
+                        <div className="mt-[6px] min-w-0">
+                          <p
+                            className={`text-[12px] font-semibold leading-[16px] truncate ${
+                              isActive
+                                ? 'text-[#1E88FF]'
+                                : 'text-white group-hover:text-[#1E88FF] transition-colors'
+                            }`}
+                          >
+                            {s.title || `Season ${sNum}`}
+                          </p>
+                          <p className="text-[11px] text-[#94A3B8] truncate leading-tight mt-0.5">
+                            {s.totalEpisodes ? `${s.totalEpisodes} Eps` : `Season ${sNum}`}
+                            {s.year ? ` · ${s.year}` : ''}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* 2. EPISODES SELECTOR */}
         <EpisodeSelector

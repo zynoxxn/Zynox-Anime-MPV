@@ -1,5 +1,5 @@
 // ZYNOX ANIME Service Worker for PWA installability and offline support
-const CACHE_NAME = 'zynox-anime-v4';
+const CACHE_NAME = 'zynox-anime-v5';
 const ASSETS_TO_CACHE = [
   '/',
   '/offline.html',
@@ -8,6 +8,7 @@ const ASSETS_TO_CACHE = [
   '/favicon-48x48.png',
   '/favicon-96x96.png',
   '/logo.png',
+  '/og-image.jpg',
   '/icon-192.png',
   '/icon-512.png',
 ];

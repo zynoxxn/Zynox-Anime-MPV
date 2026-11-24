@@ -38,7 +38,7 @@ import {
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
 import type { WatchProgress, WatchlistStatus } from '../types/library';
-import { extractIframeSrc, transformStreamUrl, isAbyssPlayerUrl } from '../lib/video-hosts';
+import { extractIframeSrc, transformStreamUrl } from '../lib/video-hosts';
 import { openSystemShare } from '../lib/share';
 import { ReportEpisodeModal } from '../components/ReportEpisodeModal';
 import { ShareModal } from '../components/ShareModal';
@@ -82,7 +82,6 @@ import {
   MoreHorizontal,
   Film,
   X,
-  ExternalLink,
   Play,
   Shield,
   Zap,
@@ -365,7 +364,6 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
   const [moreMenuOpen, setMoreMenuOpen] = useState<boolean>(false);
   const [downloadSheetOpen, setDownloadSheetOpen] = useState<boolean>(false);
   const [downloadMirrors, setDownloadMirrors] = useState<DownloadMirror[]>([]);
-  const [playerHighlight, setPlayerHighlight] = useState<boolean>(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -617,24 +615,83 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     };
   }, [animeSlug, episodeNumberOrId, user?.uid]);
 
-  // Discover servers for this episode
+  // Discover servers for this episode (deduplicating videoSources vs sources and resolving Dub/Sub accurately)
   const { subServers, dubServers } = useMemo(() => {
     if (!episode) return { subServers: [] as VideoSource[], dubServers: [] as VideoSource[] };
 
+    const isDubLabel = (raw?: string): boolean => {
+      if (!raw) return false;
+      const lower = raw.toLowerCase();
+      if (/\bsub\b/.test(lower) && !/\b(dub|hindi|dual|multi)\b/.test(lower)) return false;
+      return (
+        lower.includes('dub') ||
+        lower.includes('hindi') ||
+        lower.includes('dual') ||
+        lower.includes('multi') ||
+        lower === 'hi'
+      );
+    };
+
+    const episodeLang = ((episode as any).language || '').trim();
+    const animeLang = (anime?.audioLanguage || '').trim();
+    const episodeFallbackIsDub =
+      episode.defaultCategory === 'dub' ||
+      (episode.defaultCategory !== 'sub' &&
+        (isDubLabel(episodeLang) || (!episodeLang && isDubLabel(animeLang))));
+
     const rawSourcesList: VideoSource[] = [];
     const seenIds = new Set<string>();
+    const seenStreamKeys = new Set<string>();
+
+    const classifySourceIsDub = (cand: Partial<VideoSource>): boolean => {
+      const cat = (cand.category || '').toLowerCase().trim();
+      if (cat === 'dub') return true;
+      if (cat === 'sub') return false;
+
+      const lang = (cand.language || '').toLowerCase().trim();
+      const prov = (cand.provider || '').toLowerCase().trim();
+      const name = (cand.name || cand.sourceName || (cand as any).serverName || '').toLowerCase().trim();
+
+      if (lang) {
+        if (isDubLabel(lang)) return true;
+        if (lang.includes('sub')) return false;
+      }
+      if (prov.includes('dub') || prov.includes('hindi') || name.includes('dub') || name.includes('hindi')) {
+        return true;
+      }
+      if (prov.includes('sub') || name.includes('sub')) {
+        return false;
+      }
+      return episodeFallbackIsDub;
+    };
 
     const addSource = (cand: Partial<VideoSource> | null | undefined, prefix: string) => {
       if (!cand) return;
+      if (cand.active === false) return;
       const url = (cand.embedUrl || '').trim();
       const frame = (cand.frameCode || (cand as any).frameEmbedUrl || '').trim();
       if (!url && !frame) return;
       if (isMockVideoUrl(url) || isMockVideoUrl(frame)) return;
 
-      let uid = (cand.id || '').trim();
-      if (!uid || seenIds.has(uid)) uid = `${prefix}-${seenIds.size + 1}`;
+      const rawId = (cand.id || '').trim();
+      const normUrl = url.replace(/\/+$/, '').toLowerCase();
+      const normFrame = frame.toLowerCase();
+      const isDub = classifySourceIsDub(cand);
+      const streamKey = `${isDub ? 'dub' : 'sub'}::${normUrl}::${normFrame}`;
+
+      // Skip duplicates mirrored across both videoSources and sources arrays
+      if (seenStreamKeys.has(streamKey)) return;
+      if (rawId && seenIds.has(rawId)) return;
+
+      const uid = rawId || `${prefix}-${rawSourcesList.length + 1}`;
       seenIds.add(uid);
-      rawSourcesList.push({ ...cand, id: uid } as VideoSource);
+      seenStreamKeys.add(streamKey);
+      rawSourcesList.push({
+        ...cand,
+        id: uid,
+        category: isDub ? 'dub' : 'sub',
+        language: cand.language || (isDub ? episodeLang || animeLang || 'Dub' : 'Sub'),
+      } as VideoSource);
     };
 
     if (Array.isArray(episode.videoSources)) {
@@ -651,7 +708,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
           provider: 'Primary Stream',
           embedUrl: episode.videoUrl.trim(),
           active: true,
-          category: episode.defaultCategory || 'sub',
+          category: episodeFallbackIsDub ? 'dub' : 'sub',
+          language: episodeFallbackIsDub ? episodeLang || animeLang || 'Dub' : 'Sub',
         },
         'def'
       );
@@ -661,20 +719,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     const dub: VideoSource[] = [];
 
     rawSourcesList.forEach((s) => {
-      if (s.active === false) return;
-      const cat = (s.category || '').toLowerCase();
-      const lang = (s.language || '').toLowerCase();
-      const prov = (s.provider || '').toLowerCase();
-      const name = (s.name || s.sourceName || '').toLowerCase();
-
-      const isDub =
-        cat === 'dub' ||
-        lang.includes('dub') ||
-        lang === 'hi' ||
-        prov.includes('dub') ||
-        prov.includes('hindi') ||
-        name.includes('dub');
-      if (isDub) {
+      if (s.category === 'dub') {
         dub.push(s);
       } else {
         sub.push(s);
@@ -682,7 +727,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     });
 
     return { subServers: sub, dubServers: dub };
-  }, [episode]);
+  }, [episode, anime?.audioLanguage]);
 
   const effectiveCategory: AudioCategory =
     selectedCategory === 'dub'
@@ -1032,32 +1077,58 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
     setDownloadSheetOpen(true);
   };
 
-  const handleJumpToPlayerDownload = () => {
-    setDownloadSheetOpen(false);
-    setPlayerHighlight(true);
-    setTimeout(() => setPlayerHighlight(false), 2600);
-    if (playerContainerRef.current) {
-      playerContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    onShowMessage?.('Tap the ⬇ Download icon inside the video player to start downloading.');
+  const normalizeAudioLabel = (raw?: string): string => {
+    const val = (raw || '').trim();
+    if (!val) return '';
+    const lower = val.toLowerCase();
+    if (lower.includes('hindi')) return 'Hindi Dub';
+    if (lower.includes('dual')) return 'Dual Audio';
+    if (lower.includes('multi')) return 'Multi Audio';
+    if (lower.includes('english') && lower.includes('dub')) return 'English Dub';
+    if (lower.includes('japanese') && lower.includes('sub')) return 'Japanese Sub';
+    if (lower === 'dub') return 'Dub';
+    if (lower === 'sub') return 'Sub';
+    return val;
   };
 
+  const dubRowLabel = useMemo(() => {
+    const fromDub = normalizeAudioLabel(dubServers[0]?.language);
+    if (fromDub && fromDub !== 'Dub' && fromDub !== 'Sub') return fromDub;
+    const fromEp = normalizeAudioLabel((episode as any)?.language);
+    if (fromEp && fromEp !== 'Sub' && fromEp !== 'Japanese Sub') return fromEp;
+    const fromAnime = normalizeAudioLabel(anime?.audioLanguage);
+    if (fromAnime && fromAnime !== 'Sub' && fromAnime !== 'Japanese Sub') return fromAnime;
+    return 'Dub';
+  }, [dubServers, episode, anime?.audioLanguage]);
+
+  const subRowLabel = useMemo(() => {
+    const fromSub = normalizeAudioLabel(subServers[0]?.language);
+    if (fromSub && fromSub.toLowerCase().includes('sub')) return fromSub;
+    const fromEp = normalizeAudioLabel((episode as any)?.language);
+    if (fromEp && fromEp.toLowerCase().includes('sub')) return fromEp;
+    return 'Sub';
+  }, [subServers, episode]);
+
+  const resolvedDownloadAudioLabel = useMemo(() => {
+    if (effectiveCategory === 'dub') {
+      const fromActive = normalizeAudioLabel(activeSource?.language);
+      if (fromActive && fromActive !== 'Dub' && fromActive !== 'Sub') return fromActive;
+      return dubRowLabel;
+    }
+    const fromActive = normalizeAudioLabel(activeSource?.language);
+    if (fromActive && fromActive.toLowerCase().includes('sub')) return fromActive;
+    return subRowLabel;
+  }, [effectiveCategory, activeSource?.language, dubRowLabel, subRowLabel]);
+
   const formattedDownloadRows = useMemo(
-    () => formatAndSortDownloadMirrors(downloadMirrors, effectiveCategory === 'dub' ? 'Dub' : 'Sub'),
-    [downloadMirrors, effectiveCategory]
+    () => formatAndSortDownloadMirrors(downloadMirrors, resolvedDownloadAudioLabel),
+    [downloadMirrors, resolvedDownloadAudioLabel]
   );
 
   const directDownloadRows = useMemo(
     () => formattedDownloadRows.filter((r) => !r.mirror.isEmbedPlayer),
     [formattedDownloadRows]
   );
-
-  const embedDownloadRows = useMemo(
-    () => formattedDownloadRows.filter((r) => r.mirror.isEmbedPlayer),
-    [formattedDownloadRows]
-  );
-
-  const isCurrentStreamAbyss = isAbyssPlayerUrl(currentStreamUrl);
 
   // Season & Range Filtering for Episode List
   const seasonsAvailable = useMemo(() => {
@@ -1184,7 +1255,13 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
         : 'Dub'
       : 'Sub';
 
-  const loadingThumb = episode.thumbnail || anime.banner || anime.poster || '';
+  const activeEpisodeSeasonNum = Number(episode.seasonNumber || episode.season || 1);
+  const activeSeasonMeta = anime.seasonsList?.find(
+    (s) => Number(s.seasonNumber) === activeEpisodeSeasonNum
+  );
+  const activeSeasonPoster = activeSeasonMeta?.poster || anime.poster;
+  const loadingThumb =
+    episode.thumbnail || activeSeasonMeta?.banner || anime.banner || activeSeasonPoster || '';
 
   return (
     <div className="min-h-screen bg-[#050A14] text-white pb-16 overflow-x-clip">
@@ -1264,11 +1341,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
             <div className="watch-player-sticky-wrap">
               <div
                 ref={playerContainerRef}
-                className={`watch-player-frame aspect-video w-full bg-black rounded-2xl overflow-hidden border relative select-none shadow-2xl transition-all duration-300 ${
-                  playerHighlight
-                    ? 'border-[#1E88FF] ring-2 ring-[#1E88FF]/80 shadow-[0_0_24px_rgba(30,136,255,0.45)]'
-                    : 'border-white/10'
-                }`}
+                className="watch-player-frame aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 relative select-none shadow-2xl"
               >
                 {/* Loading Overlay: Dimmed thumbnail 50% + 40px spinner */}
                 {(streamsRefreshing && !currentStreamUrl) ||
@@ -1416,9 +1489,14 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               {/* 2. EPISODE INFO & ACTION CONTROLS CARD */}
               <section className="bg-[#0B1324] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
                 <div className="space-y-1 min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-[#1E88FF]">
-                    EPISODE {episode.episodeNumber} OF {allEpisodes.length || anime.totalEpisodes || 1}
-                  </p>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#1E88FF]">
+                      EPISODE {episode.episodeNumber} OF {allEpisodes.length || anime.totalEpisodes || 1}
+                    </p>
+                    <span className="px-2 py-0.5 rounded-md bg-[#0E2444] border border-[#1E4B8A] text-[10px] font-bold text-[#3B9BFF] whitespace-nowrap">
+                      {resolvedDownloadAudioLabel}
+                    </span>
+                  </div>
                   <h1 className="text-lg sm:text-xl font-bold text-white leading-snug line-clamp-2">
                     {episode.title || anime.title}
                   </h1>
@@ -1462,7 +1540,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                       className={`h-8 px-3.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors duration-150 whitespace-nowrap ${
                         nextEpisode
                           ? 'bg-[#1E88FF] hover:bg-[#1670D6] text-white cursor-pointer shadow-sm'
-                          : 'bg-[#1E88FF]/25 text-white/40 cursor-not-allowed'
+                          : 'bg-[#122645] text-[#64748B] cursor-not-allowed'
                       }`}
                     >
                       <span>Next</span>
@@ -1475,7 +1553,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     onClick={handleOpenDownloadSheet}
                     title="Download episode"
                     aria-label="Download episode"
-                    className="h-10 px-4 rounded-xl bg-[#101A30] hover:bg-[#1E88FF]/15 border border-white/10 hover:border-[#1E88FF]/40 text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                    className="h-10 px-4 rounded-xl bg-[#101A30] hover:bg-[#0E2444] border border-[#223250] hover:border-[#1E88FF] text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-colors duration-150 cursor-pointer whitespace-nowrap"
                   >
                     <Download className="w-4 h-4 shrink-0" />
                     <span>Download</span>
@@ -1491,8 +1569,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     aria-label={watchlistStatus ? 'Remove from watchlist' : 'Add to watchlist'}
                     className={`h-10 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 transition-colors duration-150 cursor-pointer whitespace-nowrap ${
                       watchlistStatus
-                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]/40 text-[#1E88FF]'
-                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-[#0E2444] border-[#1E88FF] text-[#3B9BFF]'
+                        : 'bg-[#101A30] hover:bg-[#16233D] border-[#223250] text-[#CBD5E1] hover:text-white'
                     }`}
                   >
                     <Bookmark className={`w-4 h-4 shrink-0 ${watchlistStatus ? 'fill-current' : ''}`} />
@@ -1506,8 +1584,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     aria-label={fav ? 'Remove from favorites' : 'Add to favorites'}
                     className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                       fav
-                        ? 'bg-red-500/15 border-red-500/35 text-red-500'
-                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-[#2B1221] border-[#881337] text-red-500'
+                        : 'bg-[#101A30] hover:bg-[#16233D] border-[#223250] text-[#CBD5E1] hover:text-white'
                     }`}
                   >
                     <Heart className={`w-4 h-4 shrink-0 ${fav ? 'fill-current' : ''}`} />
@@ -1518,7 +1596,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     onClick={handleShareEpisode}
                     title="Share episode"
                     aria-label="Share episode"
-                    className="w-10 h-10 rounded-xl bg-[#101A30] hover:bg-white/5 border border-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
+                    className="w-10 h-10 rounded-xl bg-[#101A30] hover:bg-[#16233D] border border-[#223250] text-[#CBD5E1] hover:text-white flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
                   >
                     <Share2 className="w-4 h-4 shrink-0" />
                   </button>
@@ -1530,8 +1608,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                     aria-label={watchedEpNumbers.includes(episode.episodeNumber) ? 'Watched' : 'Mark as watched'}
                     className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                       watchedEpNumbers.includes(episode.episodeNumber)
-                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]/40 text-[#1E88FF]'
-                        : 'bg-[#101A30] hover:bg-white/5 border-white/10 text-[#CBD5E1] hover:text-white'
+                        ? 'bg-[#0E2444] border-[#1E88FF] text-[#3B9BFF]'
+                        : 'bg-[#101A30] hover:bg-[#16233D] border-[#223250] text-[#CBD5E1] hover:text-white'
                     }`}
                   >
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -1564,8 +1642,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                   <div className="space-y-2.5">
                     {dubServers.length > 0 && (
                       <div className="flex items-center gap-2.5 flex-wrap">
-                        <span className="text-xs font-semibold text-[#94A3B8] w-10 shrink-0">
-                          Dub :
+                        <span className="text-xs font-semibold text-[#94A3B8] min-w-[40px] shrink-0 whitespace-nowrap">
+                          {dubRowLabel} :
                         </span>
                         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                           {dubServers.map((s, idx) => {
@@ -1593,8 +1671,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
 
                     {subServers.length > 0 && (
                       <div className="flex items-center gap-2.5 flex-wrap">
-                        <span className="text-xs font-semibold text-[#94A3B8] w-10 shrink-0">
-                          Sub :
+                        <span className="text-xs font-semibold text-[#94A3B8] min-w-[40px] shrink-0 whitespace-nowrap">
+                          {subRowLabel} :
                         </span>
                         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                           {subServers.map((s, idx) => {
@@ -1633,8 +1711,8 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                           }}
                           className={`h-9 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors duration-150 cursor-pointer shrink-0 border ${
                             useAlternateFrame
-                              ? 'bg-[#1E88FF]/15 border-[#1E88FF] text-[#1E88FF]'
-                              : 'bg-[#101A30] border-white/10 text-[#CBD5E1] hover:border-white/25 hover:text-white'
+                              ? 'bg-[#0E2444] border-[#1E88FF] text-[#3B9BFF]'
+                              : 'bg-[#101A30] border-[#223250] text-[#CBD5E1] hover:border-[#364C75] hover:text-white'
                           }`}
                         >
                           Alternate Mirror
@@ -1662,7 +1740,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                   episodeRanges={episodeRanges}
                   selectedRangeIndex={selectedRangeIndex}
                   setSelectedRangeIndex={setSelectedRangeIndex}
-                  fallbackPoster={anime.poster}
+                  fallbackPoster={activeSeasonPoster}
                   onSelectEpisode={(ep) => {
                     const s = ep.seasonNumber || ep.season || 1;
                     navigate(`/anime/${anime.slug}/episode/${ep.episodeNumber}?season=${s}`);
@@ -1743,7 +1821,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 episodeRanges={episodeRanges}
                 selectedRangeIndex={selectedRangeIndex}
                 setSelectedRangeIndex={setSelectedRangeIndex}
-                fallbackPoster={anime.poster}
+                fallbackPoster={activeSeasonPoster}
                 onSelectEpisode={(ep) => {
                   const s = ep.seasonNumber || ep.season || 1;
                   navigate(`/anime/${anime.slug}/episode/${ep.episodeNumber}?season=${s}`);
@@ -1782,7 +1860,7 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
               </button>
             </div>
 
-            {formattedDownloadRows.length === 0 && !isCurrentStreamAbyss ? (
+            {directDownloadRows.length === 0 ? (
               <div className="py-8 text-center space-y-2">
                 <AlertTriangle className="w-8 h-8 text-[#94A3B8] mx-auto" />
                 <p className="text-sm font-semibold text-white">No Direct Download Links</p>
@@ -1791,99 +1869,52 @@ export const WatchEpisodeView: React.FC<WatchEpisodeViewProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {/* 1. Direct File / Cloud Download Mirrors */}
-                {directDownloadRows.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
-                      Direct Download Links
-                    </p>
-                    {directDownloadRows.map((row, idx) => (
-                      <button
-                        key={`direct-${idx}`}
-                        type="button"
-                        onClick={() => {
-                          executeDownloadRedirect(
-                            row.mirror.url,
-                            `${anime.title} - Episode ${episode.episodeNumber} [${row.title}]`,
-                            onShowMessage
-                          );
-                          setDownloadSheetOpen(false);
-                        }}
-                        className="w-full p-3 rounded-xl bg-[#101A30] hover:bg-[#1E88FF]/15 border border-white/10 hover:border-[#1E88FF]/50 text-left transition-colors duration-150 flex items-center justify-between gap-3 group cursor-pointer"
-                      >
-                        <div className="space-y-0.5 min-w-0 flex-1">
-                          <p className="text-[14px] font-semibold text-white group-hover:text-[#1E88FF] truncate transition-colors duration-150">
-                            {row.title}
-                          </p>
-                          <p className="text-[12px] text-[#94A3B8] truncate">
-                            {row.meta}
-                          </p>
-                        </div>
-                        <div className="w-11 h-11 rounded-xl bg-[#1E88FF] text-white flex items-center justify-center shrink-0">
-                          <Download className="w-4 h-4" />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* 2. Abyss / In-Player Built-in Download Section */}
-                {(isCurrentStreamAbyss || embedDownloadRows.length > 0) && (
-                  <div className="space-y-2.5">
-                    <div className="p-3.5 rounded-xl bg-[#1E88FF]/10 border border-[#1E88FF]/30 space-y-2.5">
-                      <div className="flex items-start gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-[#1E88FF]/20 text-[#00CFFF] flex items-center justify-center shrink-0 mt-0.5">
-                          <Play className="w-4 h-4 fill-current" />
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-xs sm:text-sm font-semibold text-white">
-                            Abyss Player Built-in Download
-                          </p>
-                          <p className="text-[11px] text-[#CBD5E1] leading-relaxed">
-                            Browser security prevents external buttons from auto-clicking inside an embedded player. Use the ⬇ Download icon inside the video player or open the player directly.
-                          </p>
-                        </div>
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                  Direct Download Links
+                </p>
+                {directDownloadRows.map((row, idx) => {
+                  const is720 = row.sortWeight === 720 || row.title.toLowerCase().includes('720');
+                  return (
+                    <button
+                      key={`direct-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        executeDownloadRedirect(
+                          row.mirror.url,
+                          `${anime.title} - Episode ${episode.episodeNumber} [${row.title}]`,
+                          onShowMessage
+                        );
+                        setDownloadSheetOpen(false);
+                      }}
+                      className={`w-full p-3 rounded-xl bg-[#101A30] border border-[#223250] text-left transition-colors duration-150 flex items-center justify-between gap-3 group cursor-pointer ${
+                        is720
+                          ? 'hover:bg-[#0B2A28] hover:border-[#145349]'
+                          : 'hover:bg-[#0E2444] hover:border-[#1E88FF]'
+                      }`}
+                    >
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <p
+                          className={`text-[14px] font-semibold text-white truncate transition-colors duration-150 ${
+                            is720 ? 'group-hover:text-emerald-400' : 'group-hover:text-[#1E88FF]'
+                          }`}
+                        >
+                          {row.title}
+                        </p>
+                        <p className="text-[12px] text-[#94A3B8] truncate">
+                          {row.meta}
+                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleJumpToPlayerDownload}
-                        className="w-full h-10 px-4 rounded-xl bg-[#1E88FF] hover:bg-[#1670D6] text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors duration-150 cursor-pointer"
+                      <div
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                          is720 ? 'bg-emerald-500 text-black' : 'bg-[#1E88FF] text-white'
+                        }`}
                       >
-                        <Download className="w-4 h-4 shrink-0" />
-                        <span>Use Built-in Player Download (⬇)</span>
-                      </button>
-                    </div>
-
-                    {embedDownloadRows.map((row, idx) => (
-                      <button
-                        key={`embed-${idx}`}
-                        type="button"
-                        onClick={() => {
-                          executeDownloadRedirect(
-                            row.mirror.url,
-                            `${anime.title} - Episode ${episode.episodeNumber} [${row.title}]`,
-                            onShowMessage
-                          );
-                          setDownloadSheetOpen(false);
-                        }}
-                        className="w-full p-3 rounded-xl bg-[#101A30] hover:bg-white/[0.07] border border-white/10 hover:border-white/25 text-left transition-colors duration-150 flex items-center justify-between gap-3 group cursor-pointer"
-                      >
-                        <div className="space-y-0.5 min-w-0 flex-1">
-                          <p className="text-[14px] font-semibold text-white group-hover:text-[#00CFFF] truncate transition-colors duration-150">
-                            {row.title} · Open Player
-                          </p>
-                          <p className="text-[12px] text-[#94A3B8] truncate">
-                            {row.meta} · Tap ⬇ inside player
-                          </p>
-                        </div>
-                        <div className="w-11 h-11 rounded-xl bg-white/10 group-hover:bg-[#1E88FF] text-white flex items-center justify-center shrink-0 transition-colors">
-                          <ExternalLink className="w-4 h-4" />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                        <Download className="w-4 h-4" />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2072,12 +2103,12 @@ const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
                 aria-label={`Episode ${ep.episodeNumber}${isCurrent ? ' (Playing)' : ''}`}
                 className={`h-12 w-full rounded-xl flex items-center justify-center font-semibold text-xs transition-colors duration-150 cursor-pointer relative ${
                   isCurrent
-                    ? 'border-2 border-[#1E88FF] bg-[#1E88FF]/15 text-white'
+                    ? 'border-2 border-[#1E88FF] bg-[#0E2444] text-white'
                     : isWatched
-                    ? 'bg-[#050A14] border border-white/10 text-[#94A3B8] hover:text-white'
+                    ? 'bg-[#050A14] border border-[#1E2A42] text-[#94A3B8] hover:text-white'
                     : isUpcoming
-                    ? 'border border-dashed border-white/20 text-[#94A3B8] bg-[#050A14]/60'
-                    : 'bg-[#101A30] hover:border-white/25 border border-white/10 text-white'
+                    ? 'border border-dashed border-[#2A3A57] text-[#94A3B8] bg-[#080F1E]'
+                    : 'bg-[#101A30] hover:border-[#364C75] border border-[#1E2A42] text-white'
                 }`}
               >
                 <span className="tabular-nums">{ep.episodeNumber}</span>
@@ -2118,8 +2149,8 @@ const EpisodeListSection: React.FC<EpisodeListSectionProps> = ({
                 }}
                 className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors duration-150 cursor-pointer ${
                   isCurrent
-                    ? 'bg-[#1E88FF]/10 border-[#1E88FF]'
-                    : 'bg-[#101A30]/70 hover:bg-[#101A30] border-white/10'
+                    ? 'bg-[#0E2444] border-[#1E88FF]'
+                    : 'bg-[#0E172B] hover:bg-[#101A30] border-[#1E2A42]'
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">

@@ -1329,7 +1329,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
               className="fixed inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setShowSeasonModal(false)}
             />
-            <div className="relative w-full max-w-md bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl z-10 space-y-4">
+            <div className="relative w-full max-w-md max-h-[90svh] overflow-y-auto no-scrollbar bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl z-10 space-y-4">
               <h3 className="text-base font-bold text-white">
                 {editingSeasonIndex !== null ? 'Edit Season' : 'Add Season'}
               </h3>
@@ -1343,7 +1343,10 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                     type="number"
                     value={seasonModalData.seasonNumber || 1}
                     onChange={(e) =>
-                      setSeasonModalData({ ...seasonModalData, seasonNumber: Number(e.target.value) })
+                      setSeasonModalData((prev) => ({
+                        ...prev,
+                        seasonNumber: Number(e.target.value),
+                      }))
                     }
                     className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
                   />
@@ -1357,7 +1360,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                     type="text"
                     value={seasonModalData.title || ''}
                     onChange={(e) =>
-                      setSeasonModalData({ ...seasonModalData, title: e.target.value })
+                      setSeasonModalData((prev) => ({ ...prev, title: e.target.value }))
                     }
                     placeholder="e.g. Season 2: Entertainment District Arc"
                     className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
@@ -1373,7 +1376,10 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                       type="number"
                       value={seasonModalData.totalEpisodes || 12}
                       onChange={(e) =>
-                        setSeasonModalData({ ...seasonModalData, totalEpisodes: Number(e.target.value) })
+                        setSeasonModalData((prev) => ({
+                          ...prev,
+                          totalEpisodes: Number(e.target.value),
+                        }))
                       }
                       className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
                     />
@@ -1386,11 +1392,28 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                       type="number"
                       value={seasonModalData.year || 2026}
                       onChange={(e) =>
-                        setSeasonModalData({ ...seasonModalData, year: Number(e.target.value) })
+                        setSeasonModalData((prev) => ({
+                          ...prev,
+                          year: Number(e.target.value),
+                        }))
                       }
                       className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
                     />
                   </div>
+                </div>
+
+                {/* Per-Season Custom Poster Uploader / URL */}
+                <div className="pt-1">
+                  <AdminImageUploader
+                    label="Season Poster (2:3 aspect)"
+                    type="poster"
+                    currentUrl={seasonModalData.poster || ''}
+                    animeId={animeId || slug}
+                    recommendedText="Upload or paste a custom poster for this season (optional — defaults to main poster)"
+                    onUrlChange={(url) =>
+                      setSeasonModalData((prev) => ({ ...prev, poster: url }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -1398,7 +1421,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowSeasonModal(false)}
-                  className="h-9 px-3.5 rounded-[8px] text-xs font-medium text-[#CBD5E1] hover:text-white"
+                  className="h-9 px-3.5 rounded-[8px] text-xs font-medium text-[#CBD5E1] hover:text-white cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1407,6 +1430,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                   onClick={() => {
                     if (!seasonModalData.seasonNumber) return;
                     const item: AnimeSeasonEntry = {
+                      ...seasonModalData,
                       id: seasonModalData.id || `season-${Date.now()}`,
                       seasonNumber: Number(seasonModalData.seasonNumber),
                       title: seasonModalData.title?.trim() || `Season ${seasonModalData.seasonNumber}`,
@@ -1424,7 +1448,7 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                     setShowSeasonModal(false);
                     markDirty();
                   }}
-                  className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold"
+                  className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold cursor-pointer"
                 >
                   Save season
                 </button>

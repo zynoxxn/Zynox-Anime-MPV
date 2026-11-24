@@ -22,7 +22,7 @@ export interface AnimeSeoOptions {
 }
 
 const DEFAULT_SITE_NAME = 'ZYNOX ANIME';
-const DEFAULT_OG_IMAGE = 'https://www.zynoxanime.cv/logo.png';
+const DEFAULT_OG_IMAGE = 'https://www.zynoxanime.cv/og-image.jpg';
 const DEFAULT_SITE_URL =
   typeof window !== 'undefined' && window.location.origin
     ? window.location.origin

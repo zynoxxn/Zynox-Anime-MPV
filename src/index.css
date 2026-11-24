@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
   /* ZYNOX Exact Master Design Tokens */
   --bg-page: #050A14;
   --bg-surface: #0B1324;
@@ -40,6 +41,7 @@
 }
 
 html {
+  color-scheme: dark;
   scroll-behavior: smooth;
   overflow-x: clip;
   height: -webkit-fill-available;
@@ -78,6 +80,13 @@ textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+button,
+[role="button"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background-clip: padding-box;
+}
+
 button:focus:not(:focus-visible),
 a:focus:not(:focus-visible),
 [role="button"]:focus:not(:focus-visible) {
@@ -111,18 +120,15 @@ a:focus:not(:focus-visible),
   }
 }
 
-/* Fixed Hardware-Accelerated Ambient Glow Background */
+/* Subtle Ambient Glow Background (no forced GPU layer to avoid mobile tile tearing) */
 .bg-ambient-layer {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: -10;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(30, 136, 255, 0.07) 0%, transparent 60%),
-    radial-gradient(circle at 100% 20%, rgba(30, 136, 255, 0.04) 0%, transparent 50%),
-    radial-gradient(circle at 0% 80%, rgba(30, 136, 255, 0.03) 0%, transparent 50%);
-  transform: translateZ(0);
-  will-change: transform;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(30, 136, 255, 0.06) 0%, transparent 55%),
+    radial-gradient(circle at 100% 20%, rgba(30, 136, 255, 0.03) 0%, transparent 45%);
 }
 
 /* Custom sleek scrollbar */

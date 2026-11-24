@@ -270,7 +270,12 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
         <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-[#0B1324] border border-white/10 min-w-0">
           <div className="w-12 sm:w-14 aspect-[2/3] shrink-0 rounded-lg overflow-hidden bg-[#050A14] border border-white/10">
             <img
-              src={anime.poster || FALLBACK_POSTER}
+              src={
+                anime.seasonsList?.find((s) => Number(s.seasonNumber) === Number(selectedSeason))
+                  ?.poster ||
+                anime.poster ||
+                FALLBACK_POSTER
+              }
               alt={anime.title}
               referrerPolicy="no-referrer"
               loading="lazy"
@@ -287,17 +292,32 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
             <h2 className="text-sm sm:text-base font-bold text-white truncate">
               {anime.title}
             </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]">
-              <span className="font-semibold text-white">Season {selectedSeason}</span>
-              <span>&bull;</span>
-              <span>{formattedEpisodes.length} Episodes</span>
-              {anime.audioLanguage && (
-                <>
+            {(() => {
+              const seasonAudio =
+                formattedEpisodes
+                  .map(
+                    (f) =>
+                      ((f.episode as any).language ||
+                        f.episode.videoSources?.[0]?.language ||
+                        f.episode.sources?.[0]?.language ||
+                        '').trim()
+                  )
+                  .find(Boolean) || anime.audioLanguage;
+
+              return (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]">
+                  <span className="font-semibold text-white">Season {selectedSeason}</span>
                   <span>&bull;</span>
-                  <span className="text-[#1E88FF] font-medium">{anime.audioLanguage}</span>
-                </>
-              )}
-            </div>
+                  <span>{formattedEpisodes.length} Episodes</span>
+                  {seasonAudio && (
+                    <>
+                      <span>&bull;</span>
+                      <span className="text-[#3B9BFF] font-semibold">{seasonAudio}</span>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -333,7 +353,7 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
                 className="p-3 rounded-xl bg-[#0B1324] border border-amber-500/25 flex items-center justify-between gap-2.5 min-w-0"
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <div className="w-8 h-8 rounded-lg bg-[#291E0B] text-amber-400 flex items-center justify-center shrink-0 border border-[#6B4A12]">
                     <FolderArchive className="w-4 h-4" />
                   </div>
                   <div className="text-xs sm:text-sm font-bold text-white truncate">
@@ -409,12 +429,29 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
                     id={`episode-row-${epItem.episodeNumber}`}
                     className={`flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 rounded-xl border transition-colors min-w-0 ${
                       isHighlighted
-                        ? 'bg-[#1E88FF]/15 border-[#1E88FF]'
-                        : 'bg-[#0B1324] hover:bg-[#101A30] border-white/10'
+                        ? 'bg-[#0E2444] border-[#1E88FF]'
+                        : 'bg-[#0B1324] hover:bg-[#101A30] border-[#1B263B]'
                     }`}
                   >
-                    <div className="font-mono text-xs sm:text-sm font-bold text-white truncate min-w-0">
-                      EP {epItem.episodeNumber}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs sm:text-sm font-bold text-white shrink-0">
+                        EP {epItem.episodeNumber}
+                      </span>
+                      {(() => {
+                        const epAudio = (
+                          (epItem.episode as any).language ||
+                          epItem.episode.videoSources?.[0]?.language ||
+                          epItem.episode.sources?.[0]?.language ||
+                          anime.audioLanguage ||
+                          ''
+                        ).trim();
+                        if (!epAudio) return null;
+                        return (
+                          <span className="px-1.5 py-0.5 rounded bg-[#0E2444] border border-[#1E4B8A] text-[10px] font-semibold text-[#3B9BFF] truncate max-w-[90px] sm:max-w-none">
+                            {epAudio}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -427,7 +464,7 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
                           )
                         }
                         disabled={!has720}
-                        className="w-[72px] sm:w-24 h-8 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/20 text-xs font-semibold transition-colors disabled:opacity-25 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
+                        className="w-[72px] sm:w-24 h-8 rounded-lg bg-[#0B2A28] hover:bg-[#10B981] text-emerald-400 hover:text-black border border-[#145349] text-xs font-semibold transition-colors disabled:opacity-25 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
                         title={`Download EP ${epItem.episodeNumber} (720p)`}
                       >
                         <Download className="w-3 h-3 shrink-0" />
@@ -443,7 +480,7 @@ export const AnimeDownloadView: React.FC<AnimeDownloadViewProps> = ({
                           )
                         }
                         disabled={!has1080}
-                        className="w-[72px] sm:w-24 h-8 rounded-lg bg-[#1E88FF]/15 hover:bg-[#1E88FF] text-[#1E88FF] hover:text-white border border-[#1E88FF]/30 text-xs font-semibold transition-colors disabled:opacity-25 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
+                        className="w-[72px] sm:w-24 h-8 rounded-lg bg-[#0E2444] hover:bg-[#1E88FF] text-[#3B9BFF] hover:text-white border border-[#1E4B8A] text-xs font-semibold transition-colors disabled:opacity-25 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap"
                         title={`Download EP ${epItem.episodeNumber} (1080p)`}
                       >
                         <Download className="w-3 h-3 shrink-0" />

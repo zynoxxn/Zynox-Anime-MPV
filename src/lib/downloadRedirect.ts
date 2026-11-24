@@ -77,16 +77,41 @@ export function getAllEpisodeDownloadMirrors(
   anime?: Anime | null
 ): DownloadMirror[] {
   const mirrors: DownloadMirror[] = [];
-  const seenUrls = new Set<string>();
+  const seenUrlRes = new Set<string>();
+  const seenExplicitUrls = new Set<string>();
 
-  const addMirror = (mirror: DownloadMirror) => {
+  const getResKey = (quality?: string): string => {
+    const q = (quality || '').toLowerCase();
+    if (q.includes('2160') || q.includes('4k')) return '4k';
+    if (q.includes('1080')) return '1080p';
+    if (q.includes('720')) return '720p';
+    if (q.includes('480')) return '480p';
+    if (q.includes('360')) return '360p';
+    return 'other';
+  };
+
+  const addMirror = (mirror: DownloadMirror, isExplicitList = false) => {
     const formatted = formatDownloadUrl(mirror.url);
-    if (!formatted || seenUrls.has(formatted)) return;
-    seenUrls.add(formatted);
+    if (!formatted) return;
+    if (mirror.isEmbedPlayer || isEmbedStreamMirrorUrl(formatted)) return;
+
+    const resKey = getResKey(mirror.quality);
+    const dedupeKey = `${resKey}::${formatted}`;
+    if (seenUrlRes.has(dedupeKey)) return;
+
+    // For fallback single-URL fields (episode.downloadUrl, sources, anime fallback),
+    // avoid adding a duplicate row if this exact URL is already in explicit downloadLinks
+    if (!isExplicitList && seenExplicitUrls.has(formatted)) return;
+
+    seenUrlRes.add(dedupeKey);
+    if (isExplicitList) {
+      seenExplicitUrls.add(formatted);
+    }
+
     mirrors.push({
       ...mirror,
       url: formatted,
-      isEmbedPlayer: mirror.isEmbedPlayer ?? isEmbedStreamMirrorUrl(formatted),
+      isEmbedPlayer: false,
     });
   };
 
@@ -112,16 +137,19 @@ export function getAllEpisodeDownloadMirrors(
     }
   };
 
-  // 1. Explicit Episode Download Links
+  // 1. Explicit Episode Download Links (preserves both 720p & 1080p even if sharing the same host URL)
   if (episode?.downloadLinks && episode.downloadLinks.length > 0) {
     episode.downloadLinks.forEach((dl) => {
       if (dl.url && dl.url.trim()) {
-        addMirror({
-          quality: dl.quality || '1080p Ultra HD',
-          size: dl.size || 'Fast Mirror',
-          url: dl.url,
-          host: dl.host || getHostLabel(dl.url, 'Direct Mirror'),
-        });
+        addMirror(
+          {
+            quality: dl.quality || '1080p Full HD',
+            size: dl.size || (getResKey(dl.quality) === '720p' ? '~180 MB' : '~350 MB'),
+            url: dl.url,
+            host: dl.host || getHostLabel(dl.url, 'Direct Mirror'),
+          },
+          true
+        );
       }
     });
   }
@@ -129,14 +157,14 @@ export function getAllEpisodeDownloadMirrors(
   // 2. Explicit Episode Direct Download URL
   if (episode?.downloadUrl && episode.downloadUrl.trim()) {
     addMirror({
-      quality: episode.downloadQuality || '1080p Ultra HD (Direct)',
-      size: episode.downloadSize || 'Primary Fast Server',
+      quality: episode.downloadQuality || '1080p Full HD',
+      size: episode.downloadSize || (getResKey(episode.downloadQuality) === '720p' ? '~180 MB' : '~350 MB'),
       url: episode.downloadUrl,
       host: getHostLabel(episode.downloadUrl, 'Primary Mirror'),
     });
   }
 
-  // 3. Episode Sources & Video Sources (Streaming hosts often have direct download capabilities)
+  // 3. Episode Sources & Video Sources (Only include direct file/download links, exclude embedded video players)
   const allSources = [
     ...(episode?.sources || []),
     ...(episode?.videoSources || []),
@@ -144,24 +172,25 @@ export function getAllEpisodeDownloadMirrors(
   for (const s of allSources) {
     const srcUrl = s.embedUrl || (s as any).videoUrl;
     if (srcUrl && typeof srcUrl === 'string' && srcUrl.trim()) {
-      const isEmbed = isEmbedStreamMirrorUrl(srcUrl);
+      if (isEmbedStreamMirrorUrl(srcUrl)) continue;
       addMirror({
         quality: `${s.quality || '1080p HD'} (${s.provider || s.sourceName || 'Stream Server'})`,
         size: s.language || 'Direct Stream Server',
         url: srcUrl,
         host: getHostLabel(srcUrl, s.provider || 'Stream Mirror'),
-        isEmbedPlayer: isEmbed,
+        isEmbedPlayer: false,
       });
     }
   }
 
-  // 4. Episode direct video URL
-  if (episode?.videoUrl && episode.videoUrl.trim()) {
+  // 4. Episode direct video URL (exclude embedded video players)
+  if (episode?.videoUrl && episode.videoUrl.trim() && !isEmbedStreamMirrorUrl(episode.videoUrl)) {
     addMirror({
       quality: 'HD Stream / Direct Download',
       size: 'High Speed',
       url: episode.videoUrl,
       host: getHostLabel(episode.videoUrl, 'Video Stream Host'),
+      isEmbedPlayer: false,
     });
   }
 
@@ -169,12 +198,15 @@ export function getAllEpisodeDownloadMirrors(
   if (anime?.downloadLinks && anime.downloadLinks.length > 0) {
     anime.downloadLinks.forEach((dl) => {
       if (dl.url && dl.url.trim()) {
-        addMirror({
-          quality: dl.quality || 'Series Download (Full Season)',
-          size: dl.size || 'All Episodes',
-          url: dl.url,
-          host: dl.host || getHostLabel(dl.url, 'Series Cloud Mirror'),
-        });
+        addMirror(
+          {
+            quality: dl.quality || 'Series Download (Full Season)',
+            size: dl.size || 'All Episodes',
+            url: dl.url,
+            host: dl.host || getHostLabel(dl.url, 'Series Cloud Mirror'),
+          },
+          true
+        );
       }
     });
   }
@@ -199,13 +231,60 @@ export function getAllEpisodeDownloadMirrors(
     });
   }
 
-  // Filter strictly to 720p and 1080p as requested
-  return mirrors.filter((m) => {
+  // Filter strictly to non-embed direct links and exclude 360p/480p
+  const directMirrors = mirrors.filter((m) => {
+    if (m.isEmbedPlayer) return false;
     const q = (m.quality || '').toLowerCase();
-    // Allow if explicitly 720p or 1080p, or if it doesn't mention 360 or 480
     if (q.includes('360') || q.includes('480')) return false;
     return true;
   });
+
+  if (directMirrors.length === 0) {
+    return [];
+  }
+
+  // Ensure BOTH 1080p and 720p direct download options are always presented
+  // when at least one direct download mirror is configured for the episode
+  const has1080p = directMirrors.some((m) => getResKey(m.quality) === '1080p');
+  const has720p = directMirrors.some((m) => getResKey(m.quality) === '720p');
+  const primaryDirect =
+    directMirrors.find((m) => getResKey(m.quality) === '1080p') ||
+    directMirrors.find((m) => getResKey(m.quality) === '720p') ||
+    directMirrors[0];
+
+  const finalMirrors: DownloadMirror[] = [...directMirrors];
+
+  if (primaryDirect) {
+    if (!has1080p) {
+      finalMirrors.unshift({
+        quality: '1080p Full HD',
+        size: '~350 MB',
+        url: primaryDirect.url,
+        host: primaryDirect.host || getHostLabel(primaryDirect.url, 'Direct Mirror'),
+        isEmbedPlayer: false,
+      });
+    }
+    if (!has720p) {
+      finalMirrors.push({
+        quality: '720p HD',
+        size: '~180 MB',
+        url: primaryDirect.url,
+        host: primaryDirect.host || getHostLabel(primaryDirect.url, 'Direct Mirror'),
+        isEmbedPlayer: false,
+      });
+    }
+  }
+
+  // Sort cleanly: 4K > 1080p > 720p > Batch/Other
+  const getWeight = (quality?: string): number => {
+    const k = getResKey(quality);
+    if (k === '4k') return 2160;
+    if (k === '1080p') return 1080;
+    if (k === '720p') return 720;
+    return 500;
+  };
+
+  return finalMirrors.sort((a, b) => getWeight(b.quality) - getWeight(a.quality));
 }
 
 /**
@@ -281,11 +360,7 @@ export function executeDownloadRedirect(
   const isDirectFile = /\.(mp4|mkv|webm|mov|zip|rar)(\?|$)/i.test(finalUrl);
 
   if (onMessage) {
-    onMessage(
-      isAbyssPlayerUrl(finalUrl)
-        ? `Opening Abyss player${label ? ` for ${label}` : ''} — tap the ⬇ icon inside the player to download`
-        : `Opening download link${label ? ` for ${label}` : ''}...`
-    );
+    onMessage(`Opening download link${label ? ` for ${label}` : ''}...`);
   }
 
   try {

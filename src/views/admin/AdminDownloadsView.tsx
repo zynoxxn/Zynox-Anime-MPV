@@ -166,10 +166,12 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
             (l) => l.quality && l.quality.toLowerCase().includes('1080')
           );
 
-          if (!link1080 && ep.downloadUrl) {
+          if (ep.downloadUrl) {
             if (ep.downloadQuality && ep.downloadQuality.includes('720')) {
-              link720 = { quality: '720p HD', url: ep.downloadUrl, size: '~240 MB' };
-            } else {
+              if (!link720) {
+                link720 = { quality: '720p HD', url: ep.downloadUrl, size: '~240 MB' };
+              }
+            } else if (!link1080) {
               link1080 = { quality: '1080p Full HD', url: ep.downloadUrl, size: '~480 MB' };
             }
           }
@@ -401,7 +403,7 @@ export const AdminDownloadsView: React.FC<AdminDownloadsViewProps> = ({
           published: ep.published ?? true,
           downloadLinks: formattedLinks,
           downloadUrl: primary || undefined,
-          downloadQuality: primary ? '1080p Full HD' : undefined,
+          downloadQuality: primary ? (resData['1080p']?.url.trim() ? '1080p Full HD' : '720p HD') : undefined,
         });
         count++;
       }

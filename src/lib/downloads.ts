@@ -1,6 +1,6 @@
 import type { Anime, ZipDownloadPackage } from '../types/anime';
 import type { Episode } from '../types/episode';
-import { formatDownloadUrl } from './downloadRedirect';
+import { formatDownloadUrl, isEmbedStreamMirrorUrl } from './downloadRedirect';
 
 export type DownloadResolution = '360p' | '480p' | '720p' | '1080p';
 
@@ -92,10 +92,13 @@ export function getEpisodeResolutionLink(
     }
   }
 
-  // 3. Check video sources if direct mp4 is available for download
+  // 3. Check video sources only if a direct file/download URL (non-embed) is available
   if (!foundUrl && episode.videoSources && episode.videoSources.length > 0) {
-    const sourceMatch = episode.videoSources.find((s) =>
-      s.quality?.toLowerCase().includes(resolution.replace('p', '')) && s.embedUrl
+    const sourceMatch = episode.videoSources.find(
+      (s) =>
+        s.quality?.toLowerCase().includes(resolution.replace('p', '')) &&
+        s.embedUrl &&
+        !isEmbedStreamMirrorUrl(s.embedUrl)
     );
     if (sourceMatch && sourceMatch.embedUrl) {
       foundUrl = formatDownloadUrl(sourceMatch.embedUrl);

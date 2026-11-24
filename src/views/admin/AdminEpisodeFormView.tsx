@@ -60,6 +60,7 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
   const [description, setDescription] = useState('');
   const [thumbnail, setThumbnail] = useState('');
   const [duration, setDuration] = useState('24:00');
+  const [episodeLanguage, setEpisodeLanguage] = useState('');
   const [published, setPublished] = useState(true);
 
   // Upcoming & Scheduling states
@@ -75,7 +76,10 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
   const [downloadSize, setDownloadSize] = useState('');
   const [downloadLinks, setDownloadLinks] = useState<
     { quality: string; size?: string; url: string; host?: string }[]
-  >([]);
+  >([
+    { quality: '720p HD', size: '~180 MB', url: '', host: '' },
+    { quality: '1080p Full HD', size: '~350 MB', url: '', host: '' },
+  ]);
 
   // Timestamps
   const [introStart, setIntroStart] = useState<number | undefined>();
@@ -147,26 +151,82 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
             setDownloadQuality(epData.downloadQuality || '1080p Ultra HD');
             setDownloadSize(epData.downloadSize || '');
 
-            if (epData.downloadLinks) setDownloadLinks(epData.downloadLinks);
+            const existingLinks = Array.isArray(epData.downloadLinks)
+              ? epData.downloadLinks.filter((d) => d && d.url && d.url.trim())
+              : [];
+            const has720 = existingLinks.some((d) => (d.quality || '').toLowerCase().includes('720'));
+            const has1080 = existingLinks.some((d) => (d.quality || '').toLowerCase().includes('1080'));
+            const normalizedLinks = [...existingLinks];
+
+            if (!has720) {
+              const legacyIs720 = Boolean(
+                epData.downloadUrl && (epData.downloadQuality || '').toLowerCase().includes('720')
+              );
+              normalizedLinks.unshift({
+                quality: '720p HD',
+                size: legacyIs720 ? epData.downloadSize || '~180 MB' : '~180 MB',
+                url: legacyIs720 ? epData.downloadUrl || '' : '',
+                host: '',
+              });
+            }
+            if (!has1080) {
+              const legacyIs1080 = Boolean(
+                epData.downloadUrl && !(epData.downloadQuality || '').toLowerCase().includes('720')
+              );
+              normalizedLinks.push({
+                quality: '1080p Full HD',
+                size: legacyIs1080 ? epData.downloadSize || '~350 MB' : '~350 MB',
+                url: legacyIs1080 ? epData.downloadUrl || '' : '',
+                host: '',
+              });
+            }
+            setDownloadLinks(normalizedLinks);
             if (epData.subtitles) setSubtitles(epData.subtitles);
             setIntroStart(epData.introStart);
             setIntroEnd(epData.introEnd);
             setOutroStart(epData.outroStart);
             setOutroEnd(epData.outroEnd);
 
+            const savedEpLang = ((epData as any).language || '').trim();
+            setEpisodeLanguage(savedEpLang);
+
+            const isDubText = (txt?: string) => {
+              if (!txt) return false;
+              const l = txt.toLowerCase();
+              if (/\bsub\b/.test(l) && !/\b(dub|hindi|dual|multi)\b/.test(l)) return false;
+              return l.includes('dub') || l.includes('hindi') || l.includes('dual') || l.includes('multi') || l === 'hi';
+            };
+            const epDefaultIsDub =
+              epData.defaultCategory === 'dub' ||
+              (epData.defaultCategory !== 'sub' && isDubText(savedEpLang));
+
             const sources = epData.videoSources || epData.sources;
             if (sources && sources.length > 0) {
               setVideoSources(
-                sources.map((s, idx) => ({
-                  ...s,
-                  id: s.id || `srv-${idx + 1}`,
-                  name: s.name || s.sourceName || `server ${idx + 1}`,
-                  category: s.category || 'sub',
-                  type: s.type || s.sourceType || 'embed',
-                  embedUrl: s.embedUrl || '',
-                  active: s.active ?? true,
-                  isDefault: Boolean(s.isDefault),
-                }))
+                sources.map((s, idx) => {
+                  const explicitCat = (s.category || '').toLowerCase();
+                  const resolvedCategory: 'sub' | 'dub' =
+                    explicitCat === 'dub'
+                      ? 'dub'
+                      : explicitCat === 'sub'
+                      ? 'sub'
+                      : isDubText(s.language) || (!s.language && epDefaultIsDub)
+                      ? 'dub'
+                      : 'sub';
+                  return {
+                    ...s,
+                    id: s.id || `srv-${idx + 1}`,
+                    name: s.name || s.sourceName || `server ${idx + 1}`,
+                    category: resolvedCategory,
+                    language:
+                      s.language ||
+                      (resolvedCategory === 'dub' ? savedEpLang || 'Hindi Dub' : 'Japanese Sub'),
+                    type: s.type || s.sourceType || 'embed',
+                    embedUrl: s.embedUrl || '',
+                    active: s.active ?? true,
+                    isDefault: Boolean(s.isDefault),
+                  };
+                })
               );
             }
           }
@@ -253,6 +313,14 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
     const fallbackThumb = selectedAnime?.banner || selectedAnime?.poster || '';
     const finalThumbnail = thumbnail.trim() || fallbackThumb;
 
+    const cleanedDownloadLinks = downloadLinks.filter((d) => d.url.trim());
+    const link1080 = cleanedDownloadLinks.find((d) => (d.quality || '').toLowerCase().includes('1080'));
+    const link720 = cleanedDownloadLinks.find((d) => (d.quality || '').toLowerCase().includes('720'));
+    const primaryDownload = link1080 || link720 || cleanedDownloadLinks[0];
+    const resolvedDownloadUrl = primaryDownload?.url?.trim() || downloadUrl.trim() || undefined;
+    const resolvedDownloadQuality = primaryDownload?.quality?.trim() || (resolvedDownloadUrl ? downloadQuality.trim() || '1080p Full HD' : undefined);
+    const resolvedDownloadSize = primaryDownload?.size?.trim() || downloadSize.trim() || undefined;
+
     const payload: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'> = {
       animeId: selectedAnime?.id || selectedAnimeId,
       animeSlug: selectedAnime?.slug || selectedAnimeId,
@@ -270,13 +338,16 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
       releaseDate: airDate.trim() || undefined,
       releaseTime: releaseTime.trim() || undefined,
       timezone: timezone.trim() || 'Asia/Kolkata',
-      downloadUrl: downloadUrl.trim() || undefined,
-      downloadQuality: downloadQuality.trim() || undefined,
-      downloadSize: downloadSize.trim() || undefined,
-      downloadLinks: downloadLinks.filter((d) => d.url.trim()),
+      downloadUrl: resolvedDownloadUrl,
+      downloadQuality: resolvedDownloadQuality,
+      downloadSize: resolvedDownloadSize,
+      downloadLinks: cleanedDownloadLinks,
       videoUrl: defaultSource?.embedUrl || '',
       defaultSourceId: defaultSource?.id,
       defaultCategory: (defaultSource?.category as any) || 'sub',
+      ...(episodeLanguage || defaultSource?.language
+        ? { language: defaultSource?.language || episodeLanguage }
+        : {}),
       sources: validSources,
       videoSources: validSources,
       subtitles: subtitles.filter((s) => s.url.trim()),
@@ -812,9 +883,9 @@ export const AdminEpisodeFormView: React.FC<AdminEpisodeFormViewProps> = ({
           {/* 4. Downloads */}
           <AdminAccordion
             title="Download Links"
-            subtitle="Episode video file download links (1080p, 720p, 480p)"
+            subtitle="Direct download links (720p HD & 1080p Full HD)"
             icon={Download}
-            defaultOpen={false}
+            defaultOpen={true}
           >
             <div className="space-y-3">
               <div className="flex items-center justify-between pb-1 border-b border-white/5">

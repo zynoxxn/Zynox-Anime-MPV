@@ -174,12 +174,14 @@ export function formatAndSortDownloadMirrors(
     let audioLabel = fallbackAudio;
     if (qLower.includes('hindi')) {
       audioLabel = 'Hindi Dub';
+    } else if (qLower.includes('dual')) {
+      audioLabel = 'Dual Audio';
+    } else if (qLower.includes('multi')) {
+      audioLabel = 'Multi Audio';
     } else if (qLower.includes('dub')) {
-      audioLabel = 'Dub';
+      audioLabel = fallbackAudio.toLowerCase().includes('dub') ? fallbackAudio : 'Dub';
     } else if (qLower.includes('sub')) {
       audioLabel = 'Sub';
-    } else if (qLower.includes('multi')) {
-      audioLabel = 'Multi audio';
     }
 
     // Hostname extraction

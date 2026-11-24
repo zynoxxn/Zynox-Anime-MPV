@@ -240,7 +240,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
     title: seoSettings?.homepageTitle || 'ZYNOX ANIME — Watch & Download Anime in Hindi Dub & English Sub 1080p HD',
     description: seoSettings?.homepageDescription || 'Stream and download your favorite anime series and movies in Hindi Dub and English Sub with ultra-fast playback on ZYNOX ANIME.',
     keywords: seoSettings?.homepageKeywords || 'anime hindi dub, download anime in hindi, watch anime online, hindi anime download, 1080p anime, ZYNOX ANIME',
-    ogImage: seoSettings?.defaultOgImage || 'https://www.zynoxanime.cv/logo.png',
+    ogImage: seoSettings?.defaultOgImage || 'https://www.zynoxanime.cv/og-image.jpg',
     ogType: 'website',
   });
 

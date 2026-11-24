@@ -50,7 +50,8 @@ export interface SeasonEpisodeRow {
   episodeNumber: number;
   title: string;
   embedUrl: string;
-  downloadUrl: string;
+  downloadUrl720p: string;
+  downloadUrl1080p: string;
   isExistingInDb?: boolean;
   existingId?: string;
 }
@@ -83,7 +84,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
   // Quick Multi-Paste helper state
   const [showMultiPaste, setShowMultiPaste] = useState<boolean>(false);
   const [pasteEmbedUrls, setPasteEmbedUrls] = useState<string>('');
-  const [pasteDownloadUrls, setPasteDownloadUrls] = useState<string>('');
+  const [pasteDownload720Urls, setPasteDownload720Urls] = useState<string>('');
+  const [pasteDownload1080Urls, setPasteDownload1080Urls] = useState<string>('');
 
   // Confirmation dialogs
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -198,16 +200,18 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               existing.sources?.[0]?.embedUrl ||
               existing.videoSources?.[0]?.embedUrl ||
               '';
-            const download =
-              existing.downloadUrl ||
-              existing.downloadLinks?.[0]?.url ||
-              '';
+            const links = Array.isArray(existing.downloadLinks) ? existing.downloadLinks : [];
+            const link720 = links.find((l: any) => l?.quality?.toLowerCase().includes('720'))?.url || '';
+            const link1080 = links.find((l: any) => l?.quality?.toLowerCase().includes('1080'))?.url || '';
+            const legacyUrl = existing.downloadUrl || links[0]?.url || '';
+            const legacyIs720 = Boolean((existing.downloadQuality || '').toLowerCase().includes('720'));
 
             rows.push({
               episodeNumber: i,
               title: existing.title || `Episode ${i}`,
               embedUrl: embed,
-              downloadUrl: download,
+              downloadUrl720p: link720 || (legacyIs720 ? legacyUrl : ''),
+              downloadUrl1080p: link1080 || (!legacyIs720 ? legacyUrl : ''),
               isExistingInDb: true,
               existingId: existing.id,
             });
@@ -216,13 +220,22 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               episodeNumber: i,
               title: `Episode ${i}`,
               embedUrl: '',
-              downloadUrl: '',
+              downloadUrl720p: '',
+              downloadUrl1080p: '',
               isExistingInDb: false,
             });
           }
         }
 
         setEpisodeRows(rows);
+
+        const detectedLang = seasonEps
+          .map((e: any) => (e.language || e.videoSources?.[0]?.language || e.sources?.[0]?.language || '').trim())
+          .find(Boolean);
+        const allowedLangs = ['Hindi Dub', 'Japanese Sub', 'Dual Audio', 'Multi Audio', 'English Dub'];
+        if (detectedLang && allowedLangs.includes(detectedLang)) {
+          setDefaultLanguage(detectedLang);
+        }
       } catch (err) {
         console.error('Failed to load season episodes:', err);
         onShowMessage('Failed to load existing episodes for this season.');
@@ -252,7 +265,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
             episodeNumber: i,
             title: `Episode ${i}`,
             embedUrl: '',
-            downloadUrl: '',
+            downloadUrl720p: '',
+            downloadUrl1080p: '',
             isExistingInDb: false,
           });
         }
@@ -284,7 +298,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
           episodeNumber: nextEpNum,
           title: `Episode ${nextEpNum}`,
           embedUrl: '',
-          downloadUrl: '',
+          downloadUrl720p: '',
+          downloadUrl1080p: '',
           isExistingInDb: false,
         },
       ];
@@ -308,7 +323,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
       prev.map((row) => ({
         ...row,
         embedUrl: '',
-        downloadUrl: '',
+        downloadUrl720p: '',
+        downloadUrl1080p: '',
       }))
     );
     setShowClearConfirm(false);
@@ -324,7 +340,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
         prev.map((row) => ({
           ...row,
           embedUrl: '',
-          downloadUrl: '',
+          downloadUrl720p: '',
+          downloadUrl1080p: '',
           isExistingInDb: false,
           existingId: undefined,
         }))
@@ -352,20 +369,25 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
-    const downloadLines = pasteDownloadUrls
+    const download720Lines = pasteDownload720Urls
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const download1080Lines = pasteDownload1080Urls
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
 
-    if (embedLines.length === 0 && downloadLines.length === 0) {
-      onShowMessage('Paste at least one Embed URL or Download URL.');
+    if (embedLines.length === 0 && download720Lines.length === 0 && download1080Lines.length === 0) {
+      onShowMessage('Paste at least one Embed URL or 720p/1080p Download URL.');
       return;
     }
 
     const neededCount = Math.max(
       episodeRows.length,
       embedLines.length,
-      downloadLines.length
+      download720Lines.length,
+      download1080Lines.length
     );
 
     const updatedRows: SeasonEpisodeRow[] = [];
@@ -373,13 +395,15 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
       const epNum = i + 1;
       const existing = episodeRows[i];
       const newEmbed = embedLines[i] || existing?.embedUrl || '';
-      const newDownload = downloadLines[i] || existing?.downloadUrl || '';
+      const newDownload720 = download720Lines[i] || existing?.downloadUrl720p || '';
+      const newDownload1080 = download1080Lines[i] || existing?.downloadUrl1080p || '';
 
       updatedRows.push({
         episodeNumber: epNum,
         title: existing?.title || `Episode ${epNum}`,
         embedUrl: newEmbed,
-        downloadUrl: newDownload,
+        downloadUrl720p: newDownload720,
+        downloadUrl1080p: newDownload1080,
         isExistingInDb: existing?.isExistingInDb || false,
         existingId: existing?.existingId,
       });
@@ -389,13 +413,100 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     setTotalEpisodesCount(updatedRows.length);
     setShowMultiPaste(false);
     setPasteEmbedUrls('');
-    setPasteDownloadUrls('');
+    setPasteDownload720Urls('');
+    setPasteDownload1080Urls('');
 
     onShowMessage(`Populated ${updatedRows.length} episode slots.`);
 
     if (autoSave) {
       handleSaveAllWithRows(updatedRows);
     }
+  };
+
+  const buildRowPayload = (row: SeasonEpisodeRow): BulkEpisodeItemInput => {
+    const streamUrl = row.embedUrl.trim();
+    const url720 = row.downloadUrl720p.trim();
+    const url1080 = row.downloadUrl1080p.trim();
+    const primaryDownloadUrl = url1080 || url720;
+
+    const isSubOnly =
+      /\bsub\b/i.test(defaultLanguage) &&
+      !/\b(dub|hindi|dual|multi)\b/i.test(defaultLanguage);
+    const audioCategory: 'dub' | 'sub' = isSubOnly ? 'sub' : 'dub';
+
+    const videoSources = streamUrl
+      ? [
+          {
+            id: 'srv-1',
+            name: 'Server 1',
+            provider: 'Server 1',
+            sourceName: 'Server 1',
+            serverName: 'Server 1',
+            type: 'embed',
+            category: audioCategory,
+            language: defaultLanguage,
+            embedUrl: streamUrl,
+            quality: defaultQuality,
+            priority: 1,
+            active: true,
+            isDefault: true,
+          },
+        ]
+      : undefined;
+
+    const sources = streamUrl
+      ? [
+          {
+            id: 'srv-1',
+            name: 'Server 1',
+            provider: 'Server 1',
+            sourceName: 'Server 1',
+            type: 'embed',
+            category: audioCategory,
+            language: defaultLanguage,
+            embedUrl: streamUrl,
+            quality: defaultQuality,
+            priority: 1,
+            active: true,
+            isDefault: true,
+          },
+        ]
+      : undefined;
+
+    const downloadLinks: { quality: string; url: string; host?: string; size?: string }[] = [];
+    if (url720) {
+      downloadLinks.push({
+        quality: '720p HD',
+        url: url720,
+        host: detectHost(url720),
+        size: '~180 MB',
+      });
+    }
+    if (url1080) {
+      downloadLinks.push({
+        quality: '1080p Full HD',
+        url: url1080,
+        host: detectHost(url1080),
+        size: '~350 MB',
+      });
+    }
+
+    return {
+      episodeNumber: row.episodeNumber,
+      seasonNumber: seasonNumber,
+      season: seasonNumber,
+      title: row.title.trim() || `Episode ${row.episodeNumber}`,
+      videoUrl: streamUrl,
+      downloadUrl: primaryDownloadUrl || undefined,
+      downloadQuality: primaryDownloadUrl ? (url1080 ? '1080p Full HD' : '720p HD') : undefined,
+      defaultCategory: audioCategory,
+      videoSources,
+      sources,
+      downloadLinks: downloadLinks.length > 0 ? downloadLinks : undefined,
+      language: defaultLanguage,
+      quality: defaultQuality,
+      published: defaultPublished,
+    };
   };
 
   const handleSaveAllWithRows = async (targetRows: SeasonEpisodeRow[]) => {
@@ -405,7 +516,11 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     }
 
     const validRows = targetRows.filter(
-      (r) => r.title.trim() || r.embedUrl.trim() || r.downloadUrl.trim()
+      (r) =>
+        r.title.trim() ||
+        r.embedUrl.trim() ||
+        r.downloadUrl720p.trim() ||
+        r.downloadUrl1080p.trim()
     );
 
     if (validRows.length === 0) {
@@ -417,58 +532,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
       setIsSaving(true);
       setSaveProgress('Preparing episodes batch...');
 
-      const payload: BulkEpisodeItemInput[] = targetRows.map((row) => {
-        const streamUrl = row.embedUrl.trim();
-        const downloadUrl = row.downloadUrl.trim();
-
-        const videoSources = streamUrl
-          ? [
-              {
-                id: 'srv-1',
-                serverName: 'Server 1 (Embed)',
-                embedUrl: streamUrl,
-                quality: defaultQuality,
-              },
-            ]
-          : undefined;
-
-        const sources = streamUrl
-          ? [
-              {
-                id: 'srv-1',
-                name: 'Server 1',
-                embedUrl: streamUrl,
-                quality: defaultQuality,
-              },
-            ]
-          : undefined;
-
-        const downloadLinks = downloadUrl
-          ? [
-              {
-                quality: defaultQuality,
-                url: downloadUrl,
-                host: detectHost(downloadUrl),
-                size: 'HD',
-              },
-            ]
-          : undefined;
-
-        return {
-          episodeNumber: row.episodeNumber,
-          seasonNumber: seasonNumber,
-          season: seasonNumber,
-          title: row.title.trim() || `Episode ${row.episodeNumber}`,
-          videoUrl: streamUrl,
-          downloadUrl: downloadUrl || undefined,
-          videoSources,
-          sources,
-          downloadLinks,
-          language: defaultLanguage,
-          quality: defaultQuality,
-          published: defaultPublished,
-        };
-      });
+      const payload: BulkEpisodeItemInput[] = targetRows.map(buildRowPayload);
 
       setSaveProgress(`Writing ${payload.length} episodes to catalog...`);
 
@@ -552,65 +616,19 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
     const row = episodeRows[index];
     if (!row) return;
 
-    if (!row.title.trim() && !row.embedUrl.trim() && !row.downloadUrl.trim()) {
+    if (
+      !row.title.trim() &&
+      !row.embedUrl.trim() &&
+      !row.downloadUrl720p.trim() &&
+      !row.downloadUrl1080p.trim()
+    ) {
       onShowMessage(`Episode ${row.episodeNumber} has no title or links to save.`);
       return;
     }
 
     try {
       setSavingRowIdx(index);
-      const streamUrl = row.embedUrl.trim();
-      const downloadUrl = row.downloadUrl.trim();
-
-      const videoSources = streamUrl
-        ? [
-            {
-              id: 'srv-1',
-              serverName: 'Server 1 (Embed)',
-              embedUrl: streamUrl,
-              quality: defaultQuality,
-            },
-          ]
-        : undefined;
-
-      const sources = streamUrl
-        ? [
-            {
-              id: 'srv-1',
-              name: 'Server 1',
-              embedUrl: streamUrl,
-              quality: defaultQuality,
-            },
-          ]
-        : undefined;
-
-      const downloadLinks = downloadUrl
-        ? [
-            {
-              quality: defaultQuality,
-              url: downloadUrl,
-              host: detectHost(downloadUrl),
-              size: 'HD',
-            },
-          ]
-        : undefined;
-
-      const payload: BulkEpisodeItemInput[] = [
-        {
-          episodeNumber: row.episodeNumber,
-          seasonNumber: seasonNumber,
-          season: seasonNumber,
-          title: row.title.trim() || `Episode ${row.episodeNumber}`,
-          videoUrl: streamUrl,
-          downloadUrl: downloadUrl || undefined,
-          videoSources,
-          sources,
-          downloadLinks,
-          language: defaultLanguage,
-          quality: defaultQuality,
-          published: defaultPublished,
-        },
-      ];
+      const payload: BulkEpisodeItemInput[] = [buildRowPayload(row)];
 
       await bulkCreateEpisodes(selectedAnimeId, payload, {
         overwriteExisting: true,
@@ -638,7 +656,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
   };
 
   const filledCount = episodeRows.filter(
-    (r) => r.embedUrl.trim() || r.downloadUrl.trim()
+    (r) => r.embedUrl.trim() || r.downloadUrl720p.trim() || r.downloadUrl1080p.trim()
   ).length;
 
   return (
@@ -776,7 +794,7 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-white">
                   Embed URLs (1 per line)
@@ -785,21 +803,34 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                   rows={6}
                   value={pasteEmbedUrls}
                   onChange={(e) => setPasteEmbedUrls(e.target.value)}
-                  placeholder="https://embed.server.com/ep1&#10;https://embed.server.com/ep2&#10;https://embed.server.com/ep3"
+                  placeholder="https://embed.server.com/ep1&#10;https://embed.server.com/ep2"
                   className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-xs font-mono text-white outline-none"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-white">
-                  Download URLs (1 per line)
+                <label className="block text-xs font-semibold text-emerald-400">
+                  720p Download URLs (1 per line)
                 </label>
                 <textarea
                   rows={6}
-                  value={pasteDownloadUrls}
-                  onChange={(e) => setPasteDownloadUrls(e.target.value)}
-                  placeholder="https://mega.nz/file/ep1&#10;https://mega.nz/file/ep2&#10;https://mega.nz/file/ep3"
-                  className="w-full bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-xs font-mono text-white outline-none"
+                  value={pasteDownload720Urls}
+                  onChange={(e) => setPasteDownload720Urls(e.target.value)}
+                  placeholder="https://hubcloud.mov/ep1-720p&#10;https://hubcloud.mov/ep2-720p"
+                  className="w-full bg-[#101A30] border border-emerald-500/20 focus:border-emerald-400 rounded-[10px] p-3 text-xs font-mono text-white outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#1E88FF]">
+                  1080p Download URLs (1 per line)
+                </label>
+                <textarea
+                  rows={6}
+                  value={pasteDownload1080Urls}
+                  onChange={(e) => setPasteDownload1080Urls(e.target.value)}
+                  placeholder="https://hubcloud.mov/ep1-1080p&#10;https://hubcloud.mov/ep2-1080p"
+                  className="w-full bg-[#101A30] border border-[#1E88FF]/20 focus:border-[#1E88FF] rounded-[10px] p-3 text-xs font-mono text-white outline-none"
                 />
               </div>
             </div>
@@ -905,16 +936,29 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                         </a>
                       )}
 
-                      {row.downloadUrl && (
+                      {row.downloadUrl720p && (
                         <a
-                          href={row.downloadUrl}
+                          href={row.downloadUrl720p}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="h-8 px-2 rounded-[6px] bg-white/5 hover:bg-white/10 text-xs text-[#94A3B8] hover:text-white flex items-center gap-1 transition-colors"
-                          title="Test Download"
+                          className="h-8 px-2 rounded-[6px] bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 flex items-center gap-1 transition-colors"
+                          title="Test 720p Download"
                         >
                           <Download className="w-3 h-3" />
-                          <span className="hidden sm:inline">DL</span>
+                          <span className="hidden sm:inline">720p</span>
+                        </a>
+                      )}
+
+                      {row.downloadUrl1080p && (
+                        <a
+                          href={row.downloadUrl1080p}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="h-8 px-2 rounded-[6px] bg-[#1E88FF]/10 hover:bg-[#1E88FF]/20 text-xs text-[#1E88FF] flex items-center gap-1 transition-colors"
+                          title="Test 1080p Download"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span className="hidden sm:inline">1080p</span>
                         </a>
                       )}
 
@@ -946,8 +990,8 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Row Bottom: Embed URL and Download URL side by side */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Row Bottom: Embed URL + 720p Download + 1080p Download */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="relative">
                       <input
                         type="url"
@@ -974,21 +1018,44 @@ export const AdminBulkEpisodeView: React.FC<AdminBulkEpisodeViewProps> = ({
                     <div className="relative">
                       <input
                         type="url"
-                        value={row.downloadUrl}
-                        onChange={(e) => updateRowField(idx, 'downloadUrl', e.target.value)}
-                        placeholder="Download URL (Drive, Mega, etc.)"
-                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[8px] pl-3 pr-9 text-[13px] font-mono text-white outline-none overflow-x-auto whitespace-nowrap"
+                        value={row.downloadUrl720p}
+                        onChange={(e) => updateRowField(idx, 'downloadUrl720p', e.target.value)}
+                        placeholder="720p Download URL (HubCloud, Drive...)"
+                        className="w-full h-10 bg-[#0B1324] border border-emerald-500/20 focus:border-emerald-400 rounded-[8px] pl-3 pr-9 text-[13px] font-mono text-white outline-none overflow-x-auto whitespace-nowrap"
                       />
                       <button
                         type="button"
                         onClick={async () => {
                           try {
                             const text = await navigator.clipboard?.readText();
-                            if (text) updateRowField(idx, 'downloadUrl', text);
+                            if (text) updateRowField(idx, 'downloadUrl720p', text);
+                          } catch {}
+                        }}
+                        className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-emerald-400 flex items-center justify-center absolute right-1.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer"
+                        title="Paste 720p link from clipboard"
+                      >
+                        <Clipboard className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={row.downloadUrl1080p}
+                        onChange={(e) => updateRowField(idx, 'downloadUrl1080p', e.target.value)}
+                        placeholder="1080p Download URL (HubCloud, Drive...)"
+                        className="w-full h-10 bg-[#0B1324] border border-[#1E88FF]/20 focus:border-[#1E88FF] rounded-[8px] pl-3 pr-9 text-[13px] font-mono text-white outline-none overflow-x-auto whitespace-nowrap"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = await navigator.clipboard?.readText();
+                            if (text) updateRowField(idx, 'downloadUrl1080p', text);
                           } catch {}
                         }}
                         className="w-7 h-7 rounded hover:bg-white/10 text-[#94A3B8] hover:text-[#1E88FF] flex items-center justify-center absolute right-1.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer"
-                        title="Paste from clipboard"
+                        title="Paste 1080p link from clipboard"
                       >
                         <Clipboard className="w-3 h-3" />
                       </button>

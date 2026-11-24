@@ -971,6 +971,14 @@ export async function bulkCreateEpisodes(
           const key = `${sNum}_${item.episodeNumber}`;
           const existingDocId = existingMap.get(key);
 
+          const langStr = item.language || 'Hindi Dub';
+          const inferredCategory: 'dub' | 'sub' =
+            item.defaultCategory === 'sub' || item.defaultCategory === 'dub'
+              ? item.defaultCategory
+              : /\bsub\b/i.test(langStr) && !/\b(dub|hindi|dual|multi)\b/i.test(langStr)
+              ? 'sub'
+              : 'dub';
+
           const episodePayload: Record<string, any> = {
             animeId,
             animeTitle: options?.animeTitle || '',
@@ -980,7 +988,8 @@ export async function bulkCreateEpisodes(
             episodeNumber: item.episodeNumber,
             title: item.title || `Episode ${item.episodeNumber}`,
             thumbnail: (item as any).thumbnail || fallbackBanner,
-            language: item.language || 'DUB',
+            language: langStr,
+            defaultCategory: inferredCategory,
             quality: item.quality || '1080p',
             duration: item.duration || '24m',
             published: item.published !== false,
@@ -991,8 +1000,20 @@ export async function bulkCreateEpisodes(
             episodePayload.videoUrl = item.videoUrl;
           }
           if (item.sources && item.sources.length > 0) {
-            episodePayload.sources = item.sources;
-            episodePayload.videoSources = item.sources;
+            const normalizedSources = item.sources.map((src, idx) => ({
+              ...src,
+              id: src.id || `srv-${idx + 1}`,
+              name: src.name || src.sourceName || `Server ${idx + 1}`,
+              provider: src.provider || src.name || src.sourceName || `Server ${idx + 1}`,
+              sourceName: src.sourceName || src.name || `Server ${idx + 1}`,
+              type: src.type || 'embed',
+              category: src.category || inferredCategory,
+              language: src.language || langStr,
+              active: src.active !== false,
+              isDefault: src.isDefault ?? idx === 0,
+            }));
+            episodePayload.sources = normalizedSources;
+            episodePayload.videoSources = normalizedSources;
           } else if (item.videoUrl) {
             const defaultSrc = {
               id: 'srv-1',
@@ -1001,7 +1022,8 @@ export async function bulkCreateEpisodes(
               sourceName: 'Server 1',
               type: 'embed',
               embedUrl: item.videoUrl,
-              category: item.defaultCategory || 'dub',
+              category: inferredCategory,
+              language: langStr,
               quality: item.quality || '1080p',
               priority: 1,
               active: true,
@@ -1059,6 +1081,19 @@ export async function bulkCreateEpisodes(
       }
 
       await batch.commit();
+    }
+
+    // Remove stale localStorage entries for this anime so Watch & Download views reflect fresh Firestore bulk data immediately
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const existingLocal = getLocalStoredEpisodes();
+        const filtered = existingLocal.filter(
+          (e) => e.animeId !== animeId && e.animeSlug !== options?.animeSlug
+        );
+        if (filtered.length !== existingLocal.length) {
+          localStorage.setItem(LOCAL_EPISODES_KEY, JSON.stringify(filtered));
+        }
+      } catch {}
     }
 
     // Optionally update Anime's total/released episodes count

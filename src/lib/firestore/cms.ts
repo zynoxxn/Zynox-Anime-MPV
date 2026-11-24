@@ -1026,7 +1026,7 @@ export const DEFAULT_SEO_SETTINGS: CmsSeoSettings = {
   homepageTitle: 'ZYNOX ANIME — Watch Anime in Hindi Dub & English Sub in 1080p HD',
   homepageDescription: 'Stream and download your favorite anime series and movies online in Multi Audio (Hindi Dub, English Sub, Japanese) in crystal clear 1080p HD with zero lag.',
   homepageKeywords: 'anime hindi dub, download anime in hindi, watch anime online, the angel next door hindi dub, alya sometimes hides her feelings in russian hindi dub, anime 1080p, anime zip batch download, ZYNOX ANIME',
-  defaultOgImage: 'https://www.zynoxanime.cv/logo.png',
+  defaultOgImage: 'https://www.zynoxanime.cv/og-image.jpg',
   siteDescription: 'High performance anime streaming portal featuring instant episode releases and multi-language player options.',
   robotsTxt: 'User-agent: *\nAllow: /\n\nSitemap: https://www.zynoxanime.cv/sitemap.xml',
   animeTitleTemplate: 'Watch {title} in Hindi Dub & English Sub (All Episodes HD) — {siteName}',
@@ -1044,7 +1044,9 @@ const LEGACY_UNSPLASH_OG_FRAGMENT = 'photo-1578632767115-351597cf2477';
 function normalizeSeoSettings(raw: CmsSeoSettings): CmsSeoSettings {
   const og = (raw.defaultOgImage || '').trim();
   const safeOg =
-    !og || og.includes(LEGACY_UNSPLASH_OG_FRAGMENT)
+    !og ||
+    og.includes(LEGACY_UNSPLASH_OG_FRAGMENT) ||
+    og === 'https://www.zynoxanime.cv/logo.png'
       ? DEFAULT_SEO_SETTINGS.defaultOgImage
       : og;
   return { ...raw, defaultOgImage: safeOg };

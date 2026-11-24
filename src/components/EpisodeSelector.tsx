@@ -356,16 +356,16 @@ export const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     onSelectEpisode(ep.episodeNumber, epSeasonNum, ep);
                   }
                 }}
-                className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#1E88FF]/60 ${
+                className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#1E88FF]/60 ${
                   isCurrent
-                    ? 'bg-[#1E88FF]/15 border-[#1E88FF] shadow-sm'
-                    : 'bg-[#101A30] hover:bg-[#16223e] border-white/5 hover:border-white/10'
+                    ? 'bg-[#0E2444] border-[#1E88FF] shadow-sm'
+                    : 'bg-[#101A30] hover:bg-[#16223e] border-[#1E2A42] hover:border-[#2C3E5E]'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span
                     className={`text-xs font-bold px-2 py-1 rounded-lg shrink-0 ${
-                      isCurrent ? 'bg-[#1E88FF] text-white' : 'bg-white/5 text-[#94A3B8]'
+                      isCurrent ? 'bg-[#1E88FF] text-white' : 'bg-[#1A263D] text-[#94A3B8]'
                     }`}
                   >
                     EP {ep.episodeNumber}
