@@ -51,6 +51,63 @@ export function formatCardAudioLabel(anime: Partial<Anime> & Record<string, any>
 }
 
 /**
+ * Formats total episodes count for anime poster card bottom-corner badges.
+ * Handles single-season, multi-season sum, active season overrides, and movies.
+ */
+export function formatCardEpisodesBadge(anime: Partial<Anime> & Record<string, any>): {
+  prefix: string;
+  count: string;
+  fullLabel: string;
+} {
+  const isMovie = String(anime.type || '').trim().toLowerCase() === 'movie';
+  const directCount = Number(anime.totalEpisodes || anime.episodesCount || 0) || 0;
+
+  let resolvedCount = directCount;
+
+  if (Array.isArray(anime.seasonsList) && anime.seasonsList.length > 0) {
+    if (anime.activeSeasonNumber) {
+      const activeSeason = anime.seasonsList.find(
+        (s) => Number(s.seasonNumber) === Number(anime.activeSeasonNumber)
+      );
+      if (activeSeason?.totalEpisodes && Number(activeSeason.totalEpisodes) > 0) {
+        resolvedCount = Number(activeSeason.totalEpisodes);
+      }
+    } else if (anime.seasonsList.length > 1) {
+      const seasonsSum = anime.seasonsList.reduce(
+        (sum, s) => sum + (Number(s.totalEpisodes) || 0),
+        0
+      );
+      if (seasonsSum > 0) {
+        resolvedCount = Math.max(directCount, seasonsSum);
+      }
+    } else if (resolvedCount <= 0) {
+      const firstSeasonEps = Number(anime.seasonsList[0]?.totalEpisodes || 0);
+      if (firstSeasonEps > 0) {
+        resolvedCount = firstSeasonEps;
+      }
+    }
+  }
+
+  if (isMovie && resolvedCount <= 1) {
+    return { prefix: '', count: 'Movie', fullLabel: 'Movie' };
+  }
+
+  if (resolvedCount > 0) {
+    return {
+      prefix: 'EP',
+      count: String(resolvedCount),
+      fullLabel: `EP ${resolvedCount}`,
+    };
+  }
+
+  if (String(anime.status || '').trim().toLowerCase() === 'upcoming') {
+    return { prefix: '', count: 'TBA', fullLabel: 'TBA' };
+  }
+
+  return { prefix: 'EP', count: '12', fullLabel: 'EP 12' };
+}
+
+/**
  * Formats episode duration cleanly as "24 min" (never "24:00m" or "24m").
  */
 export function formatDurationMinutes(raw?: string | number | null): string {

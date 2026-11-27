@@ -829,6 +829,66 @@ export interface SearchAnimeOptions {
   expandSeasons?: boolean;
 }
 
+export function expandAnimeSeasons(animes: Anime[]): Anime[] {
+  if (!animes || animes.length === 0) return [];
+  const expanded: Anime[] = [];
+
+  for (const a of animes) {
+    if (!a) continue;
+    const list = Array.isArray(a.seasonsList) ? a.seasonsList : [];
+
+    if (list.length > 0) {
+      const sortedSeasons = [...list].sort(
+        (x, y) => (Number(x.seasonNumber) || 1) - (Number(y.seasonNumber) || 1)
+      );
+      const baseTitle = cleanAnimeTitle(a.title);
+
+      for (const s of sortedSeasons) {
+        const sNum = Number(s.seasonNumber) || 1;
+        const rawSeasonTitle = (s.title || '').trim() || `Season ${sNum}`;
+        let fullSeasonTitle = rawSeasonTitle;
+
+        if (baseTitle && !rawSeasonTitle.toLowerCase().includes(baseTitle.toLowerCase())) {
+          if (/^season\s*\d+/i.test(rawSeasonTitle)) {
+            fullSeasonTitle = `${baseTitle} ${rawSeasonTitle}`;
+          } else {
+            fullSeasonTitle = `${baseTitle} Season ${sNum}: ${rawSeasonTitle}`;
+          }
+        } else {
+          fullSeasonTitle = cleanAnimeTitle(rawSeasonTitle) || `${baseTitle} Season ${sNum}`;
+        }
+
+        const linkedSlug = s.slug && s.slug.trim() ? s.slug.trim() : '';
+        const usesLinkedSlug = Boolean(linkedSlug && linkedSlug !== a.slug);
+        const seasonPoster = s.poster || a.poster;
+        const seasonBanner = s.banner || a.banner || seasonPoster;
+
+        expanded.push({
+          ...a,
+          id: `${a.id || a.slug}-season-${sNum}`,
+          baseAnimeId: a.baseAnimeId || a.id || a.slug,
+          slug: usesLinkedSlug ? linkedSlug : a.slug,
+          title: fullSeasonTitle,
+          poster: seasonPoster,
+          posterUrl: seasonPoster,
+          banner: seasonBanner,
+          bannerUrl: seasonBanner,
+          activeSeasonNumber: usesLinkedSlug ? undefined : sNum,
+          seasonTitle: rawSeasonTitle,
+          year: s.year || a.year,
+          totalEpisodes: s.totalEpisodes || a.totalEpisodes,
+          status: (s.status as any) || a.status,
+          description: s.description || a.description,
+        });
+      }
+    } else {
+      expanded.push(a);
+    }
+  }
+
+  return expanded;
+}
+
 export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): Promise<Anime[]> {
   try {
     const all = await getPublishedAnimes();
@@ -847,37 +907,15 @@ export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): P
         const hasBaseMatch = titleMatch || altMatch || descMatch || studioMatch || genreMatch;
 
         // If anime has multiple seasons configured, return individual seasons as distinct search entries
-        if (a.seasonsList && a.seasonsList.length > 1) {
-          a.seasonsList.forEach((s) => {
-            const sNum = Number(s.seasonNumber) || 1;
-            const rawTitle = s.title?.trim() || `Season ${sNum}`;
-            let fullSeasonTitle = rawTitle;
-            if (!rawTitle.toLowerCase().includes(a.title.toLowerCase())) {
-              if (rawTitle.toLowerCase().startsWith('season')) {
-                fullSeasonTitle = `${a.title} ${rawTitle}`;
-              } else {
-                fullSeasonTitle = `${a.title} Season ${sNum}: ${rawTitle}`;
-              }
-            }
-
-            const seasonTitleMatch = fullSeasonTitle.toLowerCase().includes(q) || rawTitle.toLowerCase().includes(q);
-            const seasonDescMatch = (s.description || '').toLowerCase().includes(q);
-
-            // If search query matches the main title or this specific season
+        if (a.seasonsList && a.seasonsList.length > 0) {
+          const perSeason = expandAnimeSeasons([a]);
+          perSeason.forEach((entry) => {
+            const seasonTitleMatch =
+              (entry.title || '').toLowerCase().includes(q) ||
+              (entry.seasonTitle || '').toLowerCase().includes(q);
+            const seasonDescMatch = (entry.description || '').toLowerCase().includes(q);
             if (hasBaseMatch || seasonTitleMatch || seasonDescMatch) {
-              seasonExploded.push({
-                ...a,
-                id: `${a.id || a.slug}-season-${sNum}`,
-                title: fullSeasonTitle,
-                poster: s.poster || a.poster,
-                banner: s.banner || a.banner || a.poster,
-                activeSeasonNumber: sNum,
-                seasonTitle: rawTitle,
-                year: s.year || a.year,
-                totalEpisodes: s.totalEpisodes || a.totalEpisodes,
-                status: (s.status as any) || a.status,
-                description: s.description || a.description,
-              });
+              seasonExploded.push(entry);
             }
           });
         } else if (hasBaseMatch) {
@@ -887,39 +925,7 @@ export async function searchAndFilterAnimes(options: SearchAnimeOptions = {}): P
 
       filtered = seasonExploded;
     } else if (options.expandSeasons) {
-      const seasonExploded: Anime[] = [];
-      filtered.forEach((a) => {
-        if (a.seasonsList && a.seasonsList.length > 1) {
-          a.seasonsList.forEach((s) => {
-            const sNum = Number(s.seasonNumber) || 1;
-            const rawTitle = s.title?.trim() || `Season ${sNum}`;
-            let fullSeasonTitle = rawTitle;
-            if (!rawTitle.toLowerCase().includes(a.title.toLowerCase())) {
-              if (rawTitle.toLowerCase().startsWith('season')) {
-                fullSeasonTitle = `${a.title} ${rawTitle}`;
-              } else {
-                fullSeasonTitle = `${a.title} Season ${sNum}: ${rawTitle}`;
-              }
-            }
-            seasonExploded.push({
-              ...a,
-              id: `${a.id || a.slug}-season-${sNum}`,
-              title: fullSeasonTitle,
-              poster: s.poster || a.poster,
-              banner: s.banner || a.banner || a.poster,
-              activeSeasonNumber: sNum,
-              seasonTitle: rawTitle,
-              year: s.year || a.year,
-              totalEpisodes: s.totalEpisodes || a.totalEpisodes,
-              status: (s.status as any) || a.status,
-              description: s.description || a.description,
-            });
-          });
-        } else {
-          seasonExploded.push(a);
-        }
-      });
-      filtered = seasonExploded;
+      filtered = expandAnimeSeasons(filtered);
     }
 
     if (options.genre && options.genre !== 'ALL') {

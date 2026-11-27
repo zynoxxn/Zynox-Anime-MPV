@@ -44,7 +44,8 @@ export interface AnimeSeasonEntry {
 
 export interface Anime {
   id?: string;
-  activeSeasonNumber?: number; // Optional marker when representing a specific season in search results
+  baseAnimeId?: string; // Original parent anime document ID when expanded per season
+  activeSeasonNumber?: number; // Optional marker when representing a specific season in cards/search
   seasonTitle?: string;
   // Basic Information
   title: string;

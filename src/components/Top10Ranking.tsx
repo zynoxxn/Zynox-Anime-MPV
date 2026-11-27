@@ -8,7 +8,7 @@ import {
   FALLBACK_ANIME_POSTER,
 } from '../lib/image-optimizer';
 import { cleanAnimeTitle, getAnimeUploadTimestamp } from '../lib/firestore/anime';
-import { formatCardAudioLabel } from '../lib/format-meta';
+import { formatCardAudioLabel, formatCardEpisodesBadge } from '../lib/format-meta';
 
 interface Top10RankingProps {
   animes: Anime[];
@@ -153,6 +153,7 @@ export const Top10Ranking: React.FC<Top10RankingProps> = ({
             const posterSrcSet = getOptimizedPosterSrcSet(anime.poster);
             const ratingValue = anime.rating ? Number(anime.rating).toFixed(1) : '8.5';
             const audioLabel = formatCardAudioLabel(anime);
+            const epBadge = formatCardEpisodesBadge(anime);
             const cleanTitle = cleanAnimeTitle(anime.title);
             const uploadTs = getAnimeUploadTimestamp(anime);
             const isNewWithin7Days = uploadTs > 0 && Date.now() - uploadTs <= 7 * 24 * 60 * 60 * 1000;
@@ -222,6 +223,15 @@ export const Top10Ranking: React.FC<Top10RankingProps> = ({
                         className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1E88FF] ring-2 ring-[#050A14] pointer-events-none"
                       />
                     )}
+
+                    {/* Total Episodes Badge at Bottom-Right Corner */}
+                    <span
+                      aria-label={epBadge.prefix ? `${epBadge.count} total episodes` : epBadge.fullLabel}
+                      className="absolute bottom-1.5 right-1.5 z-10 inline-flex items-center gap-[3px] px-1.5 py-[2px] rounded-[5px] bg-[#050A14] border border-[#243B61] text-[10px] font-bold leading-[13px] tracking-tight text-white shadow-[0_2px_6px_rgba(0,0,0,0.85)] pointer-events-none"
+                    >
+                      {epBadge.prefix && <span className="text-[#3B9BFF]">{epBadge.prefix}</span>}
+                      <span className="tabular-nums">{epBadge.count}</span>
+                    </span>
                   </div>
                 </div>
 

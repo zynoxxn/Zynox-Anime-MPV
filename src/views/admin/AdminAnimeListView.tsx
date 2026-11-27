@@ -329,12 +329,14 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                 const isSelected = selectedIds.has(animeId);
                 const statusCap = (anime.status || 'Ongoing').charAt(0).toUpperCase() + (anime.status || 'Ongoing').slice(1).toLowerCase();
 
+                const seasonCount = Array.isArray(anime.seasonsList) ? anime.seasonsList.length : 0;
+
                 return (
                   <AdminListRow
                     key={animeId}
                     id={animeId}
                     title={anime.title}
-                    meta={`${anime.type || 'TV'} · ${statusCap} · ${anime.year || '2026'} · ${anime.audioLanguage || 'Multi Audio'}`}
+                    meta={`${anime.type || 'TV'} · ${statusCap} · ${anime.year || '2026'}${seasonCount > 0 ? ` · ${seasonCount} ${seasonCount === 1 ? 'Season' : 'Seasons'}` : ''} · ${anime.audioLanguage || 'Multi Audio'}`}
                     thumbnail={anime.poster}
                     thumbnailType="poster"
                     status={anime.published === false ? 'draft' : anime.status || 'ongoing'}
@@ -357,6 +359,12 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                         onClick: () => navigate(`/admin/anime/edit/${animeId}`),
                       },
                       {
+                        id: 'seasons',
+                        label: seasonCount > 0 ? `Seasons (${seasonCount})` : 'Seasons',
+                        icon: Layers,
+                        onClick: () => navigate(`/admin/anime/edit/${animeId}?tab=seasons`),
+                      },
+                      {
                         id: 'episodes',
                         label: 'Episodes',
                         icon: Tv,
@@ -367,12 +375,6 @@ export const AdminAnimeListView: React.FC<AdminAnimeListViewProps> = ({
                         label: 'Downloads',
                         icon: Download,
                         onClick: () => navigate(`/admin/downloads?animeId=${animeId}`),
-                      },
-                      {
-                        id: 'seasons',
-                        label: 'Seasons',
-                        icon: Layers,
-                        onClick: () => navigate(`/admin/seasons`),
                       },
                       {
                         id: 'duplicate',

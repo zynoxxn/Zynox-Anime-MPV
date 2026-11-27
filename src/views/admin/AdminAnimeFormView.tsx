@@ -52,8 +52,16 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
   const { user } = useAuth();
   const isEditMode = Boolean(animeId);
 
-  // Tab State: Details · Seasons · Episodes · Downloads
-  const [activeTab, setActiveTab] = useState<'details' | 'seasons' | 'episodes' | 'downloads'>('details');
+  // Tab State: Details · Seasons · Episodes · Downloads (supports ?tab=seasons)
+  const [activeTab, setActiveTab] = useState<'details' | 'seasons' | 'episodes' | 'downloads'>(() => {
+    if (typeof window !== 'undefined') {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'seasons' || tabParam === 'episodes' || tabParam === 'downloads' || tabParam === 'details') {
+        return tabParam;
+      }
+    }
+    return 'details';
+  });
 
   // Form States
   const [title, setTitle] = useState('');
@@ -103,10 +111,11 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Season Editor Modal
+  // Full Season Settings Editor State (inline workspace inside Seasons tab)
   const [showSeasonModal, setShowSeasonModal] = useState(false);
   const [editingSeasonIndex, setEditingSeasonIndex] = useState<number | null>(null);
   const [seasonModalData, setSeasonModalData] = useState<Partial<AnimeSeasonEntry>>({});
+  const [savingSeason, setSavingSeason] = useState(false);
 
   // Delete Anime Dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -281,6 +290,317 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
     setMetaKeywords(tags.join(', '));
     markDirty();
     onShowMessage('Generated Google SEO tags.');
+  };
+
+  const buildNewSeasonDraft = (nextNum: number): Partial<AnimeSeasonEntry> => {
+    const baseTitle = title.trim() || 'Anime';
+    const baseSlug =
+      slug.trim() ||
+      baseTitle
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return {
+      id: `season-${Date.now()}`,
+      seasonNumber: nextNum,
+      title: `${baseTitle} Season ${nextNum}`,
+      japaneseTitle: japaneseTitle || '',
+      slug: `${baseSlug}-season-${nextNum}`,
+      description: description || '',
+      poster: '',
+      banner: '',
+      trailerUrl: trailerUrl || '',
+      type: type || 'TV',
+      status: 'ongoing',
+      year: year || 2026,
+      season: season || `Winter ${year || 2026}`,
+      studio: studio || '',
+      totalEpisodes: 12,
+      duration: duration || '24m',
+      rating: rating || 8.5,
+      ageRating: ageRating || 'PG-13',
+      audioLanguage: audioLanguage || 'Hindi Dub & Japanese Sub',
+      genres: [...selectedGenres],
+      releaseDay: releaseDay || '',
+      releaseTime: releaseTime || '',
+      timezone: timezone || 'Asia/Kolkata',
+      isTrending: false,
+      trending: false,
+      isPopular: false,
+      popular: false,
+      isFeatured: false,
+      featured: false,
+      published: true,
+      seoTitle: '',
+      metaTitle: '',
+      seoDescription: '',
+      metaDescription: '',
+      seoKeywords: '',
+      keywords: [],
+    };
+  };
+
+  const openSeasonEditor = (existingSeason?: AnimeSeasonEntry, index?: number) => {
+    if (existingSeason && index !== undefined) {
+      const sNum = Number(existingSeason.seasonNumber) || index + 1;
+      const baseSlug =
+        slug.trim() ||
+        (title.trim() || 'anime')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+      setSeasonModalData({
+        ...existingSeason,
+        seasonNumber: sNum,
+        title: existingSeason.title || `Season ${sNum}`,
+        japaneseTitle: existingSeason.japaneseTitle ?? japaneseTitle ?? '',
+        slug: existingSeason.slug || `${baseSlug}-season-${sNum}`,
+        description: existingSeason.description ?? description ?? '',
+        poster: existingSeason.poster ?? '',
+        banner: existingSeason.banner ?? '',
+        trailerUrl: existingSeason.trailerUrl ?? trailerUrl ?? '',
+        type: existingSeason.type || type || 'TV',
+        status: existingSeason.status || status || 'ongoing',
+        year: existingSeason.year ?? year ?? 2026,
+        season: existingSeason.season ?? season ?? `Winter ${existingSeason.year || year || 2026}`,
+        studio: existingSeason.studio ?? studio ?? '',
+        totalEpisodes: existingSeason.totalEpisodes ?? 12,
+        duration: existingSeason.duration ?? duration ?? '24m',
+        rating: existingSeason.rating ?? rating ?? 8.5,
+        ageRating: existingSeason.ageRating ?? ageRating ?? 'PG-13',
+        audioLanguage: existingSeason.audioLanguage ?? audioLanguage ?? 'Hindi Dub & Japanese Sub',
+        genres:
+          Array.isArray(existingSeason.genres) && existingSeason.genres.length > 0
+            ? [...existingSeason.genres]
+            : [...selectedGenres],
+        releaseDay: existingSeason.releaseDay ?? releaseDay ?? '',
+        releaseTime: existingSeason.releaseTime ?? releaseTime ?? '',
+        timezone: existingSeason.timezone ?? timezone ?? 'Asia/Kolkata',
+        isTrending: Boolean(existingSeason.isTrending ?? existingSeason.trending ?? isTrending),
+        trending: Boolean(existingSeason.isTrending ?? existingSeason.trending ?? isTrending),
+        isPopular: Boolean(existingSeason.isPopular ?? existingSeason.popular ?? isPopular),
+        popular: Boolean(existingSeason.isPopular ?? existingSeason.popular ?? isPopular),
+        isFeatured: Boolean(existingSeason.isFeatured ?? existingSeason.featured ?? isFeatured),
+        featured: Boolean(existingSeason.isFeatured ?? existingSeason.featured ?? isFeatured),
+        published: existingSeason.published !== false,
+        seoTitle: existingSeason.seoTitle || existingSeason.metaTitle || '',
+        metaTitle: existingSeason.metaTitle || existingSeason.seoTitle || '',
+        seoDescription: existingSeason.seoDescription || existingSeason.metaDescription || '',
+        metaDescription: existingSeason.metaDescription || existingSeason.seoDescription || '',
+        seoKeywords:
+          existingSeason.seoKeywords ||
+          (Array.isArray(existingSeason.keywords) ? existingSeason.keywords.join(', ') : ''),
+      });
+      setEditingSeasonIndex(index);
+    } else {
+      const maxNum = seasonsList.reduce((acc, s) => Math.max(acc, Number(s.seasonNumber) || 0), 0);
+      setSeasonModalData(buildNewSeasonDraft(maxNum + 1));
+      setEditingSeasonIndex(null);
+    }
+    setShowSeasonModal(true);
+  };
+
+  const handleAutoSeasonSlug = () => {
+    const raw = (seasonModalData.title || `${title} Season ${seasonModalData.seasonNumber || 1}`).trim();
+    const generated = raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    setSeasonModalData((prev) => ({ ...prev, slug: generated }));
+  };
+
+  const handleAutoGenerateSeasonSeo = () => {
+    const sNum = Number(seasonModalData.seasonNumber) || 1;
+    const sTitle = (seasonModalData.title || `${title || 'Anime'} Season ${sNum}`).trim();
+    const sSlug =
+      (seasonModalData.slug || '').trim() ||
+      sTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const mockSeasonAnime: Anime = {
+      id: `${animeId || 'preview'}-s${sNum}`,
+      title: sTitle,
+      japaneseTitle: (seasonModalData.japaneseTitle || japaneseTitle || '').trim() || undefined,
+      slug: sSlug,
+      description:
+        (seasonModalData.description || description || '').trim() ||
+        `Watch ${sTitle} in Hindi Dub & English Sub.`,
+      poster: (seasonModalData.poster || poster || '').trim() || 'https://via.placeholder.com/300x450',
+      type: (seasonModalData.type || type || 'TV') as any,
+      status: (seasonModalData.status || status || 'ongoing') as any,
+      year: Number(seasonModalData.year || year) || 2026,
+      audioLanguage: seasonModalData.audioLanguage || audioLanguage || 'Hindi Dub',
+      rating: Number(seasonModalData.rating ?? rating) || 8.5,
+      genres:
+        Array.isArray(seasonModalData.genres) && seasonModalData.genres.length > 0
+          ? seasonModalData.genres
+          : selectedGenres.length > 0
+          ? selectedGenres
+          : ['Action', 'Fantasy'],
+      published: seasonModalData.published !== false,
+      totalEpisodes: Number(seasonModalData.totalEpisodes) || 12,
+      duration: seasonModalData.duration || duration || '24m',
+    };
+    const meta = generateAnimeSeoMetadata(mockSeasonAnime, { siteName: 'ZYNOX ANIME' });
+    const tags = generateAnimeGoogleTags(mockSeasonAnime, { isDownload: true });
+    setSeasonModalData((prev) => ({
+      ...prev,
+      seoTitle: meta.title,
+      metaTitle: meta.title,
+      seoDescription: meta.description,
+      metaDescription: meta.description,
+      seoKeywords: tags.join(', '),
+      keywords: tags,
+    }));
+    onShowMessage(`Generated SEO tags for ${sTitle}.`);
+  };
+
+  const handleSaveSeasonEntry = async () => {
+    const sNum = Number(seasonModalData.seasonNumber) || 1;
+    const trimmedTitle = (seasonModalData.title || '').trim() || `Season ${sNum}`;
+    const trimmedSlug = (seasonModalData.slug || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const seoKeywordsStr = (seasonModalData.seoKeywords || '').trim();
+    const isTrend = Boolean(seasonModalData.isTrending ?? seasonModalData.trending);
+    const isPop = Boolean(seasonModalData.isPopular ?? seasonModalData.popular);
+    const isFeat = Boolean(seasonModalData.isFeatured ?? seasonModalData.featured);
+
+    const item: AnimeSeasonEntry = {
+      id: seasonModalData.id || `season-${Date.now()}`,
+      seasonNumber: sNum,
+      title: trimmedTitle,
+      japaneseTitle: (seasonModalData.japaneseTitle || '').trim() || undefined,
+      animeId: seasonModalData.animeId || undefined,
+      slug: trimmedSlug || undefined,
+      description: (seasonModalData.description || '').trim() || undefined,
+      poster: (seasonModalData.poster || '').trim() || undefined,
+      banner: (seasonModalData.banner || '').trim() || undefined,
+      trailerUrl: (seasonModalData.trailerUrl || '').trim() || undefined,
+      type: (seasonModalData.type || type || 'TV').trim(),
+      status: seasonModalData.status || 'ongoing',
+      year: Number(seasonModalData.year) || year || 2026,
+      season: (seasonModalData.season || '').trim() || undefined,
+      studio: (seasonModalData.studio || '').trim() || undefined,
+      totalEpisodes: Number(seasonModalData.totalEpisodes) || 12,
+      duration: (seasonModalData.duration || '').trim() || '24m',
+      rating: Number(seasonModalData.rating ?? rating) || 8.5,
+      ageRating: (seasonModalData.ageRating || '').trim() || 'PG-13',
+      audioLanguage: (seasonModalData.audioLanguage || '').trim() || audioLanguage || 'Hindi Dub & Japanese Sub',
+      genres:
+        Array.isArray(seasonModalData.genres) && seasonModalData.genres.length > 0
+          ? seasonModalData.genres
+          : selectedGenres.length > 0
+          ? selectedGenres
+          : undefined,
+      releaseDay: (seasonModalData.releaseDay || '').trim() || undefined,
+      releaseTime: (seasonModalData.releaseTime || '').trim() || undefined,
+      timezone: (seasonModalData.timezone || 'Asia/Kolkata').trim(),
+      trending: isTrend,
+      isTrending: isTrend,
+      popular: isPop,
+      isPopular: isPop,
+      featured: isFeat,
+      isFeatured: isFeat,
+      published: seasonModalData.published !== false,
+      seoTitle: (seasonModalData.seoTitle || seasonModalData.metaTitle || '').trim() || undefined,
+      metaTitle: (seasonModalData.metaTitle || seasonModalData.seoTitle || '').trim() || undefined,
+      seoDescription:
+        (seasonModalData.seoDescription || seasonModalData.metaDescription || '').trim() || undefined,
+      metaDescription:
+        (seasonModalData.metaDescription || seasonModalData.seoDescription || '').trim() || undefined,
+      seoKeywords: seoKeywordsStr || undefined,
+      keywords: seoKeywordsStr ? seoKeywordsStr.split(',').map((k) => k.trim()).filter(Boolean) : undefined,
+      createdAt: seasonModalData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextSeasons = [...seasonsList];
+    if (editingSeasonIndex !== null) {
+      nextSeasons[editingSeasonIndex] = item;
+    } else {
+      nextSeasons.push(item);
+    }
+    nextSeasons.sort((a, b) => (Number(a.seasonNumber) || 1) - (Number(b.seasonNumber) || 1));
+
+    setSeasonsList(nextSeasons);
+
+    if (isEditMode && animeId) {
+      try {
+        setSavingSeason(true);
+        await updateAnime(animeId, { seasonsList: nextSeasons });
+        await logAdminActivity(
+          user?.uid || '',
+          user?.email || '',
+          editingSeasonIndex !== null ? 'Updated Season' : 'Added Season',
+          'Anime',
+          animeId,
+          `${title} — ${item.title}`
+        );
+        onShowMessage(`Saved "${item.title}" settings.`);
+      } catch {
+        markDirty();
+        onShowMessage('Updated season locally. Click "Save changes" to sync.');
+      } finally {
+        setSavingSeason(false);
+      }
+    } else {
+      markDirty();
+      onShowMessage(`Prepared "${item.title}".`);
+    }
+
+    setShowSeasonModal(false);
+    setEditingSeasonIndex(null);
+  };
+
+  const handleDeleteSeasonEntry = async (index: number) => {
+    const target = seasonsList[index];
+    const nextSeasons = seasonsList.filter((_, i) => i !== index);
+    setSeasonsList(nextSeasons);
+    if (isEditMode && animeId) {
+      try {
+        await updateAnime(animeId, { seasonsList: nextSeasons });
+        onShowMessage(`Deleted "${target?.title || `Season ${target?.seasonNumber}`}".`);
+      } catch {
+        markDirty();
+      }
+    } else {
+      markDirty();
+    }
+  };
+
+  const handleDuplicateSeasonEntry = async (source: AnimeSeasonEntry) => {
+    const maxNum = seasonsList.reduce((acc, s) => Math.max(acc, Number(s.seasonNumber) || 0), 0);
+    const nextNum = maxNum + 1;
+    const baseSlug =
+      slug.trim() ||
+      (title.trim() || 'anime')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    const copy: AnimeSeasonEntry = {
+      ...source,
+      id: `season-${Date.now()}`,
+      seasonNumber: nextNum,
+      title: `${title || 'Anime'} Season ${nextNum}`,
+      slug: `${baseSlug}-season-${nextNum}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const nextSeasons = [...seasonsList, copy].sort(
+      (a, b) => (Number(a.seasonNumber) || 1) - (Number(b.seasonNumber) || 1)
+    );
+    setSeasonsList(nextSeasons);
+    if (isEditMode && animeId) {
+      try {
+        await updateAnime(animeId, { seasonsList: nextSeasons });
+        onShowMessage(`Duplicated as "${copy.title}".`);
+      } catch {
+        markDirty();
+      }
+    } else {
+      markDirty();
+    }
   };
 
   const handleSave = async () => {
@@ -981,48 +1301,718 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: SEASONS */}
+        {/* TAB 2: SEASONS (Full Per-Season Manager + Full 7-Accordion Season Editor) */}
         {activeTab === 'seasons' && (
-          <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
+          <div className="space-y-4">
             {!isEditMode ? (
-              <div className="py-8 text-center space-y-3">
-                <Layers className="w-8 h-8 text-[#1E88FF] mx-auto opacity-70" />
-                <div className="text-sm font-semibold text-white">Save anime draft first</div>
-                <p className="text-xs text-[#94A3B8] max-w-sm mx-auto">
-                  Save the anime first to configure multi-season arcs, movies, or sequel entries.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="h-10 px-4 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer shadow-sm shadow-[#1E88FF]/20"
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5">
+                <div className="py-8 text-center space-y-3">
+                  <Layers className="w-8 h-8 text-[#1E88FF] mx-auto opacity-70" />
+                  <div className="text-sm font-semibold text-white">Save anime draft first</div>
+                  <p className="text-xs text-[#94A3B8] max-w-sm mx-auto">
+                    Save the anime first to add seasons (S1, S2, S3...) with full individual settings & episodes.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="h-10 px-4 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer shadow-sm shadow-[#1E88FF]/20"
+                  >
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span>Save draft</span>
+                  </button>
+                </div>
+              </div>
+            ) : showSeasonModal ? (
+              /* FULL PER-SEASON SETTINGS WORKSPACE (Matches New Anime Details Editor 1:1) */
+              <div className="space-y-4">
+                {/* Season Editor Top Bar */}
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSeasonModal(false);
+                        setEditingSeasonIndex(null);
+                      }}
+                      className="w-9 h-9 rounded-[10px] bg-[#101A30] hover:bg-[#16233E] border border-white/10 text-[#CBD5E1] hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                      title="Back to Seasons"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="w-9 h-12 rounded-[8px] bg-[#050A14] border border-white/10 overflow-hidden shrink-0">
+                      {(seasonModalData.poster || poster) ? (
+                        <img
+                          src={seasonModalData.poster || poster}
+                          alt={seasonModalData.title || 'Season'}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[#64748B]">
+                          <Layers className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                          {seasonModalData.title || `Season ${seasonModalData.seasonNumber || 1}`}
+                        </h2>
+                        <AdminStatusBadge
+                          status={seasonModalData.published === false ? 'draft' : 'live'}
+                          className="shrink-0"
+                        />
+                      </div>
+                      <p className="text-xs text-[#94A3B8] truncate">
+                        {editingSeasonIndex !== null
+                          ? `Editing Season ${seasonModalData.seasonNumber || 1} of ${title}`
+                          : `Adding Season ${seasonModalData.seasonNumber || 1} to ${title}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Quick Jump to this Season's Episodes */}
+                  {editingSeasonIndex !== null && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(
+                            `/admin/episodes/bulk?animeId=${animeId || slug}&season=${seasonModalData.seasonNumber || 1}`
+                          )
+                        }
+                        className="h-9 px-3 rounded-[9px] bg-[#101A30] hover:bg-[#16233E] border border-white/10 text-xs font-semibold text-[#CBD5E1] hover:text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-[#1E88FF]" />
+                        <span>Bulk Eps</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(
+                            `/admin/anime/${animeId || slug}/episodes?season=${seasonModalData.seasonNumber || 1}`
+                          )
+                        }
+                        className="h-9 px-3 rounded-[9px] bg-[#0E2444] hover:bg-[#14325E] border border-[#1E4B8A] text-xs font-semibold text-[#3B9BFF] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Tv className="w-3.5 h-3.5" />
+                        <span>Episodes</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* a) Season Basics */}
+                <AdminAccordion
+                  title="Basics"
+                  subtitle="Season number, title, Japanese name, URL slug, and synopsis"
+                  icon={Film}
+                  defaultOpen={true}
                 >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  <span>Save draft</span>
-                </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        Season Number <span className="text-[#1E88FF]">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={seasonModalData.seasonNumber ?? 1}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            seasonNumber: Number(e.target.value) || 1,
+                          }))
+                        }
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] focus:ring-1 focus:ring-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        English Title <span className="text-[#1E88FF]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.title || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, title: e.target.value }))
+                        }
+                        onBlur={() => {
+                          if (!seasonModalData.slug) handleAutoSeasonSlug();
+                        }}
+                        placeholder={`e.g. ${title || 'Haikyuu!!'} Season ${seasonModalData.seasonNumber || 2}`}
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] focus:ring-1 focus:ring-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        Japanese Title
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.japaneseTitle || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, japaneseTitle: e.target.value }))
+                        }
+                        placeholder="e.g. ハイキュー!! セカンドシーズン"
+                        className="w-full h-11 bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-white">
+                          URL Slug
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleAutoSeasonSlug}
+                          className="text-xs text-[#1E88FF] hover:underline cursor-pointer"
+                        >
+                          Auto-generate
+                        </button>
+                      </div>
+                      <AdminCopyInput
+                        type="text"
+                        value={seasonModalData.slug || ''}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            slug: val.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+                          }))
+                        }
+                        placeholder={`${slug || 'anime'}-season-${seasonModalData.seasonNumber || 2}`}
+                        showPaste={true}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-white">
+                          Synopsis / Description
+                        </label>
+                        <span className="text-[11px] text-[#94A3B8]">
+                          {(seasonModalData.description || '').length} characters
+                        </span>
+                      </div>
+                      <textarea
+                        rows={4}
+                        value={seasonModalData.description || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, description: e.target.value }))
+                        }
+                        placeholder="Enter season synopsis, storyline, and arc details..."
+                        className="w-full min-h-[96px] bg-[#101A30] border border-white/10 focus:border-[#1E88FF] rounded-[10px] p-3 text-sm text-white outline-none"
+                      />
+                    </div>
+                  </div>
+                </AdminAccordion>
+
+                {/* b) Season Artwork & Media */}
+                <AdminAccordion
+                  title="Artwork & Media"
+                  subtitle="Season poster, banner, and trailer link"
+                  icon={ImageIcon}
+                  defaultOpen={false}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <AdminImageUploader
+                      label="Season Poster (2:3 aspect)"
+                      type="poster"
+                      currentUrl={seasonModalData.poster || ''}
+                      animeId={animeId || slug}
+                      recommendedText="Custom poster for this season (defaults to main anime poster if empty)"
+                      onUrlChange={(url) =>
+                        setSeasonModalData((prev) => ({ ...prev, poster: url }))
+                      }
+                    />
+
+                    <AdminImageUploader
+                      label="Season Banner (16:9 aspect)"
+                      type="banner"
+                      currentUrl={seasonModalData.banner || ''}
+                      animeId={animeId || slug}
+                      recommendedText="Custom wide banner for this season (optional)"
+                      onUrlChange={(url) =>
+                        setSeasonModalData((prev) => ({ ...prev, banner: url }))
+                      }
+                    />
+
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="block text-xs font-semibold text-white">
+                        Trailer Embed URL (YouTube or Direct)
+                      </label>
+                      <AdminCopyInput
+                        type="url"
+                        value={seasonModalData.trailerUrl || ''}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({ ...prev, trailerUrl: val }))
+                        }
+                        placeholder="https://www.youtube.com/embed/..."
+                        showPaste={true}
+                      />
+                    </div>
+                  </div>
+                </AdminAccordion>
+
+                {/* c) Season Classification & Genres */}
+                <AdminAccordion
+                  title="Classification & Genres"
+                  subtitle="Format, status, year, season, studio, audio, and genres"
+                  icon={Sliders}
+                  defaultOpen={false}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <AdminSelect
+                        label="Format / Type"
+                        value={seasonModalData.type || 'TV'}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({ ...prev, type: val as string }))
+                        }
+                        options={[
+                          { value: 'TV', label: 'TV Series' },
+                          { value: 'Movie', label: 'Movie' },
+                          { value: 'OVA', label: 'OVA' },
+                          { value: 'ONA', label: 'ONA' },
+                          { value: 'Special', label: 'Special' },
+                        ]}
+                      />
+                    </div>
+
+                    <div>
+                      <AdminSelect
+                        label="Airing Status"
+                        value={seasonModalData.status || 'ongoing'}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({ ...prev, status: val as any }))
+                        }
+                        options={[
+                          { value: 'ongoing', label: 'Ongoing' },
+                          { value: 'completed', label: 'Completed' },
+                          { value: 'upcoming', label: 'Upcoming' },
+                        ]}
+                      />
+                    </div>
+
+                    <div>
+                      <AdminSelect
+                        label="Release Year"
+                        value={seasonModalData.year || 2026}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({ ...prev, year: Number(val) }))
+                        }
+                        options={[2027, 2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014].map((y) => ({
+                          value: y,
+                          label: String(y),
+                        }))}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Release Season
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.season || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, season: e.target.value }))
+                        }
+                        placeholder="e.g. Winter 2026, Fall 2025"
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Studio
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.studio || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, studio: e.target.value }))
+                        }
+                        placeholder="e.g. MAPPA, Ufotable, Production I.G"
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Duration
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.duration || '24m'}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, duration: e.target.value }))
+                        }
+                        placeholder="e.g. 24m"
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Total Episodes
+                      </label>
+                      <input
+                        type="number"
+                        value={seasonModalData.totalEpisodes ?? 12}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            totalEpisodes: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Rating Score
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="10"
+                        value={seasonModalData.rating ?? 8.5}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            rating: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Age Rating
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.ageRating || 'PG-13'}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({ ...prev, ageRating: e.target.value }))
+                        }
+                        placeholder="PG-13"
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <AdminSelect
+                        label="Audio Language"
+                        value={seasonModalData.audioLanguage || 'Hindi Dub & Japanese Sub'}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            audioLanguage: val as string,
+                          }))
+                        }
+                        options={[
+                          { value: 'Hindi Dub & Japanese Sub', label: 'Hindi Dub & Japanese Sub' },
+                          { value: 'Hindi Dub', label: 'Hindi Dub' },
+                          { value: 'Japanese Sub', label: 'Japanese Sub' },
+                          { value: 'Dual Audio', label: 'Dual Audio' },
+                          { value: 'English Dub', label: 'English Dub' },
+                          { value: 'Multi Audio', label: 'Multi Audio' },
+                        ]}
+                      />
+                    </div>
+
+                    {/* Season Genres Multi-select Chips */}
+                    <div className="sm:col-span-3 space-y-2">
+                      <label className="block text-xs font-semibold text-white">
+                        Genres ({(seasonModalData.genres || []).length} selected)
+                      </label>
+                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto no-scrollbar p-1.5 rounded-[10px] bg-[#101A30]">
+                        {(availableGenres.length > 0
+                          ? availableGenres
+                          : ['Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller']
+                        ).map((genre) => {
+                          const currentGenres = seasonModalData.genres || [];
+                          const isSelected = currentGenres.includes(genre);
+                          return (
+                            <button
+                              key={genre}
+                              type="button"
+                              onClick={() => {
+                                const updated = isSelected
+                                  ? currentGenres.filter((g) => g !== genre)
+                                  : [...currentGenres, genre];
+                                setSeasonModalData((prev) => ({ ...prev, genres: updated }));
+                              }}
+                              className={`h-8 px-3 rounded-[8px] text-xs font-medium transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#1E88FF] text-white font-semibold'
+                                  : 'bg-[#16223B] text-[#CBD5E1] hover:bg-[#1E2E4F]'
+                              }`}
+                            >
+                              {genre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </AdminAccordion>
+
+                {/* d) Season Airing Schedule */}
+                <AdminAccordion
+                  title="Airing Schedule"
+                  subtitle="Release day, broadcast air time, and timezone"
+                  icon={Calendar}
+                  defaultOpen={false}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <AdminSelect
+                        label="Broadcast Day"
+                        value={seasonModalData.releaseDay || 'none'}
+                        onChange={(val) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            releaseDay: val === 'none' ? '' : (val as string),
+                          }))
+                        }
+                        options={[
+                          { value: 'none', label: 'Not Scheduled' },
+                          { value: 'Monday', label: 'Monday' },
+                          { value: 'Tuesday', label: 'Tuesday' },
+                          { value: 'Wednesday', label: 'Wednesday' },
+                          { value: 'Thursday', label: 'Thursday' },
+                          { value: 'Friday', label: 'Friday' },
+                          { value: 'Saturday', label: 'Saturday' },
+                          { value: 'Sunday', label: 'Sunday' },
+                        ]}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Air Time (IST)
+                      </label>
+                      <input
+                        type="time"
+                        value={seasonModalData.releaseTime || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            releaseTime: e.target.value,
+                          }))
+                        }
+                        className="w-full h-10 bg-[#0B1324] border border-white/10 focus:border-[#1E88FF] rounded-[10px] px-3.5 text-sm text-white outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#94A3B8] mb-1.5">
+                        Timezone
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.timezone || 'Asia/Kolkata'}
+                        disabled
+                        className="w-full h-10 bg-[#050A14] border border-white/5 rounded-[10px] px-3.5 text-sm text-[#94A3B8] outline-none"
+                      />
+                    </div>
+                  </div>
+                </AdminAccordion>
+
+                {/* e) Season Promotion & Badges */}
+                <AdminAccordion
+                  title="Promotion & Badges"
+                  subtitle="Pin this season to Trending, Popular, or Featured sections"
+                  icon={Sparkles}
+                  defaultOpen={false}
+                >
+                  <div className="space-y-1 divide-y divide-white/5">
+                    <AdminToggle
+                      checked={Boolean(seasonModalData.isTrending ?? seasonModalData.trending)}
+                      onChange={(val) =>
+                        setSeasonModalData((prev) => ({
+                          ...prev,
+                          isTrending: val,
+                          trending: val,
+                        }))
+                      }
+                      label="Trending Now"
+                      description="Feature this season in top trending discovery carousels"
+                    />
+
+                    <AdminToggle
+                      checked={Boolean(seasonModalData.isPopular ?? seasonModalData.popular)}
+                      onChange={(val) =>
+                        setSeasonModalData((prev) => ({
+                          ...prev,
+                          isPopular: val,
+                          popular: val,
+                        }))
+                      }
+                      label="Most Popular"
+                      description="Highlight this season in popular & top ranked leaderboards"
+                    />
+
+                    <AdminToggle
+                      checked={Boolean(seasonModalData.isFeatured ?? seasonModalData.featured)}
+                      onChange={(val) =>
+                        setSeasonModalData((prev) => ({
+                          ...prev,
+                          isFeatured: val,
+                          featured: val,
+                        }))
+                      }
+                      label="Featured Spotlight"
+                      description="Display badge and promote this season on homepage hero spotlight"
+                    />
+                  </div>
+                </AdminAccordion>
+
+                {/* f) Season SEO & Metadata */}
+                <AdminAccordion
+                  title="SEO & Metadata"
+                  subtitle="Search engine preview and Google tags for this season"
+                  icon={Globe}
+                  defaultOpen={false}
+                >
+                  <div className="space-y-3">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateSeasonSeo}
+                        className="h-8 px-3 rounded-[8px] bg-[#16223B] hover:bg-[#1E2E4F] text-xs font-semibold text-[#3B9BFF] transition-colors cursor-pointer"
+                      >
+                        Auto-generate SEO
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        Meta Title
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.seoTitle || seasonModalData.metaTitle || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            seoTitle: e.target.value,
+                            metaTitle: e.target.value,
+                          }))
+                        }
+                        placeholder={`Watch ${seasonModalData.title || title} in Hindi Dub Online - ZYNOX`}
+                        className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[10px] px-3.5 text-xs text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        Meta Description
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={seasonModalData.seoDescription || seasonModalData.metaDescription || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            seoDescription: e.target.value,
+                            metaDescription: e.target.value,
+                          }))
+                        }
+                        placeholder="SEO description for Google snippets..."
+                        className="w-full bg-[#101A30] border border-white/10 rounded-[10px] p-2.5 text-xs text-white outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-white">
+                        Keywords (comma separated)
+                      </label>
+                      <input
+                        type="text"
+                        value={seasonModalData.seoKeywords || ''}
+                        onChange={(e) =>
+                          setSeasonModalData((prev) => ({
+                            ...prev,
+                            seoKeywords: e.target.value,
+                          }))
+                        }
+                        placeholder="anime season 2 hindi dub, watch online, download 1080p"
+                        className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[10px] px-3.5 text-xs text-white outline-none"
+                      />
+                    </div>
+                  </div>
+                </AdminAccordion>
+
+                {/* g) Season Publishing Status */}
+                <AdminAccordion
+                  title="Publishing Status"
+                  subtitle="Control if this season is live across Trending, Airing, Top Ranked & Search"
+                  icon={Eye}
+                  defaultOpen={false}
+                >
+                  <AdminToggle
+                    checked={seasonModalData.published !== false}
+                    onChange={(val) =>
+                      setSeasonModalData((prev) => ({
+                        ...prev,
+                        published: val,
+                      }))
+                    }
+                    label={seasonModalData.published !== false ? 'Live on Website' : 'Draft (Hidden)'}
+                    description={
+                      seasonModalData.published !== false
+                        ? 'Visible across Trending, Currently Airing, Top Ranked, Explore, and Search.'
+                        : 'Hidden from public visitors until published.'
+                    }
+                  />
+                </AdminAccordion>
+
+                {/* Save / Cancel Footer */}
+                <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-3.5 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSeasonModal(false);
+                      setEditingSeasonIndex(null);
+                    }}
+                    className="h-10 px-4 rounded-[10px] bg-[#101A30] hover:bg-[#16233E] border border-white/10 text-xs font-semibold text-[#CBD5E1] hover:text-white cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingSeason}
+                    onClick={handleSaveSeasonEntry}
+                    className="h-10 px-5 rounded-[10px] bg-[#1E88FF] hover:bg-[#3B9BFF] disabled:opacity-60 text-white text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    {savingSeason ? 'Saving...' : 'Save season'}
+                  </button>
+                </div>
               </div>
             ) : (
-              <>
+              /* SEASONS LIST WORKSPACE */
+              <div className="bg-[#0B1324] border border-white/10 rounded-[12px] p-4 sm:p-5 space-y-4">
                 <AdminSectionHeader
                   title="Seasons & Arcs"
-                  description="Organize anime arcs, movies, and season groups"
+                  description="Manage every season's full settings, posters, promotion badges, and episodes from one place"
                   actions={[
                     {
                       label: 'Add season',
                       icon: Plus,
                       variant: 'secondary',
-                      onClick: () => {
-                        const nextNum = seasonsList.length + 1;
-                        setSeasonModalData({
-                          id: `season-${Date.now()}`,
-                          seasonNumber: nextNum,
-                          title: `${title || 'Anime'} Season ${nextNum}`,
-                          totalEpisodes: 12,
-                          year: year || 2026,
-                          status: 'ongoing',
-                        });
-                        setEditingSeasonIndex(null);
-                        setShowSeasonModal(true);
-                      },
+                      onClick: () => openSeasonEditor(),
                     },
                   ]}
                 />
@@ -1031,65 +2021,87 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
                   <AdminEmptyState
                     compact={true}
                     icon={Layers}
-                    title="No separate seasons"
-                    description="This title functions as Season 1 by default."
-                    actionLabel="Add season"
-                    onAction={() => {
-                      const nextNum = seasonsList.length + 1;
-                      setSeasonModalData({
-                        id: `season-${Date.now()}`,
-                        seasonNumber: nextNum,
-                        title: `${title || 'Anime'} Season ${nextNum}`,
-                        totalEpisodes: 12,
-                        year: year || 2026,
-                        status: 'ongoing',
-                      });
-                      setEditingSeasonIndex(null);
-                      setShowSeasonModal(true);
-                    }}
+                    title="No separate seasons yet"
+                    description="Add Season 1, Season 2, Season 3... Each season gets its own full settings and shows individually across Trending, Currently Airing, and Top Ranked."
+                    actionLabel="Add Season 1"
+                    onAction={() => openSeasonEditor()}
                   />
                 ) : (
                   <div className="divide-y divide-white/5">
-                    {seasonsList.map((s, index) => (
-                      <AdminListRow
-                        key={s.id || index}
-                        id={s.id || `s-${index}`}
-                        title={s.title || `Season ${s.seasonNumber}`}
-                        meta={`Season ${s.seasonNumber} · ${s.totalEpisodes || 12} Episodes · ${s.year || 2026}`}
-                        thumbnail={s.poster || poster}
-                        thumbnailType="poster"
-                        status={s.status || 'ongoing'}
-                        dragHandle={true}
-                        onClick={() => {
-                          setSeasonModalData({ ...s });
-                          setEditingSeasonIndex(index);
-                          setShowSeasonModal(true);
-                        }}
-                        menuItems={[
-                          {
-                            id: 'edit',
-                            label: 'Edit season',
-                            onClick: () => {
-                              setSeasonModalData({ ...s });
-                              setEditingSeasonIndex(index);
-                              setShowSeasonModal(true);
+                    {seasonsList.map((s, index) => {
+                      const sNum = Number(s.seasonNumber) || index + 1;
+                      const promoTags: string[] = [];
+                      if (s.isTrending || s.trending) promoTags.push('Trending');
+                      if (s.isPopular || s.popular) promoTags.push('Popular');
+                      if (s.isFeatured || s.featured) promoTags.push('Featured');
+                      const metaParts = [
+                        `S${sNum}`,
+                        `${s.totalEpisodes || 12} Eps`,
+                        `${s.year || year || 2026}`,
+                        s.audioLanguage || audioLanguage || 'Multi Audio',
+                        ...promoTags,
+                      ];
+
+                      return (
+                        <AdminListRow
+                          key={s.id || index}
+                          id={s.id || `s-${index}`}
+                          title={s.title || `Season ${sNum}`}
+                          meta={metaParts.join(' · ')}
+                          thumbnail={s.poster || poster}
+                          thumbnailType="poster"
+                          status={s.published === false ? 'draft' : (s.status || 'ongoing')}
+                          dragHandle={true}
+                          onClick={() => openSeasonEditor(s, index)}
+                          menuItems={[
+                            {
+                              id: 'edit',
+                              label: 'Edit season settings',
+                              icon: Sliders,
+                              onClick: () => openSeasonEditor(s, index),
                             },
-                          },
-                          {
-                            id: 'delete',
-                            label: 'Delete season',
-                            destructive: true,
-                            onClick: () => {
-                              setSeasonsList((prev) => prev.filter((_, i) => i !== index));
-                              markDirty();
+                            {
+                              id: 'episodes',
+                              label: 'Manage episodes',
+                              icon: Tv,
+                              onClick: () =>
+                                navigate(`/admin/anime/${animeId || slug}/episodes?season=${sNum}`),
                             },
-                          },
-                        ]}
-                      />
-                    ))}
+                            {
+                              id: 'bulk-episodes',
+                              label: 'Bulk add episodes',
+                              icon: Plus,
+                              onClick: () =>
+                                navigate(`/admin/episodes/bulk?animeId=${animeId || slug}&season=${sNum}`),
+                            },
+                            {
+                              id: 'duplicate',
+                              label: 'Duplicate season',
+                              icon: Copy,
+                              onClick: () => handleDuplicateSeasonEntry(s),
+                            },
+                            {
+                              id: 'view',
+                              label: 'View on site',
+                              icon: ExternalLink,
+                              onClick: () =>
+                                navigate(`/anime/${slug || animeId}?season=${sNum}`),
+                            },
+                            {
+                              id: 'delete',
+                              label: 'Delete season',
+                              icon: Trash2,
+                              destructive: true,
+                              divider: true,
+                              onClick: () => handleDeleteSeasonEntry(index),
+                            },
+                          ]}
+                        />
+                      );
+                    })}
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
@@ -1321,141 +2333,6 @@ export const AdminAnimeFormView: React.FC<AdminAnimeFormViewProps> = ({
           confirmLabel="Delete anime"
           isLoading={isDeleting}
         />
-
-        {/* Season Edit/Add Dialog */}
-        {showSeasonModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm"
-              onClick={() => setShowSeasonModal(false)}
-            />
-            <div className="relative w-full max-w-md max-h-[90svh] overflow-y-auto no-scrollbar bg-[#0B1324] border border-white/10 rounded-[12px] p-5 shadow-2xl z-10 space-y-4">
-              <h3 className="text-base font-bold text-white">
-                {editingSeasonIndex !== null ? 'Edit Season' : 'Add Season'}
-              </h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-white mb-1">
-                    Season Number
-                  </label>
-                  <input
-                    type="number"
-                    value={seasonModalData.seasonNumber || 1}
-                    onChange={(e) =>
-                      setSeasonModalData((prev) => ({
-                        ...prev,
-                        seasonNumber: Number(e.target.value),
-                      }))
-                    }
-                    className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-white mb-1">
-                    Season Title
-                  </label>
-                  <input
-                    type="text"
-                    value={seasonModalData.title || ''}
-                    onChange={(e) =>
-                      setSeasonModalData((prev) => ({ ...prev, title: e.target.value }))
-                    }
-                    placeholder="e.g. Season 2: Entertainment District Arc"
-                    className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-white mb-1">
-                      Episodes
-                    </label>
-                    <input
-                      type="number"
-                      value={seasonModalData.totalEpisodes || 12}
-                      onChange={(e) =>
-                        setSeasonModalData((prev) => ({
-                          ...prev,
-                          totalEpisodes: Number(e.target.value),
-                        }))
-                      }
-                      className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-white mb-1">
-                      Year
-                    </label>
-                    <input
-                      type="number"
-                      value={seasonModalData.year || 2026}
-                      onChange={(e) =>
-                        setSeasonModalData((prev) => ({
-                          ...prev,
-                          year: Number(e.target.value),
-                        }))
-                      }
-                      className="w-full h-10 bg-[#101A30] border border-white/10 rounded-[8px] px-3 text-xs text-white outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Per-Season Custom Poster Uploader / URL */}
-                <div className="pt-1">
-                  <AdminImageUploader
-                    label="Season Poster (2:3 aspect)"
-                    type="poster"
-                    currentUrl={seasonModalData.poster || ''}
-                    animeId={animeId || slug}
-                    recommendedText="Upload or paste a custom poster for this season (optional — defaults to main poster)"
-                    onUrlChange={(url) =>
-                      setSeasonModalData((prev) => ({ ...prev, poster: url }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowSeasonModal(false)}
-                  className="h-9 px-3.5 rounded-[8px] text-xs font-medium text-[#CBD5E1] hover:text-white cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!seasonModalData.seasonNumber) return;
-                    const item: AnimeSeasonEntry = {
-                      ...seasonModalData,
-                      id: seasonModalData.id || `season-${Date.now()}`,
-                      seasonNumber: Number(seasonModalData.seasonNumber),
-                      title: seasonModalData.title?.trim() || `Season ${seasonModalData.seasonNumber}`,
-                      poster: seasonModalData.poster?.trim() || undefined,
-                      totalEpisodes: Number(seasonModalData.totalEpisodes) || 12,
-                      year: Number(seasonModalData.year) || 2026,
-                      status: seasonModalData.status || 'ongoing',
-                    };
-                    setSeasonsList((prev) => {
-                      const copy = [...prev];
-                      if (editingSeasonIndex !== null) copy[editingSeasonIndex] = item;
-                      else copy.push(item);
-                      return copy.sort((a, b) => a.seasonNumber - b.seasonNumber);
-                    });
-                    setShowSeasonModal(false);
-                    markDirty();
-                  }}
-                  className="h-9 px-4 rounded-[8px] bg-[#1E88FF] hover:bg-[#3B9BFF] text-white text-xs font-semibold cursor-pointer"
-                >
-                  Save season
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </AdminLayout>
   );

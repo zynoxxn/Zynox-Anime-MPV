@@ -7,6 +7,7 @@ import {
   cleanAnimeTitle,
   getAnimeUploadTimestamp,
   isHentaiAnime,
+  expandAnimeSeasons,
 } from '../lib/firestore/anime';
 import { getCmsGenres, getCmsSiteSettings } from '../lib/firestore/cms';
 import { formatCardAudioLabel } from '../lib/format-meta';
@@ -82,7 +83,12 @@ const ExploreCard: React.FC<{
 
   const handleClick = () => {
     const slug = (anime.slug || anime.id || '').trim();
-    if (slug) navigate(`/anime/${encodeURIComponent(slug)}`);
+    if (!slug) return;
+    navigate(
+      anime.activeSeasonNumber
+        ? `/anime/${encodeURIComponent(slug)}?season=${anime.activeSeasonNumber}`
+        : `/anime/${encodeURIComponent(slug)}`
+    );
   };
 
   return (
@@ -129,6 +135,15 @@ const ExploreCard: React.FC<{
           </div>
         )}
 
+        {anime.activeSeasonNumber && (
+          <>
+            <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[#050A14]/90 via-[#050A14]/40 to-transparent pointer-events-none" />
+            <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-[#0B1324] text-white border border-[#2A3A57] text-[10px] font-bold leading-none pointer-events-none shadow-md">
+              S{anime.activeSeasonNumber}
+            </span>
+          </>
+        )}
+
         {isNewWithin7Days && (
           <span
             aria-label="New release"
@@ -138,7 +153,7 @@ const ExploreCard: React.FC<{
         )}
       </div>
 
-      {/* ONLY 2 compact lines below poster: Line 1 = 12px/600 lh 16px, Line 2 = 11px muted "Hindi Dub · ★ 8.5" */}
+      {/* ONLY 2 compact lines below poster */}
       <div className="mt-[6px] min-w-0 space-y-0.5">
         <h3
           title={cleanTitle}
@@ -147,12 +162,19 @@ const ExploreCard: React.FC<{
           {cleanTitle}
         </h3>
 
-        <p className="text-[11px] leading-[15px] text-[#94A3B8] font-normal truncate flex items-center gap-1 min-w-0">
-          <span className="truncate">{displayLanguage}</span>
-          <span className="shrink-0">·</span>
-          <Star className="w-2.5 h-2.5 text-[#F59E0B] fill-[#F59E0B] shrink-0" />
-          <span className="shrink-0 tabular-nums">{ratingValue}</span>
-        </p>
+        {anime.activeSeasonNumber ? (
+          <p className="text-[11px] leading-[15px] text-[#94A3B8] font-normal truncate">
+            {anime.totalEpisodes ? `${anime.totalEpisodes} Eps` : `Season ${anime.activeSeasonNumber}`}
+            {anime.year ? ` · ${anime.year}` : ''}
+          </p>
+        ) : (
+          <p className="text-[11px] leading-[15px] text-[#94A3B8] font-normal truncate flex items-center gap-1 min-w-0">
+            <span className="truncate">{displayLanguage}</span>
+            <span className="shrink-0">·</span>
+            <Star className="w-2.5 h-2.5 text-[#F59E0B] fill-[#F59E0B] shrink-0" />
+            <span className="shrink-0 tabular-nums">{ratingValue}</span>
+          </p>
+        )}
       </div>
     </div>
   );
@@ -581,7 +603,7 @@ export const BrowseView: React.FC<BrowseViewProps> = ({
       selectedGenres.some((g) => g.toLowerCase() === 'hentai') ||
       debouncedQuery.toLowerCase().includes('hentai');
 
-    return catalog.filter((anime) => {
+    return expandAnimeSeasons(catalog).filter((anime) => {
       // 1. Published check
       if (anime.published === false) return false;
 

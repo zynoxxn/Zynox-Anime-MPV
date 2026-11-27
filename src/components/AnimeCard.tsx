@@ -11,7 +11,7 @@ import {
   getAnimeWatchlistStatusCached,
 } from '../lib/firestore/user-activity';
 import { cleanAnimeTitle, getAnimeUploadTimestamp } from '../lib/firestore/anime';
-import { formatCardAudioLabel } from '../lib/format-meta';
+import { formatCardAudioLabel, formatCardEpisodesBadge } from '../lib/format-meta';
 import {
   getOptimizedImageUrl,
   getOptimizedPosterSrcSet,
@@ -166,8 +166,8 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
   const ratingValue = anime.rating ? Number(anime.rating).toFixed(1) : '8.5';
   const releaseYear = anime.year || 2026;
   const animeType = anime.type || 'TV';
-  const rawEpisodes = anime.totalEpisodes || (anime as any).episodesCount || (anime.type === 'Movie' ? 'Movie' : '12');
-  const epFormatted = typeof rawEpisodes === 'number' ? `EP ${rawEpisodes}` : String(rawEpisodes).startsWith('EP') ? rawEpisodes : `EP ${rawEpisodes}`;
+  const epBadge = formatCardEpisodesBadge(anime);
+  const epFormatted = epBadge.fullLabel;
   const displayLanguage = formatCardAudioLabel(anime);
   const cleanTitle = cleanAnimeTitle(anime.title);
   const uploadTs = getAnimeUploadTimestamp(anime);
@@ -237,6 +237,17 @@ const AnimeCardComponent: React.FC<AnimeCardProps> = ({
             className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#1E88FF] ring-2 ring-[#050A14] pointer-events-none"
           />
         )}
+
+        {/* Total Episodes Badge at Bottom-Right Corner */}
+        <span
+          aria-label={epBadge.prefix ? `${epBadge.count} total episodes` : epBadge.fullLabel}
+          className={`absolute ${
+            progressPercentage !== undefined && progressPercentage > 0 ? 'bottom-2' : 'bottom-1.5'
+          } right-1.5 z-10 inline-flex items-center gap-[3px] px-1.5 py-[2px] rounded-[5px] bg-[#050A14] border border-[#243B61] text-[10px] font-bold leading-[13px] tracking-tight text-white shadow-[0_2px_6px_rgba(0,0,0,0.85)] pointer-events-none`}
+        >
+          {epBadge.prefix && <span className="text-[#3B9BFF]">{epBadge.prefix}</span>}
+          <span className="tabular-nums">{epBadge.count}</span>
+        </span>
 
         {/* Progress Bar (only when provided) */}
         {progressPercentage !== undefined && progressPercentage > 0 && (

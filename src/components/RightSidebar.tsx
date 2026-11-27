@@ -61,7 +61,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               return (
                 <div
                   key={`sb-top-${anime.id || anime.slug}-${idx}`}
-                  onClick={() => navigate(`/anime/${anime.slug || anime.id}`)}
+                  onClick={() => {
+                    const targetSlug = (anime.slug || anime.id || '').trim();
+                    if (!targetSlug) return;
+                    navigate(
+                      anime.activeSeasonNumber
+                        ? `/anime/${encodeURIComponent(targetSlug)}?season=${anime.activeSeasonNumber}`
+                        : `/anime/${encodeURIComponent(targetSlug)}`
+                    );
+                  }}
                   className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-[#101A30] cursor-pointer group transition-colors duration-150"
                 >
                   <span className="w-5 text-center font-black text-xs text-[#94A3B8] group-hover:text-[#1E88FF] transition-colors duration-150 shrink-0">

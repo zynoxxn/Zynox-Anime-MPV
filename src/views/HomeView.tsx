@@ -10,6 +10,7 @@ import {
   isAnimeDeleted,
   getAnimeUploadTimestamp,
   isHentaiAnime,
+  expandAnimeSeasons,
 } from '../lib/firestore/anime';
 import {
   getCmsHeroBanners,
@@ -194,13 +195,19 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
   const [allAnimes, setAllAnimes] = useState<Anime[]>(initialAnimes);
 
   const [trending, setTrending] = useState<Anime[]>(() =>
-    [...initialSafeAnimes].sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0)).slice(0, 12)
+    expandAnimeSeasons(
+      [...initialSafeAnimes].sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0))
+    ).slice(0, 24)
   );
   const [popular, setPopular] = useState<Anime[]>(() =>
-    [...initialSafeAnimes].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0)).slice(0, 12)
+    expandAnimeSeasons(
+      [...initialSafeAnimes].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0))
+    ).slice(0, 24)
   );
   const [recentlyAdded, setRecentlyAdded] = useState<Anime[]>(() =>
-    [...initialSafeAnimes].sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a)).slice(0, 12)
+    expandAnimeSeasons(
+      [...initialSafeAnimes].sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a))
+    ).slice(0, 24)
   );
   const [latestEpisodes, setLatestEpisodes] = useState<LatestEpisodeItem[]>(() =>
     FALLBACK_LATEST_EPISODES.filter(
@@ -289,8 +296,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
       }
     }
 
-    const initialPosterUrls = initialSafeAnimes
-      .slice(0, 10)
+    const initialPosterUrls = expandAnimeSeasons(initialSafeAnimes)
+      .slice(0, 12)
       .map((a) => a.poster)
       .filter(Boolean);
     if (initialPosterUrls.length > 0) {
@@ -319,19 +326,18 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
       const trendingMode = (settings as any)?.trendingMode || 'auto';
       const popularMode = (settings as any)?.popularMode || 'auto';
 
-      const trendingList = [...safeAnimes]
-        .sort((a, b) => {
-          if (trendingMode === 'manual') {
-            const aFlag = a.trending || a.isTrending ? 1 : 0;
-            const bFlag = b.trending || b.isTrending ? 1 : 0;
-            if (bFlag !== aFlag) return bFlag - aFlag;
-          } else if (trendingMode === 'rating') {
-            const rDiff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
-            if (rDiff !== 0) return rDiff;
-          }
-          return (b.viewsCount || 0) - (a.viewsCount || 0) || (Number(b.rating) || 0) - (Number(a.rating) || 0);
-        })
-        .slice(0, 12);
+      const sortedTrendingBase = [...safeAnimes].sort((a, b) => {
+        if (trendingMode === 'manual') {
+          const aFlag = a.trending || a.isTrending ? 1 : 0;
+          const bFlag = b.trending || b.isTrending ? 1 : 0;
+          if (bFlag !== aFlag) return bFlag - aFlag;
+        } else if (trendingMode === 'rating') {
+          const rDiff = (Number(b.rating) || 0) - (Number(a.rating) || 0);
+          if (rDiff !== 0) return rDiff;
+        }
+        return (b.viewsCount || 0) - (a.viewsCount || 0) || (Number(b.rating) || 0) - (Number(a.rating) || 0);
+      });
+      const trendingList = expandAnimeSeasons(sortedTrendingBase).slice(0, 24);
       setTrending(trendingList);
 
       const sortedByPopular = [...safeAnimes].sort((a, b) => {
@@ -347,20 +353,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
       });
 
       if (safeAnimes.length > 12 && popularMode !== 'manual') {
-        const trendingTopIds = new Set(trendingList.slice(0, 6).map((a) => a.id || a.slug));
+        const trendingTopIds = new Set(sortedTrendingBase.slice(0, 6).map((a) => a.id || a.slug));
         const uniquePopular = sortedByPopular.filter((a) => !trendingTopIds.has(a.id || a.slug));
-        setPopular(uniquePopular.length >= 4 ? uniquePopular.slice(0, 12) : sortedByPopular.slice(0, 12));
+        setPopular(
+          expandAnimeSeasons(uniquePopular.length >= 4 ? uniquePopular : sortedByPopular).slice(0, 24)
+        );
       } else {
-        setPopular(sortedByPopular.slice(0, 12));
+        setPopular(expandAnimeSeasons(sortedByPopular).slice(0, 24));
       }
 
-      const sortedRecentlyAdded = [...safeAnimes]
-        .sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a))
-        .slice(0, 12);
+      const sortedRecentlyAdded = expandAnimeSeasons(
+        [...safeAnimes].sort((a, b) => getAnimeUploadTimestamp(b) - getAnimeUploadTimestamp(a))
+      ).slice(0, 24);
       setRecentlyAdded(sortedRecentlyAdded);
 
       preloadImages(
-        trendingList.slice(0, 10).map((a) => a.poster).filter(Boolean),
+        trendingList.slice(0, 12).map((a) => a.poster).filter(Boolean),
         { width: 240, fallbackType: 'poster', highPriority: true }
       );
     };
@@ -658,10 +666,12 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                 const heroSection = cmsSections.find((s) => s.key === 'hero' || s.contentSource === 'featured');
                 const showTop10 = (siteSettings as any)?.showTop10 !== false;
                 const safeAnimes = allAnimes.filter((a) => !isHentaiAnime(a));
+                const expandedSafeAnimes = expandAnimeSeasons(safeAnimes);
 
-                // Map helper for section anime list by contentSource
+                // Map helper for section anime list by contentSource (all seasons expanded)
                 const getAnimesForSection = (sec: CmsHomepageSection): Anime[] => {
-                  const limit = Math.max(1, Math.min(24, Number(sec.maxItems) || 12));
+                  const baseLimit = Math.max(1, Math.min(24, Number(sec.maxItems) || 12));
+                  const limit = Math.max(24, Math.min(36, baseLimit * 2));
                   let pool = safeAnimes;
 
                   if (sec.audioLanguageFilter && sec.audioLanguageFilter !== 'all') {
@@ -683,21 +693,29 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                     case 'recently_added':
                       return recentlyAdded.slice(0, limit);
                     case 'ongoing':
-                      return pool.filter((a) => a.status?.toLowerCase() === 'ongoing').slice(0, limit);
+                      return expandAnimeSeasons(pool)
+                        .filter((a) => a.status?.toLowerCase() === 'ongoing')
+                        .slice(0, limit);
                     case 'upcoming':
-                      return pool.filter((a) => a.status?.toLowerCase() === 'upcoming' || a.isUpcoming).slice(0, limit);
+                      return expandAnimeSeasons(pool)
+                        .filter((a) => a.status?.toLowerCase() === 'upcoming' || a.isUpcoming)
+                        .slice(0, limit);
                     case 'completed':
-                      return pool.filter((a) => a.status?.toLowerCase() === 'completed').slice(0, limit);
+                      return expandAnimeSeasons(pool)
+                        .filter((a) => a.status?.toLowerCase() === 'completed')
+                        .slice(0, limit);
                     case 'recommended':
-                      return pool.filter((a) => a.recommended).slice(0, limit);
+                      return expandAnimeSeasons(pool.filter((a) => a.recommended)).slice(0, limit);
                     case 'manual':
                       if (sec.manualAnimeIds && sec.manualAnimeIds.length > 0) {
                         const idSet = new Set(sec.manualAnimeIds);
-                        return pool.filter((a) => idSet.has(a.id || '') || idSet.has(a.slug)).slice(0, limit);
+                        return expandAnimeSeasons(
+                          pool.filter((a) => idSet.has(a.id || '') || idSet.has(a.slug))
+                        ).slice(0, limit);
                       }
-                      return pool.slice(0, limit);
+                      return expandAnimeSeasons(pool).slice(0, limit);
                     default:
-                      return pool.slice(0, limit);
+                      return expandAnimeSeasons(pool).slice(0, limit);
                   }
                 };
 
@@ -730,7 +748,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                       <React.Fragment key={sec.id || sec.key}>
                         {idx === 1 && showTop10 && allAnimes.length > 0 && (
                           <Top10Ranking
-                            animes={safeAnimes}
+                            animes={expandedSafeAnimes}
                             navigate={navigate}
                           />
                         )}
@@ -796,7 +814,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                     <React.Fragment key={sec.id || sec.key}>
                       {idx === 1 && showTop10 && allAnimes.length > 0 && (
                         <Top10Ranking
-                          animes={safeAnimes}
+                          animes={expandedSafeAnimes}
                           navigate={navigate}
                         />
                       )}
@@ -887,25 +905,25 @@ export const HomeView: React.FC<HomeViewProps> = ({ navigate, onShowMessage, onO
                     ))}
                   </div>
 
-                  {/* Filtered Grid: 3 cols phone, 4 tablet, 6 desktop, 12 items max */}
+                  {/* Filtered Grid: 3 cols phone, 4 tablet, 6 desktop, all seasons expanded */}
                   {(() => {
                     const filteredExplore = (() => {
                       if (exploreFilter.toLowerCase() === 'hentai') {
-                        return allAnimes.filter((a) => isHentaiAnime(a)).slice(0, 12);
+                        return expandAnimeSeasons(allAnimes.filter((a) => isHentaiAnime(a))).slice(0, 36);
                       }
                       const safeExploreList = allAnimes.filter((a) => !isHentaiAnime(a));
                       if (exploreFilter === 'All') {
-                        return safeExploreList.slice(0, 12);
+                        return expandAnimeSeasons(safeExploreList).slice(0, 36);
                       }
                       if (exploreFilter === 'Top Rated') {
-                        return [...safeExploreList]
-                          .sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0))
-                          .slice(0, 12);
+                        return expandAnimeSeasons(
+                          [...safeExploreList].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0))
+                        ).slice(0, 36);
                       }
                       const matches = safeExploreList.filter((a) =>
                         a.genres?.some((g) => g.toLowerCase().includes(exploreFilter.toLowerCase()))
                       );
-                      return matches.length > 0 ? matches.slice(0, 12) : [];
+                      return matches.length > 0 ? expandAnimeSeasons(matches).slice(0, 36) : [];
                     })();
 
                     return (

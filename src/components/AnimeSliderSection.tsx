@@ -330,7 +330,7 @@ export const AnimeSliderSection: React.FC<AnimeSliderSectionProps> = ({
             }
           }}
         >
-          {animes.slice(0, 12).map((anime, idx) => (
+          {animes.slice(0, 36).map((anime, idx) => (
             <div
               key={`slider-${title.toLowerCase().replace(/\s+/g, '-')}-${anime.id || anime.slug}-${idx}`}
               className="flex-none w-[clamp(96px,26vw,120px)] sm:w-[132px] lg:w-[160px] snap-start"
